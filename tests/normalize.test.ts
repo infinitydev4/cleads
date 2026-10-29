@@ -9,6 +9,9 @@ describe("emails", () => {
     expect(normalizeEmail("  Contact@Dupont-Plomberie.FR ")).toBe("contact@dupont-plomberie.fr")
     expect(normalizeEmail("mailto:a@b.fr")).toBe("a@b.fr")
     expect(normalizeEmail("a@b.fr; c@d.fr")).toBe("a@b.fr")
+    // Percent-encoding left by scraped pages is undone.
+    expect(normalizeEmail("%20jb@jesuistonplombier.fr")).toBe("jb@jesuistonplombier.fr")
+    expect(normalizeEmail("mailto:contact%40site.fr")).toBe("contact@site.fr")
     for (const bad of ["", null, "pas un email", "a@b", "@b.fr", "a@@b.fr"]) expect(normalizeEmail(bad)).toBeNull()
   })
   it("tells nominative from generic addresses", () => {

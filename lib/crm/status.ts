@@ -34,4 +34,12 @@ export const meetingStatus = {
   RESCHEDULED: { label: "Reporté", tone: "warning" },
 } as const satisfies Record<string, StatusMeta>
 
+export const searchStatus = {
+  QUEUED: { label: "En attente", tone: "neutral" },
+  RUNNING: { label: "En cours", tone: "info" },
+  COMPLETED: { label: "Terminée", tone: "success" },
+  FAILED: { label: "En échec", tone: "destructive" },
+  CANCELLED: { label: "Annulée", tone: "outline" },
+} as const satisfies Record<string, StatusMeta>
+
 export type StatusMap = Record<string, StatusMeta>

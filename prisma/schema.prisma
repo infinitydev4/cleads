@@ -55,6 +55,7 @@ model User {
   sessions               Session[]
   settings               Settings?
   sharedDocuments        SharedDocument[]
+  ExtractionSearch       ExtractionSearch[]
 }
 
 /// LEGACY (blog, AI keys, NextAuth adapter): unused, dropped by prisma/pending/drop-legacy-blog.sql once a dump is taken.
@@ -564,6 +565,7 @@ model Workspace {
   importBatches          ImportBatch[]
   suppressions           Suppression[]
   savedViews             SavedView[]
+  extractionSearches     ExtractionSearch[]
 }
 
 enum LeadSource {
@@ -957,4 +959,40 @@ model SavedView {
 
   @@index([workspaceId, entity])
   @@index([ownerId])
+}
+
+enum SearchStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+/// A search launched from the CRM on Cleads Extractor. The extractor keeps the results; this row remembers who asked,
+/// what, and where it stands, and makes the completion webhook idempotent.
+model ExtractionSearch {
+  id             String       @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdById    String?
+  createdBy      User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  /// Set once the extractor accepted the job.
+  extractorJobId String?      @unique
+  label          String
+  /// What was asked: activity, location, enrichment, result cap.
+  spec           Json
+  status         SearchStatus @default(QUEUED)
+  error          String?
+  /// Last counters seen (raw found, unique, complete, useful, tasks).
+  counters       Json?
+  importedCount  Int          @default(0)
+  lastImportAt   DateTime?
+  notifiedAt     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  finishedAt     DateTime?
+
+  @@index([workspaceId, createdAt])
+  @@index([createdById, status])
 }

@@ -29,6 +29,10 @@ L'accès au CRM se donne par invitation (`/app/settings/team`) : la personne cho
 TEST_DATABASE_URL=postgresql://… npm test
 ```
 
+## Cleads Extractor
+
+La recherche d'entreprises (`/app/search`) s'appuie sur Cleads Extractor : voir [docs/crm-v1/EXTRACTOR.md](docs/crm-v1/EXTRACTOR.md) pour les variables `EXTRACTOR_*` et le fonctionnement.
+
 ## Structure
 
 - `app/` : routes (landing `/`, pages légales, `/auth`, `/dashboard`, API).

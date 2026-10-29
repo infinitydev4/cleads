@@ -30,7 +30,16 @@ const GENERIC_LOCALS = new Set([
 
 export function normalizeEmail(raw: string | null | undefined): string | null {
   if (!raw) return null
-  const first = raw.replace(/^mailto:/i, "").split(/[;,\s]+/).find(Boolean)
+  // Scraped pages leave percent-encoding behind ("%20jb@site.fr"): decode before looking for the address.
+  let value = raw
+  if (/%[0-9a-f]{2}/i.test(value)) {
+    try {
+      value = decodeURIComponent(value)
+    } catch {
+      /* not valid percent-encoding: keep it as is, validation will refuse it */
+    }
+  }
+  const first = value.replace(/^mailto:/i, "").split(/[;,\s]+/).find(Boolean)
   const email = first?.trim().toLowerCase()
   return email && /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/.test(email) && email.length <= 254 ? email : null
 }

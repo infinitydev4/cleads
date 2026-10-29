@@ -401,6 +401,10 @@ Liste dense avec filtres et vues enregistrées, fiche (panneau + page), historiq
 - **Critères** : 10 000 fiches fluides (virtualisation), import CSV rejouable sans doublon, journal des changements.
 
 ### E5 — Intégration Cleads Extractor · **M**
+> **Avancement (branche `refactor/e0-cleanup`)** — fait : client typé de l'Extractor (réponses validées, erreurs en français, clé serveur uniquement), écran de lancement avec état de santé des sources, suivi (compteurs séparés, annulation, erreurs par cause), échantillon et filtres, vérification puis import avec le moteur de l'import CSV, rejeu sans doublon, notification de fin par webhook signé, journal d'audit. Détails : [EXTRACTOR.md](EXTRACTOR.md).
+> **Vérifié sur une vraie recherche** (« plombier, Lyon », Extractor de production, clé `crm`) : 50 entreprises trouvées dont 29 joignables, 29 fiches importées, rejeu = 0 créée / 29 déjà présentes. Cela a révélé et fait corriger un défaut de qualité : des emails ramassés sur des sites arrivaient encodés (`%20…`).
+> **Écarts assumés** : suivi par interrogation plutôt que par flux SSE relayé (plus simple et résistant ; le webhook couvre l'absence de l'utilisateur) ; client écrit à la main avec validation (zod) plutôt que généré depuis l'OpenAPI, avec des tests de contrat contre un vrai Extractor ; 1 000 résultats maximum par recherche (l'import n'est donc jamais tronqué).
+
 Client typé, écran de recherche, suivi, aperçu avant import, import par lots, webhook signé, gestion des erreurs et du « Google nous bloque-t-il ? » (santé de l'API).
 - **Critères** : de la recherche à 100 prospects importés sans quitter le CRM ; second import du même job = 0 doublon ; la clé n'apparaît jamais dans le navigateur.
 

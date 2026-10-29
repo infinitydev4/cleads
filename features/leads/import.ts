@@ -8,10 +8,19 @@ import {
 } from "@/lib/crm/normalize"
 import { LeadError } from "./errors"
 import { rescore } from "./service"
-import type { ImportRow } from "./mapping"
+import type { ImportRow as CsvRow } from "./mapping"
 import { scoreLead } from "./scoring"
 
 export const MAX_IMPORT_ROWS = 5000
+
+/** What a spreadsheet cannot carry but another source can: ratings, completeness, raw data kept for later. */
+export interface ImportExtras {
+  rating?: number
+  reviewCount?: number
+  completeness?: number
+  data?: Record<string, unknown>
+}
+export type ImportRow = CsvRow & ImportExtras
 
 export type RowStatus = "created" | "existing" | "skipped"
 export interface RowOutcome {
@@ -72,6 +81,10 @@ type Cleaned = {
   jobTitle: string | null
   tags: string[]
   externalId: string | null
+  rating: number | null
+  reviewCount: number | null
+  completeness: number | null
+  data: Prisma.InputJsonValue | null
   warnings: string[]
 }
 
@@ -113,6 +126,10 @@ function clean(raw: ImportRow, line: number): Cleaned | { line: number; skip: st
     jobTitle: blank(raw.jobTitle),
     tags: normalizeTags(raw.tags),
     externalId: blank(raw.externalId),
+    rating: typeof raw.rating === "number" && raw.rating >= 0 && raw.rating <= 5 ? raw.rating : null,
+    reviewCount: typeof raw.reviewCount === "number" && raw.reviewCount >= 0 ? Math.round(raw.reviewCount) : null,
+    completeness: typeof raw.completeness === "number" && raw.completeness >= 0 && raw.completeness <= 100 ? Math.round(raw.completeness) : null,
+    data: raw.data ? (raw.data as Prisma.InputJsonValue) : null,
     warnings,
   }
 }
@@ -127,6 +144,9 @@ interface Known {
   fields: Record<"website" | "phone" | "email" | "address" | "city" | "postalCode" | "sector" | "siret" | "domain" | "nameKey", string | null>
   hasContact: boolean
   tags: string[]
+  rating: number | null
+  reviewCount: number | null
+  completeness: number | null
 }
 
 /**
@@ -158,6 +178,9 @@ export async function runImport(user: CurrentUser, raws: ImportRow[], options: I
     fields: { website: c.website, phone: c.phone, email: c.email, address: c.address, city: c.city, postalCode: c.postalCode, sector: c.sector, siret: c.siret, domain: c.domain, nameKey: c.nameKey },
     hasContact: !!c.leads[0]?.contactId,
     tags: c.leads[0]?.tags ?? [],
+    rating: c.rating,
+    reviewCount: c.reviewCount,
+    completeness: c.completeness,
   })
   const include = { leads: { select: { id: true, contactId: true, tags: true }, take: 1 } } as const
   for (const [field, values] of Object.entries(keys)) {
@@ -250,6 +273,9 @@ export async function runImport(user: CurrentUser, raws: ImportRow[], options: I
         }
         fill("website", c.website); fill("phone", c.phone); fill("email", c.email); fill("address", c.address); fill("city", c.city)
         fill("postalCode", c.postalCode); fill("sector", c.sector); fill("siret", c.siret); fill("domain", c.domain)
+        if (known.rating == null && c.rating != null) { data.rating = c.rating; known.rating = c.rating; filled.push("rating") }
+        if (known.reviewCount == null && c.reviewCount != null) { data.reviewCount = c.reviewCount; known.reviewCount = c.reviewCount; filled.push("reviewCount") }
+        if (known.completeness == null && c.completeness != null) { data.completeness = c.completeness; known.completeness = c.completeness; filled.push("completeness") }
         if (filled.includes("city")) {
           const k = nameKey(known.name, c.city)
           if (k) { data.nameKey = k; known.fields.nameKey = k }
@@ -293,15 +319,15 @@ export async function runImport(user: CurrentUser, raws: ImportRow[], options: I
     const leadId = randomUUID()
     const contactId = c.contactName || c.email ? randomUUID() : null
     const source = options.source === "CSV" ? "CSV" : "EXTRACTOR"
-    newCompanies.push({ id: companyId, workspaceId: ws, name: c.name, domain: c.domain, website: c.website, phone: c.phone, email: c.email, address: c.address, city: c.city, postalCode: c.postalCode, country: c.country, sector: c.sector, siret: c.siret, nameKey: c.nameKey, source, externalId: c.externalId, externalSource: c.externalId ? options.source.toLowerCase() : null })
+    newCompanies.push({ id: companyId, workspaceId: ws, name: c.name, domain: c.domain, website: c.website, phone: c.phone, email: c.email, address: c.address, city: c.city, postalCode: c.postalCode, country: c.country, sector: c.sector, siret: c.siret, nameKey: c.nameKey, source, externalId: c.externalId, externalSource: c.externalId ? options.source.toLowerCase() : null, rating: c.rating, reviewCount: c.reviewCount, completeness: c.completeness, ...(c.data ? { data: c.data } : {}) })
     if (contactId) newContacts.push({ id: contactId, workspaceId: ws, companyId, name: c.contactName, jobTitle: c.jobTitle, email: c.email, emailKind: c.emailKind, phone: c.phone, source, collectedFrom: options.fileName ?? options.source, collectedAt: now, legalBasis: c.email ? "legitimate_interest_b2b" : null, doNotContact: suppressed, doNotContactReason: suppressed ? "Adresse présente dans la liste d’exclusion" : null })
-    const { score, reasons } = scoreLead({ email: c.email, emailKind: c.emailKind, phone: c.phone, website: c.website, domain: c.domain, contactName: c.contactName, address: c.address, city: c.city })
+    const { score, reasons } = scoreLead({ email: c.email, emailKind: c.emailKind, phone: c.phone, website: c.website, domain: c.domain, contactName: c.contactName, address: c.address, city: c.city, rating: c.rating, reviewCount: c.reviewCount, completeness: c.completeness })
     newLeads.push({ id: leadId, workspaceId: ws, companyId, contactId, source, status: suppressed ? "DO_NOT_CONTACT" : "NEW", score, scoreReasons: reasons as unknown as Prisma.InputJsonValue, tags: c.tags, importBatchId: batchId, createdAt: new Date(now.getTime() + i) })
     newActivities.push({ id: randomUUID(), workspaceId: ws, leadId, actorId: user.id, actorKind: "USER", kind: "SYSTEM", body: `Importé (${options.fileName ?? options.source})`, occurredAt: now })
 
     addToIndex(companyId, { externalId: c.externalId, siret: c.siret, domain: c.domain, nameKey: c.nameKey, phone: c.phone })
     if (c.email) { index.email.set(c.email, companyId); existingContacts.set(c.email, companyId) }
-    companyById.set(companyId, { companyId, leadId, name: c.name, fields: { website: c.website, phone: c.phone, email: c.email, address: c.address, city: c.city, postalCode: c.postalCode, sector: c.sector, siret: c.siret, domain: c.domain, nameKey: c.nameKey }, hasContact: !!contactId, tags: c.tags })
+    companyById.set(companyId, { companyId, leadId, name: c.name, fields: { website: c.website, phone: c.phone, email: c.email, address: c.address, city: c.city, postalCode: c.postalCode, sector: c.sector, siret: c.siret, domain: c.domain, nameKey: c.nameKey }, hasContact: !!contactId, tags: c.tags, rating: c.rating, reviewCount: c.reviewCount, completeness: c.completeness })
     summary.created++
     outcomes.push({ line: c.line, name: c.name, status: "created", warnings: c.warnings })
   })
