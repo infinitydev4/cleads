@@ -359,6 +359,9 @@ styles/tokens.css      jetons partagés landing + CRM
 Taille : **S** ≈ quelques jours, **M** ≈ 1 à 2 semaines, **L** ≈ 2 à 4 semaines, pour un développeur. Ce sont des ordres de grandeur à confirmer au démarrage de chaque jalon, pas des engagements.
 
 ### E0 — Assainir et sécuriser le socle · **M** · priorité absolue
+> **Avancement (branche `refactor/e0-cleanup`, commit `4970485`)** — fait : Git + tag `legacy-pre-crm`, suppression du site historique / blog IA / facturation / portail client (≈ 39 000 lignes), routes et accès durcis, S3 côté serveur, redirections 301, `robots.ts`, `sitemap.ts`, 19 dépendances retirées, build et type-check verts, landing inchangée.
+> **Reste à faire** : dump de la base (hors de ma portée), rotation des clés AWS exposées et suppression des variables `NEXT_PUBLIC_CLEADS_AWS_*` / `NEXT_PUBLIC_AWS_*` chez l'hébergeur (le code lit maintenant `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BUCKET_NAME`), 23 erreurs ESLint « React Compiler » (code qui sera réécrit), CI GitHub, infrastructure de tests. Le schéma Prisma n'est volontairement pas modifié (E3).
+
 - `git init`, `.env` ignoré, commit de l'état actuel, **tag `legacy-pre-crm`**, dump de la base.
 - Fixer Prisma 6 (`prisma` en devDependency) pour que le build ne tire pas Prisma 7.
 - Supprimer les blocs de la section 2.2 ; mettre de côté facturation et portail (branche / tag).
