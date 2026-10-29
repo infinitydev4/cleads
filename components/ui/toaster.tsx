@@ -1,43 +1,32 @@
+"use client"
+
 import { Toaster as SonnerToaster } from "sonner"
 import { CheckCircle2, XCircle, AlertCircle, Info } from "lucide-react"
 
+/** Colours come from the design tokens, so toasts follow the active theme. */
 export function Toaster() {
   return (
     <SonnerToaster
-      position="top-center"
-      richColors
-      expand={true}
+      position="bottom-right"
       closeButton
       toastOptions={{
         duration: 5000,
-        style: {
-          background: "rgba(0, 0, 0, 0.9)",
-          backdropFilter: "blur(10px)",
-          border: "1px solid rgba(191, 255, 0, 0.1)",
-          borderRadius: "12px",
-          padding: "16px",
-          color: "white",
-          boxShadow: "0 4px 20px rgba(0, 0, 0, 0.3)",
-        },
-        className: "font-sans",
         classNames: {
-          title: "text-lg font-semibold",
-          description: "text-gray-300",
-          actionButton: "bg-[#BFFF00] text-black hover:bg-[#BFFF00]/90",
-          cancelButton: "bg-gray-800 text-white hover:bg-gray-700",
-          closeButton: "text-gray-400 hover:text-white",
-          success: "border-[#BFFF00]/20",
-          error: "border-red-500/20",
-          warning: "border-yellow-500/20",
-          info: "border-blue-500/20",
+          toast:
+            "!rounded-xl !border !border-border !bg-popover !text-popover-foreground !shadow-pop !p-4 font-sans",
+          title: "!text-sm !font-semibold",
+          description: "!text-sm !text-muted-foreground",
+          actionButton: "!bg-primary !text-primary-foreground",
+          cancelButton: "!bg-secondary !text-secondary-foreground",
+          closeButton: "!border-border !bg-popover !text-muted-foreground",
         },
       }}
       icons={{
-        success: <CheckCircle2 className="h-5 w-5 text-[#BFFF00]" />,
-        error: <XCircle className="h-5 w-5 text-red-500" />,
-        warning: <AlertCircle className="h-5 w-5 text-yellow-500" />,
-        info: <Info className="h-5 w-5 text-blue-500" />,
+        success: <CheckCircle2 className="h-5 w-5 text-success" />,
+        error: <XCircle className="h-5 w-5 text-destructive-text" />,
+        warning: <AlertCircle className="h-5 w-5 text-warning" />,
+        info: <Info className="h-5 w-5 text-info" />,
       }}
     />
   )
-} 
+}

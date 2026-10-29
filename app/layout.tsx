@@ -1,6 +1,7 @@
 import type React from "react"
 import type { Metadata, Viewport } from "next"
 import { Inter } from "next/font/google"
+import "../styles/tokens.css"
 import "./globals.css"
 import GoogleTagManagerWrapper from "@/components/analytics/GoogleTagManagerWrapper"
 import GoogleTagManagerNoScript from "@/components/analytics/GoogleTagManagerNoScript"
@@ -8,6 +9,7 @@ import { Providers } from "./providers"
 import ConditionalLayout from "../components/layout/conditional-layout"
 import { CookieConsent } from "@/components/consent/CookieConsent"
 import { CookieSettings } from "@/components/consent/CookieSettings"
+import { PublicOnly } from "@/components/layout/public-only"
 import { cn } from "@/lib/utils"
 
 const inter = Inter({ subsets: ["latin"] })
@@ -39,19 +41,25 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="fr">
+    <html lang="fr" className="dark">
       <head>
-        <GoogleTagManagerWrapper />
+        <PublicOnly>
+          <GoogleTagManagerWrapper />
+        </PublicOnly>
       </head>
       <body className={cn(
         "min-h-screen bg-gray-950 font-sans antialiased",
         inter.className
       )}>
-        <GoogleTagManagerNoScript />
+        <PublicOnly>
+          <GoogleTagManagerNoScript />
+        </PublicOnly>
         <Providers>
           <ConditionalLayout>{children}</ConditionalLayout>
-          <CookieConsent />
-          <CookieSettings />
+          <PublicOnly>
+            <CookieConsent />
+            <CookieSettings />
+          </PublicOnly>
         </Providers>
       </body>
     </html>

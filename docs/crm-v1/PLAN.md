@@ -371,6 +371,9 @@ Taille : **S** ≈ quelques jours, **M** ≈ 1 à 2 semaines, **L** ≈ 2 à 4 s
 - **Critères** : build vert sans le code supprimé, la landing identique pixel pour pixel, `npm audit` sans critique, aucune route de données sans authentification.
 
 ### E1 — Design system et coque d'application · **M**
+> **Avancement (branche `refactor/e0-cleanup`)** — fait : jetons dans `styles/tokens.json` (clair et sombre, générés en CSS par `npm run tokens`), 51 tests de contraste WCAG AA, primitives ré-habillées (bouton, badge, champ, onglets, dialogue, panneau, toasts…), coque (barre latérale navy, barre du haut, menu mobile, palette ⌘K, menu compte, notifications), `PageHeader`, `DataTable` (TanStack, tri, clavier), `StatCard`, `StatusBadge`, `FormField`, `EmptyState`, `Skeleton`, navigation filtrée par rôle (`lib/crm/nav.ts`), page « Aujourd'hui » et catalogue `/app/design`. Le back-office actuel garde son thème sombre (classe `dark` sur `html`), le CRM bascule en clair.
+> **Reste** : thème sombre du CRM (V1.1), virtualisation et filtres serveur du tableau (E4), actions de la palette (E4+), vrai filtrage par droits (E2).
+
 Jetons partagés, primitives ré-habillées, coque (barre latérale, en-tête, palette ⌘K, notifications), `PageHeader`, `DataTable`, `EmptyState`, `Sheet`, formulaires, toasts. Catalogue de composants (Storybook ou page interne).
 - **Critères** : la coque tient le rôle (navigation filtrée par droits), AA validé, thème cohérent avec la home-v2, tous les composants documentés.
 

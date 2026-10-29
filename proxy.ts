@@ -19,6 +19,16 @@ export default withAuth(
       return NextResponse.redirect(new URL("/dashboard", request.url))
     }
 
+    // Nouveau CRM : même règle intérimaire. L'aperçu du catalogue de composants est ouvert en développement uniquement.
+    const path = request.nextUrl.pathname
+    const isCrm = path === "/app" || path.startsWith("/app/")
+    const isDesignPreview = process.env.NODE_ENV !== "production" && path === "/app/design"
+    if (isCrm && !isDesignPreview) {
+      if (token?.role !== "ADMIN") {
+        return NextResponse.redirect(new URL("/auth/login", request.url))
+      }
+    }
+
     // Protection des routes du back-office : seuls les administrateurs entrent.
     // (Les rôles du CRM remplaceront cette règle dans l'epic E2.)
     if (request.nextUrl.pathname.startsWith("/dashboard")) {
@@ -31,7 +41,8 @@ export default withAuth(
   },
   {
     callbacks: {
-      authorized: ({ token }) => !!token,
+      authorized: ({ token, req }) =>
+        !!token || (process.env.NODE_ENV !== "production" && req.nextUrl.pathname === "/app/design"),
     },
     pages: {
       signIn: "/auth/login",
@@ -42,6 +53,7 @@ export default withAuth(
 export const config = {
   matcher: [
     "/dashboard/:path*",
+    "/app/:path*",
     "/api/availability/:path*",
     "/api/break-time/:path*",
     "/api/exceptions/:path*",
