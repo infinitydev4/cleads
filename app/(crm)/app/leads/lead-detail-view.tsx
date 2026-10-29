@@ -1,9 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Building2, CalendarDays, Globe, Handshake, Mail, MapPin, Pencil, Phone, PhoneCall, ShieldAlert, StickyNote, Trash2, UserRound, X } from "lucide-react"
+import { Building2, CalendarDays, ClipboardCheck, Globe, Mail, MapPin, Pencil, Phone, PhoneCall, ShieldAlert, StickyNote, Trash2, UserRound, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -13,13 +13,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { FormField } from "@/components/crm/form-field"
 import { StatusBadge } from "@/components/crm/status-badge"
-import { dealStage, leadStatus, meetingStatus } from "@/lib/crm/status"
-import { ago, euros, formatDate, formatDateTime } from "@/lib/crm/format"
+import { leadStatus, meetingStatus } from "@/lib/crm/status"
+import { ago, formatDate, formatDateTime } from "@/lib/crm/format"
 import { formatPhone } from "@/lib/crm/normalize"
 import { cn } from "@/lib/utils"
 import type { LeadDetail } from "@/features/leads/types"
 import { api } from "./api"
 import { personName, type Assignee } from "./filter-bar"
+import { DealsEditor } from "./deals-editor"
+import { QualifyDialog } from "./qualify-dialog"
+import { QUALIFICATION_LABELS } from "@/features/pipeline/rules"
 import { ScoreMeter } from "./score-meter"
 
 interface Props {
@@ -37,6 +40,23 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
   const router = useRouter()
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [qualifying, setQualifying] = useState(false)
+  const canQualifyNow = lead.can.write && lead.status !== "DO_NOT_CONTACT" && lead.status !== "QUALIFIED" && lead.status !== "DISQUALIFIED"
+
+  // "q" opens the qualification from the keyboard, unless a field has the focus.
+  useEffect(() => {
+    if (!canQualifyNow) return
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable || el.getAttribute("role") === "combobox"
+      if (e.key === "q" && !e.metaKey && !e.ctrlKey && !e.altKey && !typing && !qualifying) {
+        e.preventDefault()
+        setQualifying(true)
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [canQualifyNow, qualifying])
 
   async function patch(body: object, success?: string) {
     try {
@@ -76,11 +96,18 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
             <h2 className="truncate text-2xl font-extrabold tracking-[-0.04em]">{title}</h2>
             <p className="text-sm text-muted-foreground">{[c?.city, c?.sector].filter(Boolean).join(" · ") || "Aucune localisation"} · ajoutée {formatDate(lead.createdAt)}</p>
           </div>
-          {lead.can.write && (
-            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-              <Pencil className="h-4 w-4" aria-hidden="true" /> Modifier
-            </Button>
-          )}
+          <div className="flex shrink-0 gap-2">
+            {canQualifyNow && (
+              <Button size="sm" onClick={() => setQualifying(true)} title="Raccourci : q">
+                <ClipboardCheck className="h-4 w-4" aria-hidden="true" /> Qualifier
+              </Button>
+            )}
+            {lead.can.write && (
+              <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+                <Pencil className="h-4 w-4" aria-hidden="true" /> Modifier
+              </Button>
+            )}
+          </div>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -154,14 +181,16 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
         <p className="text-xs text-muted-foreground">Règles simples et visibles ; les poids seront ajustés avec les résultats réels.</p>
       </Card>
 
-      {(lead.deals.length > 0 || lead.meetings.length > 0 || lead.tasks.length > 0) && (
+      <QualificationCard lead={lead} onEdit={() => setQualifying(true)} />
+
+      {lead.deals.length > 0 && (
+        <Card className="p-4">
+          <DealsEditor lead={lead} assignees={assignees} onChange={(next) => { onChange(next); router.refresh() }} />
+        </Card>
+      )}
+
+      {(lead.meetings.length > 0 || lead.tasks.length > 0) && (
         <Card className="space-y-4 p-4">
-          {lead.deals.length > 0 && (
-            <section aria-label="Opportunités" className="space-y-2">
-              <h3 className="flex items-center gap-2 text-sm font-bold"><Handshake className="h-4 w-4" aria-hidden="true" /> Opportunités</h3>
-              {lead.deals.map((d) => <p key={d.id} className="flex items-center gap-2 text-sm"><StatusBadge map={dealStage} value={d.stage} /> {euros(d.amountCents)} <span className="text-muted-foreground">{d.ownerName}</span></p>)}
-            </section>
-          )}
           {lead.meetings.length > 0 && (
             <section aria-label="Rendez-vous" className="space-y-2">
               <h3 className="flex items-center gap-2 text-sm font-bold"><CalendarDays className="h-4 w-4" aria-hidden="true" /> Rendez-vous</h3>
@@ -187,6 +216,7 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
         </div>
       )}
 
+      {qualifying && <QualifyDialog open={qualifying} onOpenChange={setQualifying} lead={lead} assignees={assignees} onDone={(next) => { onChange(next); router.refresh() }} />}
       {editing && <EditDialog open={editing} onOpenChange={setEditing} lead={lead} onSave={async (body) => { const ok = await patch(body, "Fiche mise à jour"); if (ok) setEditing(false); return !!ok }} />}
       <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <DialogContent>
@@ -341,5 +371,32 @@ function EditDialog({ open, onOpenChange, lead, onSave }: { open: boolean; onOpe
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function QualificationCard({ lead, onEdit }: { lead: LeadDetail; onEdit: () => void }) {
+  const q = lead.qualification
+  const chips: string[] = []
+  if (q?.budget) chips.push(QUALIFICATION_LABELS.budget[q.budget])
+  if (q?.authority) chips.push(QUALIFICATION_LABELS.authority[q.authority])
+  if (q?.timing) chips.push(QUALIFICATION_LABELS.timing[q.timing])
+  const empty = !q || (chips.length === 0 && !q.need && !q.notes && !q.disqualification)
+  return (
+    <Card className="space-y-3 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="flex items-center gap-2 text-sm font-bold"><ClipboardCheck className="h-4 w-4" aria-hidden="true" /> Qualification</h3>
+        {lead.can.write && lead.status !== "DO_NOT_CONTACT" && <Button variant="ghost" size="sm" onClick={onEdit}>{empty ? "Renseigner" : "Modifier"}</Button>}
+      </div>
+      {empty ? (
+        <p className="text-sm text-muted-foreground">Pas encore qualifié : besoin, budget, interlocuteur, échéance.</p>
+      ) : (
+        <div className="space-y-2 text-sm">
+          {q?.need && <p className="whitespace-pre-wrap">{q.need}</p>}
+          {chips.length > 0 && <ul className="flex flex-wrap gap-2">{chips.map((c) => <li key={c} className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium">{c}</li>)}{q?.budgetAmountCents ? <li className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium">{new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(q.budgetAmountCents / 100)}</li> : null}</ul>}
+          {q?.notes && <p className="whitespace-pre-wrap text-muted-foreground">{q.notes}</p>}
+          {q?.disqualification && <p className="rounded-lg bg-destructive-subtle p-2 font-medium text-destructive-text">Disqualifié : {q.disqualification.reason}{q.disqualification.detail ? ` (${q.disqualification.detail})` : ""}</p>}
+        </div>
+      )}
+    </Card>
   )
 }

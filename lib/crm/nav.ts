@@ -58,7 +58,7 @@ export const navGroups: NavGroup[] = [
     id: "conversion",
     label: "Conversion",
     items: [
-      { id: "pipeline", label: "Pipeline", href: "/app/pipeline", icon: Handshake, permission: "deal:read", soon: true, keywords: ["opportunités", "deals"] },
+      { id: "pipeline", label: "Pipeline", href: "/app/pipeline", icon: Handshake, permission: "deal:read", keywords: ["opportunités", "deals"] },
       { id: "meetings", label: "Rendez-vous", href: "/app/meetings", icon: CalendarDays, permission: "meeting:read", soon: true, keywords: ["agenda", "calendrier"] },
     ],
   },

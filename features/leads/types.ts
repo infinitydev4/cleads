@@ -74,9 +74,19 @@ export interface LeadDetail {
     legalBasis: string | null
   } | null
   activities: { id: string; kind: string; body: string | null; actorName: string | null; actorKind: string; occurredAt: string }[]
-  deals: { id: string; stage: string; amountCents: number | null; ownerName: string | null }[]
+  qualification: {
+    need?: string
+    budget?: "unknown" | "none" | "yes"
+    budgetAmountCents?: number
+    authority?: "unknown" | "decision_maker" | "influencer" | "user"
+    timing?: "unknown" | "now" | "1_3_months" | "3_6_months" | "later"
+    notes?: string
+    disqualification?: { reason: string; detail?: string }
+    updatedAt?: string
+  } | null
+  deals: { id: string; stage: string; amountCents: number | null; expectedCloseAt: string | null; lostReason: string | null; ownerId: string | null; ownerName: string | null; canMove: boolean }[]
   meetings: { id: string; startsAt: string; endsAt: string; status: string; type: string; hostName: string | null }[]
   tasks: { id: string; title: string; dueAt: string | null; doneAt: string | null; assigneeName: string | null }[]
   /** What the signed-in person may do with this fiche, computed on the server. */
-  can: { write: boolean; assignOthers: boolean; delete: boolean }
+  can: { write: boolean; assignOthers: boolean; delete: boolean; qualify: boolean }
 }

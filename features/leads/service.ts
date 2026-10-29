@@ -2,9 +2,11 @@ import type { LeadStatus, Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { audit } from "@/lib/audit"
 import type { CurrentUser } from "@/lib/auth/guard"
-import { canAccessRecord, can, recordFilter } from "@/lib/rbac"
+import { canAccessRecord, can, recordFilter, scopeOf } from "@/lib/rbac"
 import { companyDomain, emailDomain, nameKey, normalizeEmail } from "@/lib/crm/normalize"
 import { LeadError } from "./errors"
+import { closeOpenDeals, ensureOpenDeal } from "@/features/pipeline/deals"
+import { OPEN_STAGES } from "@/features/pipeline/rules"
 import { MATCH_LABELS, cleanCompany, cleanContact, matchCompany, normalizeTags } from "./keys"
 import { scoreLead } from "./scoring"
 import type { BulkInput, CreateLeadInput, LeadFilters, LeadSort, UpdateLeadInput } from "./schemas"
@@ -150,6 +152,7 @@ export async function getLead(user: CurrentUser, id: string): Promise<LeadDetail
   const who = (u: { name: string | null; email: string | null } | null) => u?.name ?? u?.email ?? null
   const c = lead.company
   const k = lead.contact
+  const dealMoveScope = scopeOf(user.role, "deal:move")
   return {
     id: lead.id,
     status: lead.status,
@@ -170,13 +173,15 @@ export async function getLead(user: CurrentUser, id: string): Promise<LeadDetail
       doNotContactReason: k.doNotContactReason, source: k.source, collectedFrom: k.collectedFrom, collectedAt: iso(k.collectedAt), legalBasis: k.legalBasis,
     },
     activities: lead.activities.map((a) => ({ id: a.id, kind: a.kind, body: a.body, actorName: who(a.actor), actorKind: a.actorKind, occurredAt: a.occurredAt.toISOString() })),
-    deals: lead.deals.map((d) => ({ id: d.id, stage: d.stage, amountCents: d.amountCents, ownerName: who(d.owner) })),
+    qualification: (lead.qualification as LeadDetail["qualification"]) ?? null,
+    deals: lead.deals.map((d) => ({ id: d.id, stage: d.stage, amountCents: d.amountCents, expectedCloseAt: iso(d.expectedCloseAt), lostReason: d.lostReason, ownerId: d.ownerId, ownerName: who(d.owner), canMove: dealMoveScope === "all" || (dealMoveScope === "own" && d.ownerId === user.id) })),
     meetings: lead.meetings.map((m) => ({ id: m.id, startsAt: m.startsAt.toISOString(), endsAt: m.endsAt.toISOString(), status: m.status, type: m.type, hostName: who(m.host) })),
     tasks: lead.tasks.map((t) => ({ id: t.id, title: t.title, dueAt: iso(t.dueAt), doneAt: iso(t.doneAt), assigneeName: who(t.assignee) })),
     can: {
       write: canAccessRecord(user, "lead:write", lead.ownerId),
       assignOthers: can(user.role, "lead:write") && recordFilter(user, "lead:write").kind === "all",
       delete: can(user.role, "data:delete"),
+      qualify: canAccessRecord(user, "lead:write", lead.ownerId) && canAccessRecord(user, "deal:qualify", lead.ownerId),
     },
   }
 }
@@ -418,7 +423,18 @@ async function changeStatus(tx: Tx, user: CurrentUser, lead: LeadWithContact, st
     for (const email of emails) await tx.suppression.deleteMany({ where: { workspaceId: user.workspaceId, email, reason: "MANUAL" } })
     if (lead.contact) await tx.contact.update({ where: { id: lead.contact.id }, data: { doNotContact: false, doNotContactReason: null } })
   }
-  await tx.lead.update({ where: { id: lead.id }, data: { status } })
+  if (status === "QUALIFIED") {
+    // Qualifying hands an opportunity over: it needs the right to qualify, and creates the opportunity.
+    if (!canAccessRecord(user, "deal:qualify", lead.ownerId)) throw new LeadError("forbidden", "Votre rôle ne qualifie pas de prospects : un SDR ou un manager s’en charge.", 403)
+    await tx.lead.update({ where: { id: lead.id }, data: { status } })
+    await ensureOpenDeal(tx, user, lead.id, null)
+  } else {
+    if (lead.status === "QUALIFIED" && !["DISQUALIFIED", "DO_NOT_CONTACT"].includes(status) && (await tx.deal.count({ where: { leadId: lead.id, stage: { in: [...OPEN_STAGES] } } })) > 0) {
+      throw new LeadError("conflict", "Une opportunité est ouverte sur cette fiche : gagnez-la ou perdez-la d’abord.", 409)
+    }
+    await tx.lead.update({ where: { id: lead.id }, data: { status } })
+    if (status === "DISQUALIFIED" || status === "DO_NOT_CONTACT") await closeOpenDeals(tx, user, lead.id, status === "DO_NOT_CONTACT" ? "Ne pas contacter" : "Prospect disqualifié")
+  }
   await log(tx, user, lead.id, "STATUS_CHANGE", null, { from: lead.status, to: status })
 }
 

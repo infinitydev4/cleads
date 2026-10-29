@@ -409,6 +409,10 @@ Client typé, écran de recherche, suivi, aperçu avant import, import par lots,
 - **Critères** : de la recherche à 100 prospects importés sans quitter le CRM ; second import du même job = 0 doublon ; la clé n'apparaît jamais dans le navigateur.
 
 ### E6 — Qualification et pipeline · **M**
+> **Avancement (branche `refactor/e0-cleanup`)** — fait : qualification guidée (quatre questions facultatives, trois issues : enregistrer, qualifier avec création de l'opportunité et choix du closer, disqualifier avec motif), touche `q` et validation au clavier, opportunité unique par fiche même sous concurrence, menu de statut cohérent avec le pipeline, pipeline en colonnes (glisser-déposer + menu « Déplacer »), motif obligatoire pour perdre, règles par rôle appliquées côté serveur et testées en entier (rôle × étape × étape), totaux uniquement sur les montants renseignés. Détails : [PIPELINE.md](PIPELINE.md). Aucun changement de schéma.
+> **Vérifié dans le navigateur** (SDR puis closer, base jetable) : fiche qualifiée au clavier, carte glissée vers « RDV planifié », passage en « Perdu » avec le motif.
+> **Reste** : ordre des cartes dans une colonne, passage automatique à « RDV planifié » (E8), tour de rôle des closers (V1.1).
+
 Statuts de prospect, qualification guidée (budget, besoin, décideur, échéance : champs optionnels), création automatique de l'opportunité, kanban glisser-déposer, motifs de perte, règles de transition par rôle.
 - **Critères** : un SDR qualifie une fiche en moins d'une minute au clavier ; transitions interdites refusées côté serveur.
 
