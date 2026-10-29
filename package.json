@@ -7,10 +7,11 @@
     "build": "prisma generate && prisma migrate deploy && next build",
     "start": "next start",
     "lint": "eslint .",
-    "seed": "ts-node -O '{\"module\":\"CommonJS\"}' prisma/seed.ts",
     "tokens": "node scripts/build-tokens.mjs",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:backfill-legacy": "ts-node -O '{\"module\":\"CommonJS\"}' scripts/backfill-legacy.ts",
+    "db:seed-demo": "ts-node -O '{\"module\":\"CommonJS\"}' scripts/seed-demo.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1158.0",

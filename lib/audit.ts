@@ -6,6 +6,7 @@ export interface AuditEntry {
   action: string
   actorId?: string | null
   actorKind?: AuditActorKind
+  workspaceId?: string | null
   entityType?: string
   entityId?: string
   /** Email or identifier the action is about when there is no entity. */
@@ -25,6 +26,7 @@ export async function audit(entry: AuditEntry): Promise<void> {
         action: entry.action,
         actorId: entry.actorId ?? null,
         actorKind: entry.actorKind ?? (entry.actorId ? "USER" : "SYSTEM"),
+        workspaceId: entry.workspaceId ?? null,
         entityType: entry.entityType,
         entityId: entry.entityId,
         subject: entry.subject?.toLowerCase(),

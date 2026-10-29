@@ -16,7 +16,7 @@ export async function GET() {
         email: session.user.email
       },
       include: {
-        companies: {
+        billingCompanies: {
           take: 1,
           include: {
             rib: true
@@ -30,7 +30,7 @@ export async function GET() {
     }
 
     // On prend la première entreprise (Cleads)
-    const company = user.companies[0]
+    const company = user.billingCompanies[0]
 
     return NextResponse.json({
       admin: {

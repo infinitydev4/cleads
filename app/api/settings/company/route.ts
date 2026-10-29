@@ -17,7 +17,7 @@ export async function PATCH(req: Request) {
         email: session.user.email
       },
       include: {
-        companies: {
+        billingCompanies: {
           take: 1,
           include: {
             rib: true
@@ -31,14 +31,14 @@ export async function PATCH(req: Request) {
     }
 
     // On prend la première entreprise (Cleads)
-    const company = user.companies[0]
+    const company = user.billingCompanies[0]
 
     if (!company) {
       return new NextResponse("Entreprise non trouvée", { status: 404 })
     }
 
     // Mise à jour de l'entreprise
-    const updatedCompany = await prisma.company.update({
+    const updatedCompany = await prisma.billingCompany.update({
       where: {
         id: company.id
       },
@@ -82,7 +82,7 @@ export async function PATCH(req: Request) {
     }
 
     // Récupérer l'entreprise mise à jour avec son RIB
-    const companyWithRib = await prisma.company.findUnique({
+    const companyWithRib = await prisma.billingCompany.findUnique({
       where: {
         id: company.id
       },

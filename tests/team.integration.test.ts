@@ -10,7 +10,7 @@ suite("team access (database)", () => {
   let svc: typeof import("@/features/team/service")
   let authOptions: typeof import("@/lib/auth/options").authOptions
   let hashFn: typeof import("bcryptjs").hash
-  let owner: { id: string; name: string; email: string; image: null; role: "OWNER" }
+  let owner: { id: string; workspaceId: string; name: string; email: string; image: null; role: "OWNER" }
 
   beforeAll(async () => {
     process.env.DATABASE_URL = url
@@ -26,8 +26,8 @@ suite("team access (database)", () => {
     await prisma.auditLog.deleteMany()
     await prisma.invitation.deleteMany()
     await prisma.user.deleteMany()
-    const u = await prisma.user.create({ data: { email: "owner@cleads.test", name: "Owner", role: "OWNER", password: await hashFn("correct horse battery", 4) } })
-    owner = { id: u.id, name: "Owner", email: u.email!, image: null, role: "OWNER" }
+    const u = await prisma.user.create({ data: { workspaceId: "ws_default", email: "owner@cleads.test", name: "Owner", role: "OWNER", password: await hashFn("correct horse battery", 4) } })
+    owner = { id: u.id, workspaceId: "ws_default", name: "Owner", email: u.email!, image: null, role: "OWNER" }
   })
 
   const GOOD = "une phrase de passe très longue"
@@ -74,13 +74,13 @@ suite("team access (database)", () => {
 
   it("protects the last owner and the actor's own access", async () => {
     await expect(svc.updateMember(owner, owner.id, { active: false })).rejects.toMatchObject({ code: "forbidden_change" })
-    const second = await prisma.user.create({ data: { email: "o2@cleads.test", role: "OWNER" } })
+    const second = await prisma.user.create({ data: { workspaceId: "ws_default", email: "o2@cleads.test", role: "OWNER" } })
     // Two owners: demoting the other one is fine.
     await expect(svc.updateMember(owner, second.id, { role: "MANAGER" })).resolves.toMatchObject({ role: "MANAGER" })
     // Back to a single owner: the remaining one cannot be touched by a manager-turned-owner scenario.
     await prisma.user.update({ where: { id: second.id }, data: { role: "OWNER" } })
     await svc.updateMember(owner, second.id, { active: false })
-    const third = await prisma.user.create({ data: { email: "o3@cleads.test", role: "SDR" } })
+    const third = await prisma.user.create({ data: { workspaceId: "ws_default", email: "o3@cleads.test", role: "SDR" } })
     await expect(svc.updateMember({ ...owner, id: third.id }, owner.id, { role: "SDR" })).rejects.toMatchObject({ code: "forbidden_change" })
   })
 
@@ -114,7 +114,7 @@ suite("team access (database)", () => {
 
     it("refuses deactivated accounts and former clients with the same message", async () => {
       const hashed = await hashFn("correct horse battery", 4)
-      await prisma.user.create({ data: { email: "off@cleads.test", role: "SDR", active: false, password: hashed } })
+      await prisma.user.create({ data: { workspaceId: "ws_default", email: "off@cleads.test", role: "SDR", active: false, password: hashed } })
       await prisma.user.create({ data: { email: "client@cleads.test", role: "USER", password: hashed } })
       await expect(login("off@cleads.test", "correct horse battery")).rejects.toThrow("Identifiants invalides")
       await expect(login("client@cleads.test", "correct horse battery")).rejects.toThrow("Identifiants invalides")

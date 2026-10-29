@@ -6,6 +6,8 @@ import { getSession } from "./session"
 
 export interface CurrentUser {
   id: string
+  /** Every CRM query is scoped to it. */
+  workspaceId: string
   name: string
   email: string
   image: string | null
@@ -25,9 +27,11 @@ export class AuthError extends Error {
 export async function getCurrentUser(): Promise<CurrentUser | null> {
   const session = await getSession()
   const role = toCrmRole(session?.user?.role)
-  if (!session?.user || !role) return null
+  // No workspace, no access: fail closed rather than guess one.
+  if (!session?.user || !role || !session.user.workspaceId) return null
   return {
     id: session.user.id,
+    workspaceId: session.user.workspaceId,
     name: session.user.name ?? session.user.email ?? "",
     email: session.user.email ?? "",
     image: session.user.image ?? null,

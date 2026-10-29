@@ -50,7 +50,7 @@ export const authOptions: NextAuthOptions = {
 
         const user = await prisma.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } } })
         const passwordOk = await compare(password, user?.password ?? DUMMY_HASH)
-        const allowed = !!user && passwordOk && user.active && isStaffRole(user.role === "ADMIN" ? "OWNER" : user.role)
+        const allowed = !!user && passwordOk && user.active && !!user.workspaceId && isStaffRole(user.role === "ADMIN" ? "OWNER" : user.role)
 
         if (!user || !allowed) {
           await audit({
@@ -59,13 +59,14 @@ export const authOptions: NextAuthOptions = {
             actorId: user?.id,
             ip,
             // Reason stays in the log only; the person always sees the same message.
+            workspaceId: user?.workspaceId,
             metadata: { reason: !user ? "unknown_account" : !passwordOk ? "bad_password" : !user.active ? "deactivated" : "no_crm_access" },
           })
           throw new Error(GENERIC_ERROR)
         }
 
         await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
-        await audit({ action: "auth.login", actorId: user.id, subject: email, ip })
+        await audit({ action: "auth.login", actorId: user.id, workspaceId: user.workspaceId, subject: email, ip })
         return { id: user.id, email: user.email, name: user.name, role: user.role as Role, isTemporaryPassword: user.isTemporaryPassword }
       },
     }),

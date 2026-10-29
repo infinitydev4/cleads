@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic"
 
 export default async function TeamPage() {
   const { user } = await requirePagePermission("team:read")
-  const [members, invitations] = await Promise.all([listMembers(), listPendingInvitations()])
+  const [members, invitations] = await Promise.all([listMembers(user.workspaceId), listPendingInvitations(user.workspaceId)])
 
   return (
     <>

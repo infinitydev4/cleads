@@ -12,10 +12,11 @@ export const getSession = cache(async () => {
   if (!session?.user?.id) return null
   const account = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { active: true, role: true, name: true, email: true, image: true, isTemporaryPassword: true },
+    select: { active: true, role: true, name: true, email: true, image: true, isTemporaryPassword: true, workspaceId: true },
   })
   if (!account?.active) return null
   session.user.role = account.role
+  session.user.workspaceId = account.workspaceId
   session.user.isTemporaryPassword = account.isTemporaryPassword
   if (account.name) session.user.name = account.name
   return session

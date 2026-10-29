@@ -10,12 +10,12 @@ export const metadata = { title: "Journal d’audit" }
 export const dynamic = "force-dynamic"
 
 export default async function AuditPage(props: { searchParams: Promise<{ filter?: string }> }) {
-  await requirePagePermission("audit:read")
+  const { user } = await requirePagePermission("audit:read")
   const { filter = "" } = await props.searchParams
   const prefix = AUDIT_FILTERS.some((f) => f.value === filter) ? filter : ""
 
   const logs = await prisma.auditLog.findMany({
-    where: prefix ? { action: { startsWith: prefix } } : undefined,
+    where: { workspaceId: user.workspaceId, ...(prefix ? { action: { startsWith: prefix } } : {}) },
     orderBy: { createdAt: "desc" },
     take: 200,
     select: { id: true, action: true, subject: true, entityType: true, ip: true, createdAt: true, metadata: true, actorKind: true, actor: { select: { name: true, email: true } } },

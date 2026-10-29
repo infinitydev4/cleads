@@ -8,42 +8,56 @@ datasource db {
 }
 
 model User {
-  id                   String                @id @default(cuid())
-  name                 String?
-  email                String?               @unique
-  emailVerified        DateTime?
-  image                String?
-  password             String?
-  role                 Role                  @default(USER)
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
-  phone                String?
-  language             String?               @default("fr")
-  ip                   String?
-  isTemporaryPassword  Boolean               @default(false)
-  favorite             Boolean               @default(false)
+  id                     String                  @id @default(cuid())
+  name                   String?
+  email                  String?                 @unique
+  emailVerified          DateTime?
+  image                  String?
+  password               String?
+  role                   Role                    @default(USER)
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  phone                  String?
+  language               String?                 @default("fr")
+  ip                     String?
+  isTemporaryPassword    Boolean                 @default(false)
+  favorite               Boolean                 @default(false)
   /// A deactivated member can no longer sign in; history stays attached to the account.
-  active               Boolean               @default(true)
-  lastLoginAt          DateTime?
-  auditLogs            AuditLog[]
-  invitationsSent      Invitation[]
-  accounts             Account[]
-  appointments         Appointment[]
-  articles             Article[]
-  articleSchedules     ArticleSchedule[]
-  availabilities       Availability[]
-  breakTime            BreakTime?
-  comments             Comment[]
-  companies            Company[]
-  documents            Document[]
-  exceptions           Exception[]
-  notifications        Notification[]
-  notificationSettings NotificationSettings?
-  sessions             Session[]
-  settings             Settings?
-  sharedDocuments      SharedDocument[]
+  active                 Boolean                 @default(true)
+  lastLoginAt            DateTime?
+  auditLogs              AuditLog[]
+  invitationsSent        Invitation[]
+  workspaceId            String?
+  workspace              Workspace?              @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  ownedLeads             Lead[]                  @relation("LeadOwner")
+  ownedDeals             Deal[]                  @relation("DealOwner")
+  assignedTasks          Task[]                  @relation("TaskAssignee")
+  createdTasks           Task[]                  @relation("TaskCreator")
+  activities             Activity[]
+  hostedMeetings         Meeting[]               @relation("MeetingHost")
+  createdMeetings        Meeting[]               @relation("MeetingCreator")
+  availabilityRules      AvailabilityRule[]
+  availabilityExceptions AvailabilityException[]
+  importBatches          ImportBatch[]
+  savedViews             SavedView[]
+  accounts               Account[]
+  appointments           Appointment[]
+  articles               Article[]
+  articleSchedules       ArticleSchedule[]
+  availabilities         Availability[]
+  breakTime              BreakTime?
+  comments               Comment[]
+  billingCompanies       BillingCompany[]
+  documents              Document[]
+  exceptions             Exception[]
+  notifications          Notification[]
+  notificationSettings   NotificationSettings?
+  sessions               Session[]
+  settings               Settings?
+  sharedDocuments        SharedDocument[]
 }
 
+/// LEGACY (blog, AI keys, NextAuth adapter): unused, dropped by prisma/pending/drop-legacy-blog.sql once a dump is taken.
 model Account {
   id                String  @id @default(cuid())
   userId            String
@@ -62,6 +76,7 @@ model Account {
   @@unique([provider, providerAccountId])
 }
 
+/// LEGACY (blog, AI keys, NextAuth adapter): unused, dropped by prisma/pending/drop-legacy-blog.sql once a dump is taken.
 model Session {
   id           String   @id @default(cuid())
   sessionToken String   @unique
@@ -70,6 +85,7 @@ model Session {
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+/// LEGACY (blog, AI keys, NextAuth adapter): unused, dropped by prisma/pending/drop-legacy-blog.sql once a dump is taken.
 model VerificationToken {
   identifier String
   token      String   @unique
@@ -133,12 +149,12 @@ model Exception {
 }
 
 model Document {
-  id            String         @id @default(cuid())
+  id            String          @id @default(cuid())
   type          DocumentType
   number        String
   date          DateTime
   dueDate       DateTime?
-  status        DocumentStatus @default(DRAFT)
+  status        DocumentStatus  @default(DRAFT)
   clientName    String
   clientEmail   String
   clientPhone   String?
@@ -150,12 +166,12 @@ model Document {
   tax           Float
   total         Float
   notes         String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
   userId        String
   companyId     String?
-  company       Company?       @relation(fields: [companyId], references: [id])
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company       BillingCompany? @relation(fields: [companyId], references: [id])
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   items         DocumentItem[]
 }
 
@@ -172,7 +188,8 @@ model DocumentItem {
   document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 }
 
-model Company {
+/// Legal entity of the agency used on quotes and invoices (parked until the billing module returns). Was "Company".
+model BillingCompany {
   id         String     @id @default(cuid())
   name       String
   address    String
@@ -193,14 +210,14 @@ model Company {
 }
 
 model Rib {
-  id        String   @id @default(cuid())
+  id        String         @id @default(cuid())
   bank      String
   iban      String
   bic       String
-  companyId String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId String         @unique
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  company   BillingCompany @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
 
 model Notification {
@@ -240,6 +257,7 @@ model NotificationSettings {
   @@index([userId])
 }
 
+/// PARKED: files shared with former clients; kept until a retention decision is made.
 model SharedDocument {
   id          String             @id @default(cuid())
   name        String
@@ -258,6 +276,7 @@ model SharedDocument {
   @@index([userId])
 }
 
+/// LEGACY (blog, AI keys, NextAuth adapter): unused, dropped by prisma/pending/drop-legacy-blog.sql once a dump is taken.
 model Category {
   id        String    @id @default(cuid())
   name      String    @unique
@@ -267,6 +286,7 @@ model Category {
   articles  Article[]
 }
 
+/// LEGACY (blog, AI keys, NextAuth adapter): unused, dropped by prisma/pending/drop-legacy-blog.sql once a dump is taken.
 model Tag {
   id        String    @id @default(cuid())
   name      String    @unique
@@ -276,6 +296,7 @@ model Tag {
   articles  Article[] @relation("ArticleToTag")
 }
 
+/// LEGACY (blog, AI keys, NextAuth adapter): unused, dropped by prisma/pending/drop-legacy-blog.sql once a dump is taken.
 model Theme {
   id          String    @id @default(cuid())
   name        String
@@ -290,6 +311,7 @@ model Theme {
   articles    Article[]
 }
 
+/// LEGACY (blog, AI keys, NextAuth adapter): unused, dropped by prisma/pending/drop-legacy-blog.sql once a dump is taken.
 model Article {
   id              String    @id @default(cuid())
   title           String
@@ -317,6 +339,7 @@ model Article {
   @@index([themeId])
 }
 
+/// LEGACY (blog, AI keys, NextAuth adapter): unused, dropped by prisma/pending/drop-legacy-blog.sql once a dump is taken.
 model Comment {
   id        String   @id @default(cuid())
   content   String
@@ -331,6 +354,7 @@ model Comment {
   @@index([userId])
 }
 
+/// LEGACY (blog, AI keys, NextAuth adapter): unused, dropped by prisma/pending/drop-legacy-blog.sql once a dump is taken.
 model Settings {
   id                      String   @id @default(cuid())
   userId                  String   @unique
@@ -360,6 +384,7 @@ model Settings {
   @@index([userId])
 }
 
+/// LEGACY (blog, AI keys, NextAuth adapter): unused, dropped by prisma/pending/drop-legacy-blog.sql once a dump is taken.
 model ArticleSchedule {
   id                      String            @id @default(cuid())
   name                    String
@@ -480,6 +505,8 @@ model Invitation {
   tokenHash   String    @unique
   invitedById String
   invitedBy   User      @relation(fields: [invitedById], references: [id], onDelete: Cascade)
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   expiresAt   DateTime
   acceptedAt  DateTime?
   revokedAt   DateTime?
@@ -490,21 +517,436 @@ model Invitation {
 
 /// Who did what, when. Written by people, agents and the system; never updated.
 model AuditLog {
-  id         String         @id @default(cuid())
-  actorId    String?
-  actor      User?          @relation(fields: [actorId], references: [id], onDelete: SetNull)
-  actorKind  AuditActorKind @default(USER)
-  action     String
-  entityType String?
-  entityId   String?
+  id          String         @id @default(cuid())
+  actorId     String?
+  actor       User?          @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorKind   AuditActorKind @default(USER)
+  workspaceId String?
+  workspace   Workspace?     @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  action      String
+  entityType  String?
+  entityId    String?
   /// Email or other identifier the action is about when there is no entity (failed sign-in, invitation).
-  subject    String?
-  metadata   Json?
-  ip         String?
-  createdAt  DateTime       @default(now())
+  subject     String?
+  metadata    Json?
+  ip          String?
+  createdAt   DateTime       @default(now())
 
   @@index([createdAt])
   @@index([actorId, createdAt])
   @@index([entityType, entityId])
   @@index([action, subject, createdAt])
+}
+
+// ============================================================================================
+// CRM data model (docs/crm-v1/PLAN.md section 5). Every record belongs to a workspace; V1 runs a
+// single one. Dates are UTC. Rules Prisma cannot express (CHECK constraints) live in the migration.
+// ============================================================================================
+
+model Workspace {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+
+  users                  User[]
+  invitations            Invitation[]
+  auditLogs              AuditLog[]
+  companies              Company[]
+  contacts               Contact[]
+  leads                  Lead[]
+  deals                  Deal[]
+  activities             Activity[]
+  tasks                  Task[]
+  meetings               Meeting[]
+  availabilityRules      AvailabilityRule[]
+  availabilityExceptions AvailabilityException[]
+  importBatches          ImportBatch[]
+  suppressions           Suppression[]
+  savedViews             SavedView[]
+}
+
+enum LeadSource {
+  EXTRACTOR
+  CSV
+  INBOUND
+  MANUAL
+  LEGACY
+}
+
+enum EmailKind {
+  NOMINATIVE
+  GENERIC
+  UNKNOWN
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  REPLIED
+  QUALIFIED
+  DISQUALIFIED
+  DO_NOT_CONTACT
+}
+
+enum DealStage {
+  QUALIFIED
+  MEETING_SET
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+}
+
+enum ActivityKind {
+  NOTE
+  CALL
+  EMAIL
+  MEETING
+  STATUS_CHANGE
+  SYSTEM
+}
+
+enum MeetingType {
+  DISCOVERY
+  DEMO
+  FOLLOW_UP
+}
+
+enum MeetingStatus {
+  SCHEDULED
+  CONFIRMED
+  COMPLETED
+  NO_SHOW
+  CANCELED
+  RESCHEDULED
+}
+
+enum MeetingOutcome {
+  QUALIFIED
+  FOLLOW_UP
+  LOST
+}
+
+enum ImportStatus {
+  RUNNING
+  DONE
+  FAILED
+}
+
+enum SuppressionReason {
+  UNSUBSCRIBED
+  BOUNCED
+  COMPLAINED
+  MANUAL
+}
+
+enum SavedViewEntity {
+  LEAD
+  DEAL
+  MEETING
+}
+
+/// A business. `externalId` is the stable identifier given by the source (Cleads Extractor) and makes imports replayable.
+model Company {
+  id             String     @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name           String
+  /// Lower-case host without "www.", the second deduplication key after externalId.
+  domain         String?
+  website        String?
+  phone          String?
+  email          String?
+  address        String?
+  city           String?
+  postalCode     String?
+  country        String     @default("FR")
+  sector         String?
+  siret          String?
+  rating         Float?
+  reviewCount    Int?
+  /// 0-100 completeness reported by the source.
+  completeness   Int?
+  source         LeadSource @default(MANUAL)
+  externalId     String?
+  externalSource String?
+  /// Raw useful fields kept for later enrichment; never read by business rules.
+  data           Json?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  contacts Contact[]
+  leads    Lead[]
+
+  @@unique([workspaceId, externalId])
+  @@index([workspaceId, domain])
+  @@index([workspaceId, name])
+}
+
+model Contact {
+  id                 String     @id @default(cuid())
+  workspaceId        String
+  workspace          Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  companyId          String?
+  company            Company?   @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  name               String?
+  jobTitle           String?
+  /// Stored lower-case (CHECK constraint).
+  email              String?
+  emailKind          EmailKind  @default(UNKNOWN)
+  phone              String?
+  doNotContact       Boolean    @default(false)
+  doNotContactReason String?
+  source             LeadSource @default(MANUAL)
+  /// Where and when the data was collected, and on which legal basis: required to answer an access or opposition request.
+  collectedFrom      String?
+  collectedAt        DateTime?
+  legalBasis         String?
+  /// Former appointment "client" account this contact was created from (idempotent backfill).
+  legacyUserId       String?    @unique
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  leads    Lead[]
+  meetings Meeting[]
+
+  @@unique([workspaceId, email])
+  @@index([workspaceId, companyId])
+}
+
+model ImportBatch {
+  id             String       @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  source         LeadSource
+  status         ImportStatus @default(RUNNING)
+  extractorJobId String?
+  createdById    String?
+  createdBy      User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  /// Search parameters or file name, for traceability.
+  params         Json?
+  total          Int          @default(0)
+  created        Int          @default(0)
+  existing       Int          @default(0)
+  skipped        Int          @default(0)
+  createdAt      DateTime     @default(now())
+  finishedAt     DateTime?
+
+  leads Lead[]
+
+  @@index([workspaceId, createdAt])
+  @@index([extractorJobId])
+}
+
+/// One prospect: a company, a contact, or both. A company has at most one lead.
+model Lead {
+  id              String       @id @default(cuid())
+  workspaceId     String
+  workspace       Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  companyId       String?
+  company         Company?     @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  contactId       String?
+  contact         Contact?     @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  ownerId         String?
+  owner           User?        @relation("LeadOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  status          LeadStatus   @default(NEW)
+  /// 0-100, rule based in V1; `scoreReasons` explains it.
+  score           Int          @default(0)
+  scoreReasons    Json?
+  /// Guided qualification answers (need, budget, decision maker, timing), all optional.
+  qualification   Json?
+  source          LeadSource   @default(MANUAL)
+  importBatchId   String?
+  importBatch     ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  lastContactedAt DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  deals      Deal[]
+  activities Activity[]
+  tasks      Task[]
+  meetings   Meeting[]
+
+  @@unique([workspaceId, companyId])
+  @@index([workspaceId, status])
+  @@index([workspaceId, ownerId, status])
+  @@index([workspaceId, score])
+  @@index([importBatchId])
+}
+
+model Deal {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  leadId          String
+  lead            Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  ownerId         String?
+  owner           User?     @relation("DealOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  stage           DealStage @default(QUALIFIED)
+  /// Amount in cents; optional, so weighted pipeline figures are only shown when it is filled in.
+  amountCents     Int?
+  currency        String    @default("EUR")
+  lostReason      String?
+  expectedCloseAt DateTime?
+  wonAt           DateTime?
+  lostAt          DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  activities Activity[]
+  tasks      Task[]
+  meetings   Meeting[]
+
+  @@index([workspaceId, stage])
+  @@index([workspaceId, ownerId, stage])
+  @@index([leadId])
+}
+
+/// Everything that happens on a lead or a deal, in order.
+model Activity {
+  id          String         @id @default(cuid())
+  workspaceId String
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  leadId      String?
+  lead        Lead?          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  dealId      String?
+  deal        Deal?          @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  actorId     String?
+  actor       User?          @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  /// USER for people; AGENT for service accounts (V2); SYSTEM for automatic events.
+  actorKind   AuditActorKind @default(USER)
+  kind        ActivityKind
+  body        String?
+  data        Json?
+  occurredAt  DateTime       @default(now())
+  createdAt   DateTime       @default(now())
+
+  @@index([leadId, occurredAt])
+  @@index([dealId, occurredAt])
+  @@index([workspaceId, occurredAt])
+}
+
+model Task {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  leadId      String?
+  lead        Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  dealId      String?
+  deal        Deal?     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  assigneeId  String?
+  assignee    User?     @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdById String?
+  createdBy   User?     @relation("TaskCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  title       String
+  dueAt       DateTime?
+  doneAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([assigneeId, doneAt, dueAt])
+  @@index([workspaceId, dueAt])
+}
+
+model Meeting {
+  id                  String          @id @default(cuid())
+  workspaceId         String
+  workspace           Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  hostId              String
+  host                User            @relation("MeetingHost", fields: [hostId], references: [id], onDelete: Restrict)
+  leadId              String?
+  lead                Lead?           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  contactId           String?
+  contact             Contact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  dealId              String?
+  deal                Deal?           @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  /// UTC instants; `timezone` (IANA) is where the host and the guest reason about the slot.
+  startsAt            DateTime
+  endsAt              DateTime
+  timezone            String          @default("Europe/Paris")
+  type                MeetingType     @default(DISCOVERY)
+  status              MeetingStatus   @default(SCHEDULED)
+  outcome             MeetingOutcome?
+  videoUrl            String?
+  notes               String?
+  /// "booking" (public page), "sdr", "manual" or "legacy".
+  source              String          @default("manual")
+  createdById         String?
+  createdBy           User?           @relation("MeetingCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  /// Former Appointment this meeting was created from (idempotent backfill).
+  legacyAppointmentId String?         @unique
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  @@index([hostId, startsAt])
+  @@index([workspaceId, startsAt])
+  @@index([leadId])
+}
+
+/// Weekly working interval of a host, in minutes from midnight in `timezone`. A day with a break has two rows.
+model AvailabilityRule {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  hostId      String
+  host        User      @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  /// 0 = Sunday ... 6 = Saturday (same as JavaScript's Date.getDay).
+  weekday     Int
+  startMinute Int
+  endMinute   Int
+  timezone    String    @default("Europe/Paris")
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([hostId, weekday])
+}
+
+/// A specific day that overrides the weekly rules: off (default) or open between the given minutes.
+model AvailabilityException {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  hostId      String
+  host        User      @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  /// Calendar day in the host's timezone, stored as UTC midnight.
+  date        DateTime  @db.Date
+  available   Boolean   @default(false)
+  startMinute Int?
+  endMinute   Int?
+  reason      String?
+  createdAt   DateTime  @default(now())
+
+  @@unique([hostId, date])
+}
+
+/// Addresses and domains that must never be contacted (unsubscribed, bounced, complained, manual).
+model Suppression {
+  id          String            @id @default(cuid())
+  workspaceId String
+  workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  email       String?
+  domain      String?
+  reason      SuppressionReason
+  source      String?
+  createdAt   DateTime          @default(now())
+
+  @@unique([workspaceId, email])
+  @@unique([workspaceId, domain])
+}
+
+model SavedView {
+  id          String          @id @default(cuid())
+  workspaceId String
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  ownerId     String
+  owner       User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  entity      SavedViewEntity
+  name        String
+  filters     Json
+  shared      Boolean         @default(false)
+  createdAt   DateTime        @default(now())
+
+  @@index([workspaceId, entity])
+  @@index([ownerId])
 }

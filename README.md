@@ -16,7 +16,9 @@ npm run dev
 | `npm run dev` | serveur de développement |
 | `npm run build` | `prisma generate`, migrations, puis build Next |
 | `npm run lint` | ESLint |
-| `npm run seed` | données initiales |
+| `npm run db:backfill-legacy` | copie les anciens clients, rendez-vous et disponibilités dans le CRM (simulation par défaut) |
+| `npm run db:seed-demo` | données fictives pour le développement (refuse une base distante) |
+| `npm test` | tests ; ceux qui touchent la base exigent `TEST_DATABASE_URL` |
 
 ## Accès et rôles
 

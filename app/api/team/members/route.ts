@@ -7,8 +7,8 @@ export const dynamic = "force-dynamic"
 
 export async function GET() {
   try {
-    await requirePermission("team:read")
-    return NextResponse.json(await listMembers())
+    const { user } = await requirePermission("team:read")
+    return NextResponse.json(await listMembers(user.workspaceId))
   } catch (error) {
     return handleError(error)
   }

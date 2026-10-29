@@ -386,6 +386,9 @@ Auth.js v5, invitation par email avec lien signé, désactivation, matrice `lib/
 - **Critères** : tests de la matrice complète (chaque rôle × chaque action), aucun accès aux données d'un autre périmètre par l'API, journal lisible.
 
 ### E3 — Modèle de données et migration · **M**
+> **Avancement (branche `refactor/e0-cleanup`)** — fait : schéma CRM (espace de travail, entreprises, contacts, fiches, opportunités, activités, tâches, rendez-vous, disponibilités, imports, suppressions, vues enregistrées) avec contraintes en base, deux migrations testées sur une base peuplée, script de reprise rejouable avec simulation et vérifications (« aucun rendez-vous futur perdu »), données de démonstration fictives. Détails et procédures : [DATA_MODEL.md](DATA_MODEL.md).
+> **Écarts assumés** : (1) tables d'emailing reportées à E9 ; (2) pas de table `Membership` : `User.workspaceId` suffit en mono-espace ; (3) la société d'émission des factures est conservée (`BillingCompany`) au lieu d'être supprimée : les factures doivent être gardées ; (4) la suppression des tables du blog est un script à part (`prisma/pending/`), à lancer après un dump ; (5) l'ancien `prisma/seed.ts`, qui effaçait tous les comptes et contenait un mot de passe administrateur en clair, est supprimé.
+
 Schéma Prisma du chapitre 5, migrations, script de reprise des rendez-vous et utilisateurs existants, données de démonstration anonymisées.
 - **Critères** : migration rejouable sur une copie, comptes avant / après contrôlés, aucune perte de rendez-vous futur.
 

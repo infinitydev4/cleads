@@ -13,6 +13,7 @@ declare module "next-auth" {
       id: string
       role: Role
       isTemporaryPassword: boolean
+      workspaceId?: string | null
     }
   }
 }
