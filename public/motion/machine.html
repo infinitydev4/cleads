@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Acquisition B2B — Cleads</title>
+    <style>
+      @font-face {
+        font-family: Inter;
+        src: url("../fonts/Inter-Regular.ttf") format("truetype");
+        font-weight: 400;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: Inter;
+        src: url("../fonts/Inter-Bold.ttf") format("truetype");
+        font-weight: 700 900;
+        font-display: swap;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #0b1523;
+        color: #fbfbff;
+        font-family: Inter, Arial, sans-serif;
+      }
+      .composition {
+        position: relative;
+        width: 1280px;
+        height: 720px;
+        transform-origin: top left;
+        overflow: hidden;
+        background: #0b1523;
+      }
+      .scene-content {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 28px;
+        width: 100%;
+        height: 100%;
+        padding: 62px 65px 52px;
+        position: relative;
+        z-index: 1;
+      }
+      .hero-art {
+        position: absolute;
+        width: 1280px;
+        height: 480px;
+        object-fit: cover;
+        object-position: center;
+        top: 0;
+        left: 0;
+        opacity: 0.38;
+      }
+      .shade {
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(0deg, #0b1523 35%, #0b152300 100%),
+          linear-gradient(90deg, #0b1523, #0b152300);
+      }
+      .glow {
+        position: absolute;
+        width: 620px;
+        height: 620px;
+        right: -180px;
+        top: -220px;
+        border-radius: 50%;
+        background: radial-gradient(circle, #d7ff001c, transparent 70%);
+      }
+      .kicker {
+        font-size: 15px;
+        letter-spacing: 0.12em;
+        color: #d7ff00;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+      .headline {
+        font-size: 75px;
+        font-weight: 800;
+        line-height: 1.02;
+        letter-spacing: -4px;
+        margin: 20px 0 15px;
+        max-width: 850px;
+      }
+      .headline span {
+        color: #d7ff00;
+      }
+      .lead {
+        font-size: 23px;
+        line-height: 1.6;
+        color: #e0e7f2;
+        max-width: 800px;
+        margin: 0;
+      }
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 22px;
+        position: relative;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .steps:before {
+        content: "";
+        position: absolute;
+        left: 8%;
+        right: 8%;
+        top: 62px;
+        height: 2px;
+        background: #d7ff0040;
+      }
+      .card {
+        position: relative;
+        min-height: 190px;
+        border: 1px solid #a0b7d72e;
+        border-radius: 18px;
+        background: #142238ed;
+        padding: 23px;
+        display: flex;
+        flex-direction: column;
+        gap: 13px;
+      }
+      .num {
+        display: grid;
+        place-items: center;
+        width: 43px;
+        height: 43px;
+        border-radius: 12px;
+        background: #d7ff00;
+        color: #152000;
+        font-size: 18px;
+        font-weight: 700;
+      }
+      .card h2 {
+        font-size: 22px;
+        letter-spacing: -0.7px;
+        line-height: 1.2;
+        margin: 0;
+        color: #f7faff;
+      }
+      .card p {
+        font-size: 15px;
+        line-height: 1.5;
+        margin: 0;
+        color: #c9d4e7;
+      }
+      .footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 16px;
+        color: #d8e3f3;
+        border-top: 1px solid #ffffff24;
+        padding-top: 20px;
+        gap: 25px;
+      }
+      .footer b {
+        font-weight: 700;
+        color: #d7ff00;
+      }
+      .progress {
+        width: 220px;
+        height: 4px;
+        background: #ffffff20;
+        border-radius: 5px;
+        overflow: hidden;
+      }
+      .progress span {
+        display: block;
+        width: 100%;
+        height: 100%;
+        background: #d7ff00;
+        transform-origin: left;
+      }
+      .brand {
+        font-size: 22px;
+        font-weight: 800;
+        color: #fbfbff;
+        letter-spacing: -1px;
+      }
+      .brand span {
+        color: #d7ff00;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="cleads-machine"
+      class="composition"
+      data-composition-id="cleads-machine"
+      data-start="0"
+      data-duration="18"
+      data-width="1280"
+      data-height="720"
+    >
+      <img
+        id="office"
+        class="hero-art"
+        src="../images/home/hero.webp"
+        alt=""
+        data-start="0"
+        data-duration="18"
+        data-track-index="0"
+        data-layout-ignore
+      />
+      <div class="shade" data-layout-ignore></div>
+      <div class="glow" data-layout-ignore></div>
+      <div class="scene-content">
+        <div>
+          <div class="kicker">Experts + agents IA · Un seul cap</div>
+          <h1 class="headline">
+            Votre prochaine étape ?<br /><span
+              >Une acquisition qui avance.</span
+            >
+          </h1>
+          <p class="lead">
+            Une équipe, des outils connectés et une méthode.<br />Du premier
+            contact à votre prochaine opportunité.
+          </p>
+        </div>
+        <ol class="steps">
+          <li
+            id="audit"
+            class="card"
+            data-start="0"
+            data-duration="18"
+            data-track-index="1"
+          >
+            <span class="num">01</span>
+            <h2>Audit & stratégie</h2>
+            <p>Les bonnes cibles.<br />Les priorités claires.</p>
+          </li>
+          <li
+            id="acquisition"
+            class="card"
+            data-start="0"
+            data-duration="18"
+            data-track-index="2"
+          >
+            <span class="num">02</span>
+            <h2>Acquisition</h2>
+            <p>Les bons messages.<br />Les canaux adaptés.</p>
+          </li>
+          <li
+            id="qualification"
+            class="card"
+            data-start="0"
+            data-duration="18"
+            data-track-index="3"
+          >
+            <span class="num">03</span>
+            <h2>Qualification</h2>
+            <p>Les échanges utiles.<br />Les opportunités triées.</p>
+          </li>
+          <li
+            id="results"
+            class="card"
+            data-start="0"
+            data-duration="18"
+            data-track-index="4"
+          >
+            <span class="num">04</span>
+            <h2>Pilotage & résultats</h2>
+            <p>Un pipeline suivi.<br />Des actions optimisées.</p>
+          </li>
+        </ol>
+        <div class="footer">
+          <span class="brand">Cleads<span>.</span></span
+          ><span
+            >Prêt à construire la suite ?
+            <b>Parlons de votre croissance.</b></span
+          >
+          <div class="progress"><span></span></div>
+        </div>
+      </div>
+    </div>
+    <script src="./gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({
+        paused: true,
+        onComplete: () =>
+          parent.postMessage(
+            { type: "cleads-motion-complete" },
+            location.origin,
+          ),
+      });
+      tl.from(".kicker", { opacity: 0, y: 12, duration: 0.5 }, 0)
+        .from(
+          ".headline",
+          { opacity: 0, y: 25, duration: 0.8, ease: "power3.out" },
+          0.15,
+        )
+        .from(".lead", { opacity: 0, y: 18, duration: 0.65 }, 0.45)
+        .from(
+          "#audit",
+          {
+            opacity: 0,
+            y: 30,
+            rotationY: -10,
+            duration: 0.7,
+            ease: "power3.out",
+          },
+          1.2,
+        )
+        .from(
+          "#acquisition",
+          {
+            opacity: 0,
+            y: 30,
+            rotationY: -10,
+            duration: 0.7,
+            ease: "power3.out",
+          },
+          4.3,
+        )
+        .from(
+          "#qualification",
+          {
+            opacity: 0,
+            y: 30,
+            rotationY: -10,
+            duration: 0.7,
+            ease: "power3.out",
+          },
+          7.4,
+        )
+        .from(
+          "#results",
+          {
+            opacity: 0,
+            y: 30,
+            rotationY: -10,
+            duration: 0.7,
+            ease: "power3.out",
+          },
+          10.5,
+        )
+        .from(".footer", { opacity: 0, y: 14, duration: 0.7 }, 13.3)
+        .from(".progress span", { scaleX: 0, duration: 18, ease: "none" }, 0)
+        .to(".glow", { x: -35, y: 15, duration: 18, ease: "sine.inOut" }, 0)
+        .to("#results", { borderColor: "#d7ff00", duration: 0.7 }, 13.8)
+        .to(".headline span", { color: "#eaff8f", duration: 1 }, 16);
+      window.__timelines["cleads-machine"] = tl;
+      function fit() {
+        document.querySelector(".composition").style.transform =
+          "scale(" + Math.min(innerWidth / 1280, innerHeight / 720) + ")";
+      }
+      fit();
+      addEventListener("resize", fit);
+      const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+      if (reduced.matches) tl.progress(1).pause();
+      else tl.seek(1.9).pause();
+      if (
+        !reduced.matches &&
+        new URLSearchParams(location.search).get("autoplay") === "1"
+      )
+        tl.play();
+      addEventListener("message", (event) => {
+        if (
+          event.origin !== location.origin ||
+          event.data?.type !== "cleads-motion"
+        )
+          return;
+        if (event.data.action === "pause") tl.pause();
+        if (event.data.action === "play") {
+          if (tl.progress() === 1) tl.restart();
+          else tl.play();
+        }
+      });
+    </script>
+  </body>
+</html>

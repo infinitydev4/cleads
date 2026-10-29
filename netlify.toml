@@ -1,0 +1,16 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[functions]
+  directory = "netlify/functions"
+  # On garde seulement prisma pour l'accès à la base de données
+  # On supprime les références aux fichiers .env car ils causent des erreurs
+  included_files = ["prisma/**"]
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[[cron]]
+  schedule = "0 9 * * *"
+  command = "curl -X POST https://cleads.fr/api/cron/appointment-reminders -H 'Authorization: Bearer ${CRON_SECRET}'" 
