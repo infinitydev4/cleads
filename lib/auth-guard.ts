@@ -1,14 +1,13 @@
-import { getServerSession } from "next-auth"
 import { NextResponse } from "next/server"
-import { authOptions } from "@/app/api/auth/options"
+import { getCurrentUser } from "@/lib/auth/guard"
+import { can } from "@/lib/rbac"
+import { getSession } from "@/lib/auth/session"
 
-/**
- * Session of an administrator, or null. Interim guard: the CRM role matrix
- * (lib/rbac, epic E2) replaces it.
- */
+/** Session of a member allowed into the pre-CRM back-office (the owner), or null. */
 export async function getAdminSession() {
-  const session = await getServerSession(authOptions)
-  return session?.user?.role === "ADMIN" ? session : null
+  const user = await getCurrentUser()
+  if (!user || !can(user.role, "legacy:access")) return null
+  return getSession()
 }
 
 export const unauthorized = () => NextResponse.json({ error: "Non autorisé" }, { status: 401 })

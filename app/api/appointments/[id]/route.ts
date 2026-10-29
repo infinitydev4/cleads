@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/app/api/auth/options"
+import { getSession } from "@/lib/auth/session"
 
 export const dynamic = 'force-dynamic'
 
@@ -28,7 +27,7 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
   const params = await props.params;
   try {
     // Vérifier l'authentification
-    const session = await getServerSession(authOptions)
+    const session = await getSession()
     if (!session?.user?.email) {
       return new NextResponse("Non autorisé", { status: 401 })
     }

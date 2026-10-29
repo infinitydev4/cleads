@@ -3,6 +3,13 @@
 import { cloneElement, isValidElement, useId } from "react"
 import { cn } from "@/lib/utils"
 
+export interface FieldProps {
+  id: string
+  "aria-invalid"?: true
+  "aria-describedby"?: string
+  required?: boolean
+}
+
 /**
  * Label above the control, optional hint, error announced to assistive technology.
  * Injects id / aria-invalid / aria-describedby into its single child.
@@ -20,7 +27,8 @@ export function FormField({
   error?: string
   required?: boolean
   className?: string
-  children: React.ReactElement<Record<string, unknown>>
+  /** One element (gets the ids), or a function when the control is a composite (Select trigger). */
+  children: React.ReactElement<Record<string, unknown>> | ((props: FieldProps) => React.ReactNode)
 }) {
   const id = useId()
   const hintId = `${id}-hint`
@@ -33,8 +41,10 @@ export function FormField({
         {label}
         {required && <span aria-hidden="true" className="ml-0.5 text-destructive-text">*</span>}
       </label>
-      {isValidElement(children) &&
-        cloneElement(children, { id, "aria-invalid": error ? true : undefined, "aria-describedby": describedBy, required })}
+      {typeof children === "function"
+        ? children({ id, "aria-invalid": error ? true : undefined, "aria-describedby": describedBy, required })
+        : isValidElement(children) &&
+          cloneElement(children, { id, "aria-invalid": error ? true : undefined, "aria-describedby": describedBy, required })}
       {hint && !error && (
         <p id={hintId} className="text-xs text-muted-foreground">
           {hint}

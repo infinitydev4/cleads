@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { Resend } from "resend"
+import { getResend } from "@/lib/resend"
 import { AppointmentConfirmation } from "@/components/emails/AppointmentConfirmation"
 import { generatePassword } from "@/lib/utils"
 import { format, addMinutes } from "date-fns"
@@ -8,7 +8,6 @@ import { fr } from "date-fns/locale"
 import { hash } from "bcryptjs"
 import { getAdminSession, unauthorized } from "@/lib/auth-guard"
 
-const resend = new Resend(process.env.RESEND_API_KEY)
 
 function generateCalendarLinks(appointment: any) {
   const startTime = new Date(appointment.date)
@@ -81,6 +80,8 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
     })
 
     // Envoyer l'email
+    const resend = getResend()
+    if (!resend) return NextResponse.json({ error: "Envoi d’email non configuré" }, { status: 503 })
     const { data, error } = await resend.emails.send({
       from: `Cleads <${process.env.RESEND_FROM_EMAIL}>`,
       to: [appointment.email],

@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
-import { authOptions } from "../../auth/options"
 import { prisma } from "@/lib/prisma"
 import { uploadToS3 } from "@/lib/s3"
 import { v4 as uuidv4 } from "uuid"
+import { getSession } from "@/lib/auth/session"
 
 export async function POST(req: Request) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await getSession()
     if (!session?.user?.email) {
       return new NextResponse("Non autorisé", { status: 401 })
     }

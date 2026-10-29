@@ -18,6 +18,15 @@ npm run dev
 | `npm run lint` | ESLint |
 | `npm run seed` | données initiales |
 
+## Accès et rôles
+
+L'accès au CRM se donne par invitation (`/app/settings/team`) : la personne choisit son mot de passe via un lien à usage unique de 7 jours. Rôles : propriétaire, manager, SDR, closer, lecteur ; la matrice des droits est dans `lib/rbac.ts` et ses tests. Les droits sont vérifiés côté serveur (`lib/auth/guard.ts`), jamais seulement dans l'interface. Les connexions et changements d'accès sont dans le journal d'audit.
+
+```bash
+# Tests ; ceux qui touchent la base ne tournent qu'avec une base jetable (jamais celle de développement)
+TEST_DATABASE_URL=postgresql://… npm test
+```
+
 ## Structure
 
 - `app/` : routes (landing `/`, pages légales, `/auth`, `/dashboard`, API).

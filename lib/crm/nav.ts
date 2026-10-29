@@ -8,11 +8,13 @@ import {
   Palette,
   Search,
   Send,
-  Settings,
+  ScrollText,
   Sun,
+  UserCog,
   Users,
   type LucideIcon,
 } from "lucide-react"
+import { can, type Permission } from "@/lib/rbac"
 import type { CrmRole } from "./roles"
 
 export interface NavItem {
@@ -20,8 +22,8 @@ export interface NavItem {
   label: string
   href: string
   icon: LucideIcon
-  /** Roles allowed to see the entry. */
-  roles: readonly CrmRole[]
+  /** Permission required to see the entry (null = every signed-in member). */
+  permission: Permission | null
   /** Planned module: shown greyed out until its epic ships. */
   soon?: boolean
   /** Keywords the command palette also matches. */
@@ -34,48 +36,44 @@ export interface NavGroup {
   items: NavItem[]
 }
 
-const ALL: readonly CrmRole[] = ["OWNER", "MANAGER", "SDR", "CLOSER", "VIEWER"]
-const SALES: readonly CrmRole[] = ["OWNER", "MANAGER", "SDR", "CLOSER"]
-const PROSPECTING: readonly CrmRole[] = ["OWNER", "MANAGER", "SDR"]
-const MANAGEMENT: readonly CrmRole[] = ["OWNER", "MANAGER"]
-
 export const navGroups: NavGroup[] = [
   {
     id: "main",
-    items: [{ id: "today", label: "Aujourd’hui", href: "/app", icon: Sun, roles: ALL, keywords: ["accueil", "tâches", "relances"] }],
+    items: [{ id: "today", label: "Aujourd’hui", href: "/app", icon: Sun, permission: null, keywords: ["accueil", "tâches", "relances"] }],
   },
   {
     id: "prospecting",
     label: "Prospection",
     items: [
-      { id: "leads", label: "Prospects", href: "/app/leads", icon: Users, roles: [...ALL], soon: true, keywords: ["contacts", "entreprises"] },
-      { id: "search", label: "Recherche", href: "/app/search", icon: Search, roles: PROSPECTING, soon: true, keywords: ["extractor", "google maps"] },
-      { id: "sequences", label: "Séquences", href: "/app/sequences", icon: Send, roles: PROSPECTING, soon: true, keywords: ["relances", "emails"] },
-      { id: "mailbox", label: "Emails", href: "/app/mailbox", icon: Mail, roles: SALES, soon: true, keywords: ["boîte", "envoi"] },
+      { id: "leads", label: "Prospects", href: "/app/leads", icon: Users, permission: "lead:read", soon: true, keywords: ["contacts", "entreprises"] },
+      { id: "search", label: "Recherche", href: "/app/search", icon: Search, permission: "search:run", soon: true, keywords: ["extractor", "google maps"] },
+      { id: "sequences", label: "Séquences", href: "/app/sequences", icon: Send, permission: "sequence:manage", soon: true, keywords: ["relances", "emails"] },
+      { id: "mailbox", label: "Emails", href: "/app/mailbox", icon: Mail, permission: "email:send", soon: true, keywords: ["boîte", "envoi"] },
     ],
   },
   {
     id: "conversion",
     label: "Conversion",
     items: [
-      { id: "pipeline", label: "Pipeline", href: "/app/pipeline", icon: Handshake, roles: ALL, soon: true, keywords: ["opportunités", "deals"] },
-      { id: "meetings", label: "Rendez-vous", href: "/app/meetings", icon: CalendarDays, roles: ALL, soon: true, keywords: ["agenda", "calendrier"] },
+      { id: "pipeline", label: "Pipeline", href: "/app/pipeline", icon: Handshake, permission: "deal:read", soon: true, keywords: ["opportunités", "deals"] },
+      { id: "meetings", label: "Rendez-vous", href: "/app/meetings", icon: CalendarDays, permission: "meeting:read", soon: true, keywords: ["agenda", "calendrier"] },
     ],
   },
   {
     id: "insight",
     label: "Pilotage",
-    items: [{ id: "reports", label: "Rapports", href: "/app/reports", icon: BarChart3, roles: ALL, soon: true, keywords: ["entonnoir", "statistiques"] }],
+    items: [{ id: "reports", label: "Rapports", href: "/app/reports", icon: BarChart3, permission: "report:read", soon: true, keywords: ["entonnoir", "statistiques"] }],
   },
 ]
 
 export const footerItems: NavItem[] = [
-  { id: "settings", label: "Réglages", href: "/app/settings", icon: Settings, roles: MANAGEMENT, soon: true, keywords: ["équipe", "profil"] },
-  { id: "design", label: "Design system", href: "/app/design", icon: Palette, roles: ["OWNER"], keywords: ["composants", "catalogue"] },
-  { id: "legacy", label: "Ancien back-office", href: "/dashboard", icon: CalendarClock, roles: ["OWNER"], keywords: ["rendez-vous", "clients"] },
+  { id: "team", label: "Équipe", href: "/app/settings/team", icon: UserCog, permission: "team:read", keywords: ["membres", "rôles", "invitations", "accès"] },
+  { id: "audit", label: "Journal d’audit", href: "/app/settings/audit", icon: ScrollText, permission: "audit:read", keywords: ["historique", "sécurité", "connexions"] },
+  { id: "design", label: "Design system", href: "/app/design", icon: Palette, permission: "admin:tools", keywords: ["composants", "catalogue"] },
+  { id: "legacy", label: "Ancien back-office", href: "/dashboard", icon: CalendarClock, permission: "legacy:access", keywords: ["rendez-vous", "clients"] },
 ]
 
-export const canSee = (item: NavItem, role: CrmRole) => item.roles.includes(role)
+export const canSee = (item: NavItem, role: CrmRole) => item.permission === null || can(role, item.permission)
 
 /** Navigation visible for a role; empty groups disappear. */
 export function navFor(role: CrmRole): { groups: NavGroup[]; footer: NavItem[] } {

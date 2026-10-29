@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server"
 import { pusher } from "@/lib/pusher"
-import { getServerSession } from "next-auth"
-import { authOptions } from "../../auth/options"
+import { getSession } from "@/lib/auth/session"
 
 export async function POST(request: Request) {
-  const session = await getServerSession(authOptions)
+  const session = await getSession()
   
   if (!session?.user?.email) {
     return new NextResponse("Non autorisé", { status: 401 })

@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server"
-import { Resend } from "resend"
+import { getResend } from "@/lib/resend"
 import { notifications } from "@/lib/notifications"
 import { prisma } from "@/lib/prisma"
 
-const resend = new Resend(process.env.RESEND_API_KEY)
 
 const escapeHtml = (value: string) =>
   value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
@@ -35,6 +34,11 @@ export async function POST(request: Request) {
     }
 
     // Envoyer l'email via Resend
+    const resend = getResend()
+    if (!resend) {
+      console.error("[CONTACT_FORM] RESEND_API_KEY is not set: the request was not forwarded")
+      return NextResponse.json({ error: "Envoi indisponible pour le moment" }, { status: 503 })
+    }
     await resend.emails.send({
       from: "Cleads <contact@cleads.fr>",
       to: "contact@cleads.fr",
@@ -63,7 +67,7 @@ export async function POST(request: Request) {
 
     // Envoyer une notification aux administrateurs
     const admins = await prisma.user.findMany({
-      where: { role: "ADMIN" },
+      where: { role: { in: ["OWNER", "MANAGER"] }, active: true },
       select: { id: true },
     })
 

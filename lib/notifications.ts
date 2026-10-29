@@ -1,8 +1,7 @@
 import { pusher } from "./pusher"
 import { prisma } from "./prisma"
-import { Resend } from "resend"
+import { getResend } from "@/lib/resend"
 
-const resend = new Resend(process.env.RESEND_API_KEY)
 
 interface SendNotificationParams {
   userId: string
@@ -55,7 +54,7 @@ export async function sendNotification({
       })
 
       if (user?.email) {
-        await resend.emails.send({
+        await getResend()?.emails.send({
           from: "Cleads <notifications@cleads.fr>",
           to: user.email,
           subject: title,

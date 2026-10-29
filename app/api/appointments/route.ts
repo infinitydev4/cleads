@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getServerSession } from "next-auth"
-import { authOptions } from "../auth/options"
 import { AppointmentType, AppointmentStatus } from "@/types/appointments"
 import { notifications } from "@/lib/notifications"
 import { convertToUTC } from "@/lib/date-utils"
@@ -9,6 +7,7 @@ import { headers } from "next/headers"
 import { generatePassword } from "@/lib/utils"
 import { hash } from "bcryptjs"
 import { getAdminSession, unauthorized } from "@/lib/auth-guard"
+import { getSession } from "@/lib/auth/session"
 
 export const dynamic = 'force-dynamic'
 
@@ -179,7 +178,7 @@ export async function GET(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await getSession()
     if (!session?.user?.email) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 })
     }
@@ -218,7 +217,7 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await getSession()
     if (!session?.user?.email) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 })
     }

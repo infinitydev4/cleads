@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/app/api/auth/options"
 import { prisma } from "@/lib/prisma"
+import { getAdminSession } from "@/lib/auth-guard"
 
 export async function PATCH(request: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
-    const session = await getServerSession(authOptions)
-    if (!session?.user || session.user.role !== "ADMIN") {
+    if (!(await getAdminSession())) {
       return NextResponse.json(
         { error: "Non autorisé" },
         { status: 401 }

@@ -47,7 +47,7 @@ export default function LoginPage() {
         email: values.email,
         password: values.password,
         redirect: true,
-        callbackUrl: "/dashboard"
+        callbackUrl: "/app"
       })
 
       if (result?.error) {
@@ -73,7 +73,7 @@ export default function LoginPage() {
           <div className="flex flex-col items-center mb-8">
             <Image src="/logo-white.svg" alt="Logo" width={150} height={40} className="mb-6" />
             <h1 className="text-2xl font-bold text-white">Connexion</h1>
-            <p className="text-gray-400 text-sm">Accédez à votre dashboard</p>
+            <p className="text-gray-400 text-sm">Accédez à votre espace Cleads</p>
           </div>
 
           {error && (

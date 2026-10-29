@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
 import { prisma } from "@/lib/prisma"
-import { authOptions } from "../auth/options"
+import { getSession } from "@/lib/auth/session"
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: Request) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await getSession()
     if (!session?.user) {
       return new NextResponse("Non autorisé", { status: 401 })
     }
@@ -45,7 +44,7 @@ export async function POST(req: Request) {
 
 export async function GET(req: Request) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await getSession()
     if (!session?.user?.id) {
       console.log("Session non autorisée")
       return NextResponse.json(

@@ -22,6 +22,11 @@ model User {
   ip                   String?
   isTemporaryPassword  Boolean               @default(false)
   favorite             Boolean               @default(false)
+  /// A deactivated member can no longer sign in; history stays attached to the account.
+  active               Boolean               @default(true)
+  lastLoginAt          DateTime?
+  auditLogs            AuditLog[]
+  invitationsSent      Invitation[]
   accounts             Account[]
   appointments         Appointment[]
   articles             Article[]
@@ -393,8 +398,21 @@ model ArticleSchedule {
 }
 
 enum Role {
+  // Legacy: USER = former appointment "client" (becomes a Contact in E3), ADMIN = migrated to OWNER.
   USER
   ADMIN
+  // CRM staff roles (docs/crm-v1/PLAN.md section 4).
+  OWNER
+  MANAGER
+  SDR
+  CLOSER
+  VIEWER
+}
+
+enum AuditActorKind {
+  USER
+  AGENT
+  SYSTEM
 }
 
 enum AppointmentStatus {
@@ -452,4 +470,41 @@ enum ScheduleFrequency {
   WEEKLY
   BIWEEKLY
   MONTHLY
+}
+
+/// One-time link that gives a person access to the CRM with a given role. Only the SHA-256 of the token is stored.
+model Invitation {
+  id          String    @id @default(cuid())
+  email       String
+  role        Role
+  tokenHash   String    @unique
+  invitedById String
+  invitedBy   User      @relation(fields: [invitedById], references: [id], onDelete: Cascade)
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([email])
+}
+
+/// Who did what, when. Written by people, agents and the system; never updated.
+model AuditLog {
+  id         String         @id @default(cuid())
+  actorId    String?
+  actor      User?          @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorKind  AuditActorKind @default(USER)
+  action     String
+  entityType String?
+  entityId   String?
+  /// Email or other identifier the action is about when there is no entity (failed sign-in, invitation).
+  subject    String?
+  metadata   Json?
+  ip         String?
+  createdAt  DateTime       @default(now())
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+  @@index([entityType, entityId])
+  @@index([action, subject, createdAt])
 }

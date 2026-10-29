@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getServerSession } from "next-auth"
-import { authOptions } from "../../auth/options"
 import { Role } from "@prisma/client"
 import { getAdminSession, unauthorized } from "@/lib/auth-guard"
+import { getSession } from "@/lib/auth/session"
 
 export const dynamic = 'force-dynamic'
 
@@ -72,7 +71,7 @@ export async function GET(req: Request, props: { params: Promise<{ id: string }>
 export async function DELETE(req: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
-    const session = await getServerSession(authOptions)
+    const session = await getSession()
     if (!session?.user) {
       return NextResponse.json(
         { error: "Non autorisé" },

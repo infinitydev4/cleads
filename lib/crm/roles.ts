@@ -1,6 +1,6 @@
 import type { Role as PrismaRole } from "@prisma/client"
 
-/** CRM roles (see docs/crm-v1/PLAN.md §4). The database still stores USER / ADMIN until epic E2. */
+/** CRM staff roles (docs/crm-v1/PLAN.md section 4), stored in the `Role` enum next to two legacy values. */
 export const CRM_ROLES = ["OWNER", "MANAGER", "SDR", "CLOSER", "VIEWER"] as const
 export type CrmRole = (typeof CRM_ROLES)[number]
 
@@ -12,9 +12,22 @@ export const ROLE_LABELS: Record<CrmRole, string> = {
   VIEWER: "Lecteur",
 }
 
-/** Interim mapping: an ADMIN account is the owner. Anything else gets the least-privileged role. */
-export function toCrmRole(role: PrismaRole | CrmRole | string | undefined | null): CrmRole {
+export const ROLE_DESCRIPTIONS: Record<CrmRole, string> = {
+  OWNER: "Accès complet : équipe, boîtes d’envoi, suppression de données.",
+  MANAGER: "Voit et réattribue tout, pilote l’équipe, exporte les données.",
+  SDR: "Prospecte et qualifie : ses prospects et le pool non attribué.",
+  CLOSER: "Convertit : ses rendez-vous et ses opportunités.",
+  VIEWER: "Lecture seule des prospects, du pipeline et des rapports.",
+}
+
+export const isStaffRole = (role: string | null | undefined): role is CrmRole =>
+  !!role && (CRM_ROLES as readonly string[]).includes(role)
+
+/**
+ * Role to use for a stored value. ADMIN (legacy) is treated as OWNER defensively;
+ * the migration already converts those rows. USER (a former appointment "client") has no CRM access.
+ */
+export function toCrmRole(role: PrismaRole | string | undefined | null): CrmRole | null {
   if (role === "ADMIN") return "OWNER"
-  if (role && (CRM_ROLES as readonly string[]).includes(role)) return role as CrmRole
-  return "VIEWER"
+  return isStaffRole(role) ? role : null
 }
