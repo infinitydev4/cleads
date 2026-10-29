@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { Role } from "@prisma/client"
+import { getAdminSession, unauthorized } from "@/lib/auth-guard"
 
 export async function GET() {
+  if (!(await getAdminSession())) return unauthorized()
   try {
-    console.log("Fetching clients...")
-    
     const users = await prisma.user.findMany({
       where: {
         role: Role.USER
@@ -19,8 +19,6 @@ export async function GET() {
         }
       }
     })
-
-    console.log("Found clients:", users)
 
     const formattedClients = users.map(user => {
       const lastAppointment = user.appointments[0]

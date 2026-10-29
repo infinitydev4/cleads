@@ -26,7 +26,7 @@ export function Header({ title, onOpenSidebar }: HeaderProps) {
   const { notifications, unreadCount, markAllAsRead } = useNotifications()
 
   const handleSignOut = async () => {
-    await signOut({ callbackUrl: "/login" })
+    await signOut({ callbackUrl: "/auth/login" })
   }
 
   return (

@@ -4,7 +4,6 @@ import { Inter } from "next/font/google"
 import "./globals.css"
 import GoogleTagManagerWrapper from "@/components/analytics/GoogleTagManagerWrapper"
 import GoogleTagManagerNoScript from "@/components/analytics/GoogleTagManagerNoScript"
-import { ConversionFunnel } from "@/components/tracking/ConversionFunnel"
 import { Providers } from "./providers"
 import ConditionalLayout from "../components/layout/conditional-layout"
 import { CookieConsent } from "@/components/consent/CookieConsent"
@@ -15,8 +14,8 @@ const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "https://cleads.fr"),
-  title: "Cleads - Landing Pages qui Convertissent",
-  description: "Création de Landing Page en 72 heures. Copywriting adapté à votre audience. Des pages qui persuadent même les plus frileux de vos prospects.",
+  title: "Cleads — Acquisition B2B externalisée et agents IA",
+  description: "Transformez votre prospection en opportunités commerciales. Une équipe dédiée, une acquisition multicanale et des agents IA sur mesure.",
   icons: {
     icon: [
       { url: "/favicon.svg", type: "image/svg+xml" },
@@ -49,7 +48,6 @@ export default function RootLayout({
         inter.className
       )}>
         <GoogleTagManagerNoScript />
-        <ConversionFunnel />
         <Providers>
           <ConditionalLayout>{children}</ConditionalLayout>
           <CookieConsent />

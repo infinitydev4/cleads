@@ -18,8 +18,6 @@ import {
 } from "date-fns"
 import { cn } from "@/lib/utils"
 import { Button } from "./button"
-import { useConversionTracking } from "@/hooks/useConversionTracking"
-import { TrackedButton } from "@/components/tracking/TrackedButton"
 import { AppointmentStatus, AppointmentType } from "@prisma/client"
 
 export interface Appointment {
@@ -39,7 +37,6 @@ interface ScheduleCalendarProps {
 }
 
 export function ScheduleCalendar({ appointments, onAddAppointment }: ScheduleCalendarProps) {
-  const { trackConversion } = useConversionTracking()
   const [currentDate, setCurrentDate] = React.useState(new Date())
   const [view, setView] = React.useState<"day" | "week" | "month">("week")
 
@@ -119,27 +116,8 @@ export function ScheduleCalendar({ appointments, onAddAppointment }: ScheduleCal
     }
   }
 
-  const handleDateSelect = (date: Date) => {
-    trackConversion({
-      event: "date_select",
-      action: "select",
-      category: "Calendar",
-      label: "date_selection",
-      additionalParams: {
-        date: date.toISOString(),
-        view: view,
-      }
-    })
-  }
-
   const handleViewChange = (newView: "day" | "week" | "month") => {
     setView(newView)
-    trackConversion({
-      event: "view_change",
-      action: "change",
-      category: "Calendar",
-      label: newView,
-    })
   }
 
   const renderMonthView = () => {
@@ -209,7 +187,6 @@ export function ScheduleCalendar({ appointments, onAddAppointment }: ScheduleCal
                     !isCurrentMonth && "bg-gray-900/50",
                     isSameDay(day, new Date()) && "bg-[#BFFF00]/10"
                   )}
-                  onClick={() => handleDateSelect(day)}
                 >
                   <div className="text-sm font-medium mb-2 text-center">
                     <span className={cn(
@@ -394,16 +371,14 @@ export function ScheduleCalendar({ appointments, onAddAppointment }: ScheduleCal
             </Button>
           </div>
 
-          <TrackedButton
+          <Button
             onClick={onAddAppointment}
-            trackingName="add_appointment"
-            location="calendar"
             className="hover:bg-[#BFFF00] hover:text-black"
-            size = "sm"
+            size="sm"
           >
             <Plus className="h-4 w-4 mr-2" />
             Ajouter
-          </TrackedButton>
+          </Button>
         </div>
       </div>
 

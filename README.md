@@ -1,36 +1,28 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Cleads
 
-## Getting Started
+Site vitrine (une seule page marketing) et back-office de prospection. Le CRM V1 est en construction : voir [docs/crm-v1/PLAN.md](docs/crm-v1/PLAN.md).
 
-First, run the development server:
+## Démarrer
 
 ```bash
+cp .env.example .env      # puis renseigner les variables
+npm install
+npx prisma generate
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+| Commande | Rôle |
+|---|---|
+| `npm run dev` | serveur de développement |
+| `npm run build` | `prisma generate`, migrations, puis build Next |
+| `npm run lint` | ESLint |
+| `npm run seed` | données initiales |
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `app/` : routes (landing `/`, pages légales, `/auth`, `/dashboard`, API).
+- `components/home-v2/` : landing (ne pas modifier sans nécessité).
+- `components/ui/` : primitives shadcn/Radix.
+- `docs/` : plans et notes de conception ; `DESIGN.md` : direction visuelle de la landing.
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+L'historique antérieur au CRM est conservé dans le tag Git `legacy-pre-crm` (pages publiques, blog IA, facturation, portail client).

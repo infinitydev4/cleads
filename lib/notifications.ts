@@ -56,7 +56,7 @@ export async function sendNotification({
 
       if (user?.email) {
         await resend.emails.send({
-          from: "Cleads <notifications@cleads.com>",
+          from: "Cleads <notifications@cleads.fr>",
           to: user.email,
           subject: title,
           html: `

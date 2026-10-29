@@ -24,7 +24,6 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
-          console.log("Credentials manquants:", { email: credentials?.email, hasPassword: !!credentials?.password })
           throw new Error("Email et mot de passe requis")
         }
 
@@ -34,25 +33,13 @@ export const authOptions: NextAuthOptions = {
           }
         })
 
-        if (!user) {
-          console.log("Utilisateur non trouvé pour l'email:", credentials.email)
-          throw new Error("Utilisateur non trouvé")
-        }
+        // Même message pour un compte inconnu et un mauvais mot de passe : pas d'énumération des comptes.
+        const isPasswordValid = user?.password
+          ? await compare(credentials.password, user.password)
+          : false
 
-        console.log("Tentative de connexion:", {
-          email: credentials.email,
-          hasStoredPassword: !!user.password,
-          role: user.role
-        })
-
-        const isPasswordValid = await compare(
-          credentials.password,
-          user.password!
-        )
-
-        if (!isPasswordValid) {
-          console.log("Mot de passe invalide pour l'email:", credentials.email)
-          throw new Error("Mot de passe incorrect")
+        if (!user || !isPasswordValid) {
+          throw new Error("Identifiants invalides")
         }
 
         return {
@@ -83,27 +70,10 @@ export const authOptions: NextAuthOptions = {
       return session
     },
     async redirect({ url, baseUrl }) {
-      // Si l'utilisateur a un mot de passe temporaire, le rediriger vers la page de changement de mot de passe
-      const session = await prisma.session.findFirst({
-        orderBy: { expires: 'desc' },
-        include: { user: true }
-      })
-
-      if (session?.user?.isTemporaryPassword) {
-        return `${baseUrl}/auth/change-password`
-      }
-
-      if (url.includes("/auth/login")) {
-        if (session?.user?.role === "ADMIN") {
-          return `${baseUrl}/dashboard`
-        } else {
-          return `${baseUrl}/client`
-        }
-      }
-      if (url.startsWith(baseUrl)) {
-        return url
-      }
-      return `${baseUrl}/client`
+      // Les droits par rôle sont appliqués par proxy.ts ; on ne redirige que vers notre propre origine.
+      if (url.startsWith("/")) return `${baseUrl}${url}`
+      if (url.startsWith(baseUrl)) return url
+      return `${baseUrl}/dashboard`
     }
   }
 } 

@@ -1,6 +1,6 @@
 "use client"
 
-import { X, LogOut, BarChart, Calendar, Users, Clock, FileText, Book, Settings, Palette } from "lucide-react"
+import { X, LogOut, BarChart, Calendar, Users, Clock, Settings } from "lucide-react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { signOut } from "next-auth/react"
@@ -32,21 +32,6 @@ const sidebarItems = [
     title: "Exceptions",
     icon: Calendar,
     href: "/dashboard/exceptions",
-  },
-  {
-    title: "Billing",
-    icon: FileText,
-    href: "/dashboard/billing",
-  },
-  {
-    title: "Blog",
-    icon: Book,
-    href: "/dashboard/blog",
-  },
-  {
-    title: "Thèmes",
-    icon: Palette,
-    href: "/dashboard/themes",
   },
   {
     title: "Paramètres",

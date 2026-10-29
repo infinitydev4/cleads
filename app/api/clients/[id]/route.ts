@@ -3,19 +3,14 @@ import { prisma } from "@/lib/prisma"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../../auth/options"
 import { Role } from "@prisma/client"
+import { getAdminSession, unauthorized } from "@/lib/auth-guard"
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
-    const session = await getServerSession(authOptions)
-    if (!session?.user) {
-      return NextResponse.json(
-        { error: "Non autorisé" },
-        { status: 401 }
-      )
-    }
+    if (!(await getAdminSession())) return unauthorized()
 
     const clientId = params.id
     if (!clientId) {

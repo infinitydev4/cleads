@@ -6,6 +6,7 @@ import { generatePassword } from "@/lib/utils"
 import { format, addMinutes } from "date-fns"
 import { fr } from "date-fns/locale"
 import { hash } from "bcryptjs"
+import { getAdminSession, unauthorized } from "@/lib/auth-guard"
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -32,6 +33,7 @@ function generateCalendarLinks(appointment: any) {
 }
 
 export async function POST(request: Request, props: { params: Promise<{ id: string }> }) {
+  if (!(await getAdminSession())) return unauthorized()
   const params = await props.params;
   try {
     // Récupérer le rendez-vous

@@ -16,20 +16,14 @@ export default withAuth(
 
     // Si l'utilisateur est sur la page de changement de mot de passe mais n'a pas de mot de passe temporaire
     if (isChangePasswordPage && !token?.isTemporaryPassword) {
-      return NextResponse.redirect(new URL("/client", request.url))
+      return NextResponse.redirect(new URL("/dashboard", request.url))
     }
 
-    // Protection des routes admin (dashboard)
+    // Protection des routes du back-office : seuls les administrateurs entrent.
+    // (Les rôles du CRM remplaceront cette règle dans l'epic E2.)
     if (request.nextUrl.pathname.startsWith("/dashboard")) {
       if (token?.role !== "ADMIN") {
-        return NextResponse.redirect(new URL("/client", request.url))
-      }
-    }
-
-    // Protection des routes client
-    if (request.nextUrl.pathname.startsWith("/client")) {
-      if (token?.role !== "USER") {
-        return NextResponse.redirect(new URL("/dashboard", request.url))
+        return NextResponse.redirect(new URL("/auth/login", request.url))
       }
     }
 
@@ -48,7 +42,6 @@ export default withAuth(
 export const config = {
   matcher: [
     "/dashboard/:path*",
-    "/client/:path*",
     "/api/availability/:path*",
     "/api/break-time/:path*",
     "/api/exceptions/:path*",

@@ -80,12 +80,7 @@ export default function ChangePasswordPage() {
       })
 
       // Rediriger vers la page appropriée selon le rôle
-      const userRole = session?.user?.role
-      if (userRole === "ADMIN") {
-        router.push("/dashboard")
-      } else {
-        router.push("/client")
-      }
+      router.push("/dashboard")
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Une erreur est survenue"
       toast.error(errorMessage)

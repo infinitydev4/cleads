@@ -33,16 +33,6 @@ const sidebarItems = [
     href: "/dashboard/exceptions",
   },
   {
-    title: "Billing",
-    icon: "FileText",
-    href: "/dashboard/billing",
-  },
-  {
-    title: "Blog",
-    icon: "Book",
-    href: "/dashboard/blog",
-  },
-  {
     title: "Paramètres",
     icon: "Settings",
     href: "/dashboard/settings",
