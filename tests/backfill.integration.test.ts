@@ -1,6 +1,7 @@
 // Needs a disposable PostgreSQL with the migrations applied (never your development database):
 //   TEST_DATABASE_URL=postgresql://... npx vitest run tests/backfill.integration.test.ts
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
+import { resetDatabase } from "./helpers/reset-db"
 import { PrismaClient } from "@prisma/client"
 import { runBackfill } from "../features/legacy/backfill"
 
@@ -19,9 +20,7 @@ suite("legacy backfill (database)", () => {
   })
 
   beforeEach(async () => {
-    for (const table of ["Meeting", "Activity", "Task", "Deal", "Lead", "Contact", "Company", "AvailabilityRule", "AvailabilityException", "Appointment", "Availability", "BreakTime", "Exception", "AuditLog", "Invitation", "User"]) {
-      await prisma.$executeRawUnsafe(`DELETE FROM "${table}"`)
-    }
+    await resetDatabase(prisma)
     const host = await prisma.user.create({ data: { email: "admin@legacy.test", name: "Admin", role: "OWNER", workspaceId: "ws_default" } })
     hostId = host.id
     const marie = await prisma.user.create({ data: { email: "marie@legacy.test", name: "Marie Test", phone: "0199000001", role: "USER" } })
@@ -128,7 +127,7 @@ suite("data model rules (database)", () => {
     await prisma.$disconnect()
   })
   beforeEach(async () => {
-    for (const table of ["Meeting", "Activity", "Lead", "Contact", "Company", "Suppression", "AvailabilityRule"]) await prisma.$executeRawUnsafe(`DELETE FROM "${table}"`)
+    await resetDatabase(prisma)
     await prisma.user.deleteMany({ where: { email: "host@rules.test" } })
   })
   const ws = "ws_default"

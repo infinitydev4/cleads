@@ -6,6 +6,8 @@ import { CRM_ROLES, type CrmRole } from "@/lib/crm/roles"
 const expected: Record<string, Record<CrmRole, string>> = {
   "lead:read": { OWNER: "all", MANAGER: "all", SDR: "pool", CLOSER: "own", VIEWER: "all" },
   "lead:write": { OWNER: "all", MANAGER: "all", SDR: "pool", CLOSER: "own", VIEWER: "-" },
+  "lead:import": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "-", VIEWER: "-" },
+  "lead:merge": { OWNER: "all", MANAGER: "all", SDR: "-", CLOSER: "-", VIEWER: "-" },
   "search:run": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "-", VIEWER: "-" },
   "email:send": { OWNER: "all", MANAGER: "all", SDR: "own", CLOSER: "own", VIEWER: "-" },
   "sequence:manage": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "-", VIEWER: "-" },
@@ -36,7 +38,7 @@ describe("role matrix", () => {
 
   it("never lets a read-only viewer write anything", () => {
     for (const permission of PERMISSIONS) {
-      if (/:(write|move|qualify|book|send|manage|delete|run)$/.test(permission)) {
+      if (/:(write|move|qualify|book|send|manage|delete|run|import|merge)$/.test(permission)) {
         expect(can("VIEWER", permission), permission).toBe(false)
       }
     }

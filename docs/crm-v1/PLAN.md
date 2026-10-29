@@ -393,6 +393,10 @@ Schéma Prisma du chapitre 5, migrations, script de reprise des rendez-vous et u
 - **Critères** : migration rejouable sur une copie, comptes avant / après contrôlés, aucune perte de rendez-vous futur.
 
 ### E4 — Prospects, entreprises, contacts · **L**
+> **Avancement (branche `refactor/e0-cleanup`)** — fait : liste des prospects (filtres, tri, pagination côté serveur, vues enregistrées personnelles ou partagées, actions groupées : attribuer, statut, étiquette), fiche en panneau latéral et en pleine page (historique, notes, appels, score expliqué, modification, étiquettes), création manuelle, import CSV avec vérification préalable et rejouable sans doublon, détection de doublons et fusion, liste d'exclusion respectée, journal des changements, suppression (propriétaire seulement, la liste d'exclusion survit). Visibilité par rôle appliquée dans chaque requête. Règles et choix : [DATA_MODEL.md](DATA_MODEL.md).
+> **Mesuré** : 10 000 fiches, base locale, liste par défaut 5 ms, tri par nom 21 ms, recherche texte 42 ms, page 200 17 ms (`PERF=1 TEST_DATABASE_URL=… npx vitest run tests/leads.perf.test.ts`). Pagination serveur plutôt que virtualisation : le navigateur n'affiche jamais plus de 100 lignes.
+> **Écarts assumés** : pas de liste « Entreprises » séparée (une entreprise = une fiche, modifiée dans la fiche) ; fusion réservée aux managers et propriétaires. **Reste** : l'import depuis Cleads Extractor (E5, il réutilisera `runImport`), les tâches et relances (E7), le thème sombre.
+
 Liste dense avec filtres et vues enregistrées, fiche (panneau + page), historique, import CSV avec correspondance de colonnes, détection de doublons, fusion, score par règles (présence d'email, site, note, avis, secteur cible), étiquettes, propriétaire.
 - **Critères** : 10 000 fiches fluides (virtualisation), import CSV rejouable sans doublon, journal des changements.
 

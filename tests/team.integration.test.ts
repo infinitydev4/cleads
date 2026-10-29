@@ -1,6 +1,7 @@
 // Needs a disposable PostgreSQL with the migrations applied:
 //   TEST_DATABASE_URL=postgresql://... npx vitest run tests/team.integration.test.ts
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
+import { resetDatabase } from "./helpers/reset-db"
 
 const url = process.env.TEST_DATABASE_URL
 const suite = url ? describe : describe.skip
@@ -23,9 +24,7 @@ suite("team access (database)", () => {
     await prisma.$disconnect()
   })
   beforeEach(async () => {
-    await prisma.auditLog.deleteMany()
-    await prisma.invitation.deleteMany()
-    await prisma.user.deleteMany()
+    await resetDatabase(prisma)
     const u = await prisma.user.create({ data: { workspaceId: "ws_default", email: "owner@cleads.test", name: "Owner", role: "OWNER", password: await hashFn("correct horse battery", 4) } })
     owner = { id: u.id, workspaceId: "ws_default", name: "Owner", email: u.email!, image: null, role: "OWNER" }
   })

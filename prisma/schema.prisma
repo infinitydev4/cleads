@@ -664,6 +664,8 @@ model Company {
   country        String     @default("FR")
   sector         String?
   siret          String?
+  /// normalizeName(name)|normalizeName(city): third deduplication key. Maintained by the application.
+  nameKey        String?
   rating         Float?
   reviewCount    Int?
   /// 0-100 completeness reported by the source.
@@ -682,6 +684,9 @@ model Company {
   @@unique([workspaceId, externalId])
   @@index([workspaceId, domain])
   @@index([workspaceId, name])
+  @@index([workspaceId, nameKey])
+  @@index([workspaceId, siret])
+  @@index([workspaceId, phone])
 }
 
 model Contact {
@@ -760,6 +765,8 @@ model Lead {
   importBatchId   String?
   importBatch     ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
   lastContactedAt DateTime?
+  /// Free labels, stored lower-case.
+  tags            String[]     @default([])
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
@@ -773,6 +780,7 @@ model Lead {
   @@index([workspaceId, ownerId, status])
   @@index([workspaceId, score])
   @@index([importBatchId])
+  @@index([tags], type: Gin)
 }
 
 model Deal {

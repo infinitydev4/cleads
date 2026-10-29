@@ -75,6 +75,21 @@ Hypothèses à connaître, à vérifier sur vos données :
 
 Garanties : rien n'est supprimé ni modifié dans les anciennes tables (les anciens écrans continuent de fonctionner jusqu'à E8) ; le script est rejouable (il ne crée que ce qui manque, et ne touche pas ce qu'une personne a modifié depuis) ; il vérifie que chaque rendez-vous est repris et qu'**aucun rendez-vous futur n'est perdu**, sinon il n'écrit rien.
 
+## Prospects : doublons et import
+
+Une entreprise est « la même » quand l'une de ces clés concorde, de la plus sûre à la moins sûre : identifiant de la source, SIRET (somme de contrôle valide), site web, nom + ville, téléphone, adresse email d'un contact existant. Les règles (`lib/crm/normalize.ts`) préfèrent ne pas rapprocher plutôt que de rapprocher à tort : un doublon raté coûte une fusion, un faux rapprochement perd un prospect.
+
+- Le « site web » ignore les pages Facebook, Instagram, Pages Jaunes, `business.site`, etc. ; le domaine d'un email ignore les messageries gratuites (gmail, orange…) : deux entreprises qui n'ont qu'une page Facebook ne sont pas confondues.
+- Nom et ville comptent ensemble, sans accents, majuscules, ponctuation ni forme juridique (SARL, SAS…) : « Éts. Dupont SARL » et « DUPONT » à Lyon sont la même ; deux boulangeries Paul à Lyon et à Lille non.
+- Les téléphones sont enregistrés sous une forme canonique (`+33123456789`) et affichés `01 23 45 67 89`. Un numéro étranger doit commencer par `+`.
+- Les emails d'un contact sont classés **nominatif** (`prenom.nom@`), **générique** (`contact@`, `info@`…) ou **à vérifier** ; seule la forme `prenom.nom` est jugée nominative (les cas douteux restent à une personne, c'est ce qui compte pour la prospection par email).
+
+**Import CSV** : colonnes reconnues automatiquement (en-têtes français et anglais), association modifiable, 5 000 lignes au maximum, encodage UTF-8 ou Windows-1252 (Excel français). Une vérification calcule exactement ce que fera l'import, sans rien écrire ; l'import ne fait que ce qui a été vérifié, en une transaction. Rejouer un fichier n'ajoute rien : les lignes retrouvées complètent seulement les champs vides de la fiche existante (jamais d'écrasement) et sont comptées « déjà présentes ». Une ligne sans nom, ou sans rien qui permette d'éviter les doublons (ni ville, ni site, ni téléphone, ni email), est ignorée avec la raison. Une adresse présente dans la liste d'exclusion arrive bloquée (« ne pas contacter »). Chaque import crée un lot (`ImportBatch`) : fichier, auteur, compteurs.
+
+**Fusion** : jamais automatique. L'historique, les rendez-vous, les opportunités et les contacts passent sur la fiche gardée, les informations manquantes sont complétées, les étiquettes réunies, et un blocage « ne pas contacter » l'emporte toujours.
+
+**Score** (`features/leads/scoring.ts`) : règles simples, chaque point expliqué sur la fiche (email nominatif +25, générique +12, téléphone +10, site +10, email sur le domaine du site +10, note, avis, complétude de la source, interlocuteur, adresse). À calibrer sur les résultats réels, ce n'est pas une prédiction.
+
 ## Nettoyage différé : tables du blog
 
 `prisma/pending/drop-legacy-blog.sql` supprime le blog, les clés d'API IA stockées en clair et les tables de l'adaptateur NextAuth. **Il n'est pas dans les migrations automatiques** : il détruit des données. La procédure (dump, contrôle, application, mise à jour du schéma) est en tête du fichier. Les modèles concernés sont marqués `LEGACY` dans le schéma.

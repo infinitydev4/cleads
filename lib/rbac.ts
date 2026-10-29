@@ -16,6 +16,9 @@ const matrix = {
   // Prospects and pipeline
   "lead:read": { OWNER: "all", MANAGER: "all", SDR: "pool", CLOSER: "own", VIEWER: "all" },
   "lead:write": { OWNER: "all", MANAGER: "all", SDR: "pool", CLOSER: "own" },
+  "lead:import": { OWNER: "all", MANAGER: "all", SDR: "all" },
+  /** Merging two fiches rewrites history: managers and owners only. */
+  "lead:merge": { OWNER: "all", MANAGER: "all" },
   "deal:read": { OWNER: "all", MANAGER: "all", SDR: "pool", CLOSER: "own", VIEWER: "all" },
   /** SDRs move an opportunity up to "Qualifié" only. */
   "deal:qualify": { OWNER: "all", MANAGER: "all", SDR: "pool" },

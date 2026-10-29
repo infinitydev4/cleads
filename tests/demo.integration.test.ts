@@ -1,5 +1,6 @@
 // Needs a disposable PostgreSQL with the migrations applied (never your development database).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
+import { resetDatabase } from "./helpers/reset-db"
 import { PrismaClient } from "@prisma/client"
 import { resetDemo, seedDemo } from "../features/demo/seed"
 
@@ -18,7 +19,7 @@ suite("demo data (database)", () => {
     await prisma.$disconnect()
   })
   beforeEach(async () => {
-    for (const table of ["Meeting", "Activity", "Task", "Deal", "Lead", "Contact", "Company", "ImportBatch", "AuditLog", "Invitation", "User"]) await prisma.$executeRawUnsafe(`DELETE FROM "${table}"`)
+    await resetDatabase(prisma)
     const [sdr, closer] = await Promise.all([
       prisma.user.create({ data: { email: "sdr@demo.test", role: "SDR", workspaceId } }),
       prisma.user.create({ data: { email: "closer@demo.test", role: "CLOSER", workspaceId } }),
