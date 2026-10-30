@@ -53,6 +53,8 @@ export interface Today {
   upcoming: TodayTask[]
   undated: TodayTask[]
   meetings: TodayMeeting[]
+  /** Over and still open: the result is owed. */
+  meetingsToClose: TodayMeeting[]
   suggestions: Suggestion[]
   canSeeTeam: boolean
 }
@@ -96,11 +98,12 @@ export async function getToday(user: CurrentUser, requested: "mine" | "team" = "
     canChange: canChangeTask(user, t, canWorkLead(user, t.lead!)),
   })
 
-  const [due, upcoming, undated, meetings, suggestions] = await Promise.all([
+  const [due, upcoming, undated, meetings, meetingsToClose, suggestions] = await Promise.all([
     prisma.task.findMany({ where: { ...base, dueAt: { lt: end } }, include: taskInclude, orderBy: [{ dueAt: "asc" }, { createdAt: "asc" }], take: 300 }),
     prisma.task.findMany({ where: { ...base, dueAt: { gte: end } }, include: taskInclude, orderBy: { dueAt: "asc" }, take: 15 }),
     prisma.task.findMany({ where: { ...base, dueAt: null }, include: taskInclude, orderBy: { createdAt: "asc" }, take: 15 }),
     todayMeetings(user, scope, start, end),
+    todayMeetings(user, scope, new Date(0), now, true),
     scope === "mine" ? suggest(user) : Promise.resolve([]),
   ])
 
@@ -113,15 +116,16 @@ export async function getToday(user: CurrentUser, requested: "mine" | "team" = "
     upcoming: upcoming.map(toTask),
     undated: undated.map(toTask),
     meetings,
+    meetingsToClose,
     suggestions,
     canSeeTeam: canSeeTeam(user),
   }
 }
 
-async function todayMeetings(user: CurrentUser, scope: "mine" | "team", start: Date, end: Date): Promise<TodayMeeting[]> {
+async function todayMeetings(user: CurrentUser, scope: "mine" | "team", start: Date, end: Date, overOnly = false): Promise<TodayMeeting[]> {
   if (!can(user.role, "meeting:read")) return []
   const rows = await prisma.meeting.findMany({
-    where: { workspaceId: user.workspaceId, startsAt: { gte: start, lt: end }, status: { in: ["SCHEDULED", "CONFIRMED"] }, ...(scope === "mine" || scopeOf(user.role, "meeting:read") === "own" ? { hostId: user.id } : {}) },
+    where: { workspaceId: user.workspaceId, ...(overOnly ? { endsAt: { lt: end } } : { startsAt: { gte: start, lt: end } }), status: { in: ["SCHEDULED", "CONFIRMED"] }, ...(scope === "mine" || scopeOf(user.role, "meeting:read") === "own" ? { hostId: user.id } : {}) },
     include: { host: { select: { name: true, email: true } }, lead: { select: { company: { select: { name: true } }, contact: { select: { name: true } } } } },
     orderBy: { startsAt: "asc" },
     take: 50,

@@ -25,6 +25,7 @@ import { QualifyDialog } from "./qualify-dialog"
 import { QUALIFICATION_LABELS } from "@/features/pipeline/rules"
 import { ScoreMeter } from "./score-meter"
 import { CallDialog } from "./call-dialog"
+import { MeetingDialog } from "./meeting-dialog"
 import { TasksCard } from "./tasks-card"
 import { CALL_OUTCOMES } from "@/features/activity/rules"
 
@@ -45,6 +46,7 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [qualifying, setQualifying] = useState(false)
   const [calling, setCalling] = useState(false)
+  const [planning, setPlanning] = useState(false)
   const [addingTask, setAddingTask] = useState(false)
   const canQualifyNow = lead.can.write && lead.status !== "DO_NOT_CONTACT" && lead.status !== "QUALIFIED" && lead.status !== "DISQUALIFIED"
 
@@ -111,6 +113,11 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
             {canQualifyNow && (
               <Button size="sm" onClick={() => setQualifying(true)} title="Raccourci : q">
                 <ClipboardCheck className="h-4 w-4" aria-hidden="true" /> Qualifier
+              </Button>
+            )}
+            {lead.can.meet && (
+              <Button variant="outline" size="sm" onClick={() => setPlanning(true)}>
+                <CalendarDays className="h-4 w-4" aria-hidden="true" /> Rendez-vous
               </Button>
             )}
             {lead.can.log && (
@@ -226,6 +233,7 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
         </div>
       )}
 
+      {planning && <MeetingDialog open={planning} onOpenChange={setPlanning} leadId={lead.id} leadName={title} currentUserId={currentUserId} canOverride={lead.can.meetAnywhere} onDone={() => { reload(); router.refresh() }} />}
       {calling && <CallDialog open={calling} onOpenChange={setCalling} leadId={lead.id} leadName={title} onDone={(next) => { onChange(next); router.refresh() }} />}
       {qualifying && <QualifyDialog open={qualifying} onOpenChange={setQualifying} lead={lead} assignees={assignees} onDone={(next) => { onChange(next); router.refresh() }} />}
       {editing && <EditDialog open={editing} onOpenChange={setEditing} lead={lead} onSave={async (body) => { const ok = await patch(body, "Fiche mise à jour"); if (ok) setEditing(false); return !!ok }} />}

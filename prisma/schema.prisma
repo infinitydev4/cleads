@@ -38,6 +38,7 @@ model User {
   createdMeetings        Meeting[]               @relation("MeetingCreator")
   availabilityRules      AvailabilityRule[]
   availabilityExceptions AvailabilityException[]
+  bookingProfile         BookingProfile?
   importBatches          ImportBatch[]
   savedViews             SavedView[]
   accounts               Account[]
@@ -566,6 +567,7 @@ model Workspace {
   suppressions           Suppression[]
   savedViews             SavedView[]
   extractionSearches     ExtractionSearch[]
+  bookingProfiles        BookingProfile[]
 }
 
 enum LeadSource {
@@ -887,12 +889,22 @@ model Meeting {
   createdBy           User?           @relation("MeetingCreator", fields: [createdById], references: [id], onDelete: SetNull)
   /// Former Appointment this meeting was created from (idempotent backfill).
   legacyAppointmentId String?         @unique
+  canceledAt          DateTime?
+  cancelReason        String?
+  /// Set on the meeting that replaced this one when it was moved (this one then has status RESCHEDULED).
+  rescheduledToId     String?         @unique
+  rescheduledTo       Meeting?        @relation("MeetingMove", fields: [rescheduledToId], references: [id], onDelete: SetNull)
+  rescheduledFrom     Meeting?        @relation("MeetingMove")
+  /// Reminders go out once; the stamp is what makes the job safe to run every hour.
+  reminderSentAt      DateTime?
+  hostReminderSentAt  DateTime?
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt
 
   @@index([hostId, startsAt])
   @@index([workspaceId, startsAt])
   @@index([leadId])
+  @@index([status, startsAt])
 }
 
 /// Weekly working interval of a host, in minutes from midnight in `timezone`. A day with a break has two rows.
@@ -997,4 +1009,36 @@ model ExtractionSearch {
 
   @@index([workspaceId, createdAt])
   @@index([createdById, status])
+}
+
+/// Public booking page of a host (`/rdv/<slug>`): how long a meeting lasts, how far ahead and how late it can be booked.
+model BookingProfile {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  hostId       String    @unique
+  host         User      @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  /// URL segment, lower-case letters, digits and dashes. Unique across the whole site because the page is public.
+  slug         String    @unique
+  enabled      Boolean   @default(false)
+  timezone     String    @default("Europe/Paris")
+  durationMin  Int       @default(30)
+  /// Free time kept around every meeting.
+  bufferMin    Int       @default(10)
+  /// A slot closer than this to now is not offered.
+  minNoticeMin Int       @default(120)
+  horizonDays  Int       @default(21)
+  videoUrl     String?
+  intro        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+/// Counts of recent attempts on public endpoints, keyed by action and requester. Rows older than the window are inert and pruned.
+model RateLimitHit {
+  id        String   @id @default(cuid())
+  key       String
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
 }

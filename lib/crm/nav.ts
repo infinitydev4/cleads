@@ -27,6 +27,8 @@ export interface NavItem {
   icon: LucideIcon
   /** Permission required to see the entry (null = every signed-in member). */
   permission: Permission | null
+  /** Highlight only on this exact path, not on pages below it (a sibling entry lives there). */
+  exact?: boolean
   /** Planned module: shown greyed out until its epic ships. */
   soon?: boolean
   /** Keywords the command palette also matches. */
@@ -59,7 +61,8 @@ export const navGroups: NavGroup[] = [
     label: "Conversion",
     items: [
       { id: "pipeline", label: "Pipeline", href: "/app/pipeline", icon: Handshake, permission: "deal:read", keywords: ["opportunités", "deals"] },
-      { id: "meetings", label: "Rendez-vous", href: "/app/meetings", icon: CalendarDays, permission: "meeting:read", soon: true, keywords: ["agenda", "calendrier"] },
+      { id: "meetings", label: "Rendez-vous", href: "/app/meetings", icon: CalendarDays, permission: "meeting:read", exact: true, keywords: ["agenda", "calendrier", "rdv"] },
+      { id: "availability", label: "Disponibilités", href: "/app/meetings/availability", icon: CalendarClock, permission: "availability:manage", keywords: ["horaires", "créneaux", "réservation", "page publique"] },
     ],
   },
   {

@@ -78,7 +78,7 @@ export function TodayQueue({ initial }: { initial: Today }) {
   }
 
   const team = data.scope === "team"
-  const nothing = !data.overdue.length && !data.dueToday.length && !data.meetings.length && !data.suggestions.length
+  const nothing = !data.overdue.length && !data.dueToday.length && !data.meetings.length && !data.meetingsToClose.length && !data.suggestions.length
 
   return (
     <div className="space-y-8" aria-busy={switching || undefined}>
@@ -103,6 +103,22 @@ export function TodayQueue({ initial }: { initial: Today }) {
           description={team ? "Aucune tâche due, aucun rendez-vous aujourd’hui." : "Toutes vos relances du jour sont faites. Qualifiez un prospect ou lancez une recherche pour alimenter la suite."}
           action={<><Button asChild variant="ink"><Link href="/app/leads">Voir les prospects</Link></Button><Button asChild variant="outline"><Link href="/app/pipeline">Pipeline</Link></Button></>}
         />
+      )}
+
+      {data.meetingsToClose.length > 0 && (
+        <section aria-label="Rendez-vous à clôturer" className="space-y-2">
+          <h2 className="text-sm font-bold">Rendez-vous à clôturer <span className="font-normal text-muted-foreground">· le résultat fait avancer l’opportunité</span></h2>
+          <Card className="divide-y border-warning/40">
+            {data.meetingsToClose.map((m) => (
+              <div key={m.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm">
+                <span className="font-medium">{m.leadName}</span>
+                <span className="capitalize text-muted-foreground">{new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(m.startsAt))}</span>
+                {team && m.hostName && <span className="text-muted-foreground">avec {m.hostName}</span>}
+                <Link href="/app/meetings" className="ml-auto font-medium underline">Indiquer le résultat</Link>
+              </div>
+            ))}
+          </Card>
+        </section>
       )}
 
       {data.meetings.length > 0 && (

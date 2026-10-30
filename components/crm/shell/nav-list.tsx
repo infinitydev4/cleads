@@ -5,13 +5,13 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import type { NavGroup, NavItem } from "@/lib/crm/nav"
 
-function isActive(pathname: string, href: string) {
-  return href === "/app" ? pathname === "/app" : pathname === href || pathname.startsWith(`${href}/`)
+function isActive(pathname: string, href: string, exact?: boolean) {
+  return href === "/app" || exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`)
 }
 
 export function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
   const pathname = usePathname()
-  const active = isActive(pathname, item.href)
+  const active = isActive(pathname, item.href, item.exact)
   const Icon = item.icon
   const base = "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
 

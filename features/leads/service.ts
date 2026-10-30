@@ -220,6 +220,8 @@ export async function getLead(user: CurrentUser, id: string): Promise<LeadDetail
       assignOthers: can(user.role, "lead:write") && recordFilter(user, "lead:write").kind === "all",
       delete: can(user.role, "data:delete"),
       qualify: canAccessRecord(user, "lead:write", lead.ownerId) && canAccessRecord(user, "deal:qualify", lead.ownerId),
+      meet: can(user.role, "meeting:book") && lead.status !== "DO_NOT_CONTACT",
+      meetAnywhere: user.role === "OWNER" || user.role === "MANAGER",
     },
   }
 }

@@ -33,6 +33,10 @@ const matrix = {
   // Meetings
   "meeting:read": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "own", VIEWER: "all" },
   "meeting:book": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "own" },
+  /** The result closes a meeting and moves the opportunity: the host decides, or a manager. */
+  "meeting:outcome": { OWNER: "all", MANAGER: "all", CLOSER: "own" },
+  /** Weekly hours, days off and the public booking page of a host. */
+  "availability:manage": { OWNER: "all", MANAGER: "all", CLOSER: "own" },
   // Reports and data
   "report:read": { OWNER: "all", MANAGER: "all", SDR: "own", CLOSER: "own", VIEWER: "all" },
   "data:export": { OWNER: "all", MANAGER: "all" },

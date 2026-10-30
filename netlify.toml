@@ -12,5 +12,5 @@
   package = "@netlify/plugin-nextjs"
 
 [[cron]]
-  schedule = "0 9 * * *"
-  command = "curl -X POST https://cleads.fr/api/cron/appointment-reminders -H 'Authorization: Bearer ${CRON_SECRET}'" 
+  schedule = "0 * * * *"
+  command = "curl -X POST https://cleads.fr/api/cron/meeting-reminders -H 'Authorization: Bearer ${CRON_SECRET}'" 

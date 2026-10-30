@@ -68,6 +68,8 @@ npm run db:backfill-legacy -- --apply      # copie, en une seule transaction
 | `Availability` + `BreakTime` | `AvailabilityRule`, la pause découpant la journée |
 | `Exception` | `AvailabilityException` |
 
+**E8** ajoute `BookingProfile` (page publique d'un closer : adresse, durée, marge, délai, horizon, visio), `RateLimitHit` (compteurs des endpoints publics) et, sur `Meeting`, `canceledAt`, `cancelReason`, `rescheduledToId` (chaîne des reports), `reminderSentAt`, `hostReminderSentAt`.
+
 Hypothèses à connaître, à vérifier sur vos données :
 
 1. **Fuseau.** L'ancien code enregistrait l'heure choisie comme si elle était en UTC. Elle est relue comme une heure locale en `Europe/Paris` (réglable) : un rendez-vous noté 14:00 devient 13:00 UTC l'hiver et 12:00 UTC l'été. Testé sur les passages à l'heure d'été et d'hiver.

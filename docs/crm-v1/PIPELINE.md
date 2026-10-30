@@ -41,9 +41,12 @@ Perdre demande un **motif** (liste fixe : budget insuffisant, concurrent, mauvai
 - Visibilité : le closer voit les siennes, le SDR le pool non attribué, manager, propriétaire et lecteur tout. Filtres : responsable, recherche.
 - Cliquer une carte ouvre la fiche à côté, où l'on modifie étape, responsable, montant et date de signature prévue.
 
+## Rendez-vous
+
+Prendre un rendez-vous met l'opportunité à « RDV planifié » (elle est créée si la fiche n'en a pas) ; annuler le dernier la remet à « Qualifié » ; le résultat du rendez-vous la fait avancer, perdre ou relancer. Règles et cas : [RENDEZ-VOUS.md](RENDEZ-VOUS.md).
+
 ## Pas dans cette version
 
 - Ordre des cartes à l'intérieur d'une colonne (elles sont triées par dernière mise à jour).
-- Passage automatique à « RDV planifié » quand un rendez-vous est pris : arrive avec les rendez-vous (E8).
 - Attribution automatique au closer disponible (tour de rôle) : V1.1.
 - Pipeline pondéré et taux de conversion : rapports (E10), seulement sur les montants renseignés.
