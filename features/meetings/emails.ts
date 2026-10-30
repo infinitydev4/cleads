@@ -1,4 +1,4 @@
-import { getResend } from "@/lib/resend"
+import { sendMail } from "@/lib/mail"
 import { appBaseUrl } from "@/features/team/invite-email"
 import { TEAM_TZ } from "@/lib/crm/day"
 import { MEETING_TYPE_LABELS } from "./rules"
@@ -114,21 +114,15 @@ export function renderMeetingMail(i: MailInput): { subject: string; html: string
  * not go out; callers never fail an action because of it.
  */
 export async function sendMeetingMail(i: MailInput): Promise<boolean> {
-  const resend = getResend()
-  if (!resend) return false
-  try {
-    const { subject, html, ics } = renderMeetingMail(i)
-    const from = process.env.RESEND_FROM_EMAIL || "contact@cleads.fr"
-    const { error } = await resend.emails.send({
-      from: `Cleads <${from}>`,
+  const { subject, html, ics } = renderMeetingMail(i)
+  const outcome = await sendMail(
+    {
       to: i.to,
       subject,
       html,
-      ...(ics ? { attachments: [{ filename: "rendez-vous.ics", content: Buffer.from(ics), contentType: "text/calendar; method=" + (i.kind === "canceled" ? "CANCEL" : "REQUEST") }] } : {}),
-    })
-    return !error
-  } catch (error) {
-    console.error("[MEETING_EMAIL]", error)
-    return false
-  }
+      attachments: ics ? [{ filename: "rendez-vous.ics", content: Buffer.from(ics), contentType: `text/calendar; method=${i.kind === "canceled" ? "CANCEL" : "REQUEST"}` }] : undefined,
+    },
+    { purpose: "transactional" }
+  )
+  return outcome.ok
 }

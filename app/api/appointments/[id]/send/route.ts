@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getResend } from "@/lib/resend"
+import { render } from "@react-email/render"
+import { sendMail } from "@/lib/mail"
 import { AppointmentConfirmation } from "@/components/emails/AppointmentConfirmation"
 import { generatePassword } from "@/lib/utils"
 import { format, addMinutes } from "date-fns"
@@ -80,13 +81,8 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
     })
 
     // Envoyer l'email
-    const resend = getResend()
-    if (!resend) return NextResponse.json({ error: "Envoi d’email non configuré" }, { status: 503 })
-    const { data, error } = await resend.emails.send({
-      from: `Cleads <${process.env.RESEND_FROM_EMAIL}>`,
-      to: [appointment.email],
-      subject: "Confirmation de votre rendez-vous avec Cleads",
-      react: AppointmentConfirmation({
+    const html = await render(
+      AppointmentConfirmation({
         clientName: appointment.clientName,
         clientEmail: appointment.email,
         date: formattedDate,
@@ -98,11 +94,12 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
           google: calendarLinks.googleUrl,
           outlook: calendarLinks.outlookUrl,
         },
-      }),
-    })
-
-    if (error) {
-      console.error("[EMAIL_SEND_ERROR]", error)
+      })
+    )
+    const sent = await sendMail({ to: appointment.email, subject: "Confirmation de votre rendez-vous avec Cleads", html }, { purpose: "transactional" })
+    if (!sent.ok) {
+      if (sent.skipped === "not_configured") return NextResponse.json({ error: "Envoi d’email non configuré" }, { status: 503 })
+      console.error("[EMAIL_SEND_ERROR]", sent.skipped ?? sent.attempts)
       return new NextResponse("Erreur lors de l'envoi de l'email", { status: 500 })
     }
 

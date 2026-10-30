@@ -568,6 +568,7 @@ model Workspace {
   savedViews             SavedView[]
   extractionSearches     ExtractionSearch[]
   bookingProfiles        BookingProfile[]
+  mailSetting            MailSetting?
 }
 
 enum LeadSource {
@@ -1041,4 +1042,16 @@ model RateLimitHit {
   createdAt DateTime @default(now())
 
   @@index([key, createdAt])
+}
+
+/// Which provider carries the CRM's own (transactional) emails. Credentials stay in environment variables, never here.
+model MailSetting {
+  workspaceId           String    @id
+  workspace             Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  /// "ses" or "resend".
+  transactionalProvider String    @default("ses")
+  /// When the chosen provider fails, try the other one if it is configured.
+  fallbackEnabled       Boolean   @default(true)
+  updatedById           String?
+  updatedAt             DateTime  @updatedAt
 }

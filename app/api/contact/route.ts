@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getResend } from "@/lib/resend"
+import { sendMail } from "@/lib/mail"
 import { notifications } from "@/lib/notifications"
 import { prisma } from "@/lib/prisma"
 
@@ -33,17 +33,13 @@ export async function POST(request: Request) {
       message: escapeHtml(message as string).replace(/\n/g, "<br>"),
     }
 
-    // Envoyer l'email via Resend
-    const resend = getResend()
-    if (!resend) {
-      console.error("[CONTACT_FORM] RESEND_API_KEY is not set: the request was not forwarded")
-      return NextResponse.json({ error: "Envoi indisponible pour le moment" }, { status: 503 })
-    }
-    await resend.emails.send({
-      from: "Cleads <contact@cleads.fr>",
-      to: "contact@cleads.fr",
-      subject: `Nouveau message de contact : ${(subject as string).replace(/[\r\n]+/g, " ")}`,
-      html: `
+    // Le message part d'abord vers l'équipe : si cet envoi échoue, le visiteur doit le savoir.
+    const forwarded = await sendMail(
+      {
+        to: "contact@cleads.fr",
+        replyTo: email as string,
+        subject: `Nouveau message de contact : ${(subject as string).replace(/[\r\n]+/g, " ")}`,
+        html: `
         <h2>Nouveau message de contact</h2>
         <p><strong>Nom :</strong> ${safe.name}</p>
         <p><strong>Email :</strong> ${safe.email}</p>
@@ -51,19 +47,27 @@ export async function POST(request: Request) {
         <p><strong>Message :</strong></p>
         <p>${safe.message}</p>
       `,
-    })
+      },
+      { purpose: "transactional" }
+    )
+    if (!forwarded.ok) {
+      console.error("[CONTACT_FORM] the request was not forwarded", forwarded.skipped ?? forwarded.attempts)
+      return NextResponse.json({ error: "Envoi indisponible pour le moment" }, { status: 503 })
+    }
 
-    // Envoyer une copie au client
-    await resend.emails.send({
-      from: "Cleads <contact@cleads.fr>",
-      to: email as string,
-      subject: "Confirmation de votre message",
-      html: `
+    // Accusé de réception au visiteur : utile, mais le message est déjà arrivé s'il échoue.
+    await sendMail(
+      {
+        to: email as string,
+        subject: "Confirmation de votre message",
+        html: `
         <h2>Merci pour votre message</h2>
         <p>Nous avons bien reçu votre message et nous vous répondrons dans les plus brefs délais.</p>
         <p>Cordialement,<br>L'équipe Cleads</p>
       `,
-    })
+      },
+      { purpose: "transactional" }
+    )
 
     // Envoyer une notification aux administrateurs
     const admins = await prisma.user.findMany({

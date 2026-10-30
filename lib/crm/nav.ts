@@ -74,6 +74,7 @@ export const navGroups: NavGroup[] = [
 
 export const footerItems: NavItem[] = [
   { id: "team", label: "Équipe", href: "/app/settings/team", icon: UserCog, permission: "team:read", keywords: ["membres", "rôles", "invitations", "accès"] },
+  { id: "mail-providers", label: "Fournisseurs d’envoi", href: "/app/settings/emails", icon: Mail, permission: "mailbox:manage", keywords: ["ses", "resend", "email", "smtp", "rebonds", "expéditeur"] },
   { id: "audit", label: "Journal d’audit", href: "/app/settings/audit", icon: ScrollText, permission: "audit:read", keywords: ["historique", "sécurité", "connexions"] },
   { id: "design", label: "Design system", href: "/app/design", icon: Palette, permission: "admin:tools", keywords: ["composants", "catalogue"] },
   { id: "legacy", label: "Ancien back-office", href: "/dashboard", icon: CalendarClock, permission: "legacy:access", keywords: ["rendez-vous", "clients"] },

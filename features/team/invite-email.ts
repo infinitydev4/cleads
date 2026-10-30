@@ -1,4 +1,4 @@
-import { getResend } from "@/lib/resend"
+import { sendMail } from "@/lib/mail"
 import { ROLE_LABELS, type CrmRole } from "@/lib/crm/roles"
 
 const escapeHtml = (value: string) =>
@@ -10,16 +10,12 @@ export const appBaseUrl = () =>
 export const invitationLink = (token: string) => `${appBaseUrl()}/auth/invite/${token}`
 
 /**
- * Transactional email (Resend). Returns false when it could not be sent; the inviter always also
+ * Transactional email (provider chosen in the settings). Returns false when it could not be sent; the inviter always also
  * gets the link, so access never depends on email delivery.
  */
 export async function sendInvitationEmail(input: { to: string; role: CrmRole; inviterName: string; link: string }): Promise<boolean> {
-  const resend = getResend()
-  if (!resend) return false
-  try {
-    const from = process.env.RESEND_FROM_EMAIL || "contact@cleads.fr"
-    const { error } = await resend.emails.send({
-      from: `Cleads <${from}>`,
+  const outcome = await sendMail(
+    {
       to: input.to,
       subject: "Votre accès au CRM Cleads",
       html: `
@@ -28,10 +24,8 @@ export async function sendInvitationEmail(input: { to: string; role: CrmRole; in
         <p><a href="${escapeHtml(input.link)}">Créer mon accès</a></p>
         <p>Ce lien est personnel, valable 7 jours et ne peut servir qu'une fois. Si vous n'attendiez pas cette invitation, ignorez ce message.</p>
         <p>L'équipe Cleads</p>`,
-    })
-    return !error
-  } catch (error) {
-    console.error("[INVITE_EMAIL]", error)
-    return false
-  }
+    },
+    { purpose: "transactional" }
+  )
+  return outcome.ok
 }

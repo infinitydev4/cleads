@@ -432,6 +432,9 @@ Section 6 : disponibilités par closer, fonction de créneaux testée, agenda, p
 > **Vérifié dans le navigateur** (base jetable) : réservation publique sur téléphone (deux touches, deux champs, une case), page « Modifier ou annuler », agenda du closer, clôture « Qualifié » (opportunité passée en Proposition), disponibilités, fenêtre de planification sur la fiche. Le « moins de 30 secondes » n'a pas été chronométré avec une vraie personne.
 > **Écarts assumés** : pas de worker dans le projet, donc le cron Netlify (horaire) fait les rappels ; pas de tour de rôle (V1.1) ; pas d'agenda externe ; l'ancien endpoint de réservation répond 410. **Reste** : essai réel d'envoi (Resend), lien de visio propre à chaque rendez-vous, vue jour en grille horaire.
 
+### E8b — Fournisseurs d'envoi (ajout) · **S**
+Couche d'envoi unique pour les emails du CRM : Amazon SES par défaut, Resend en secours, choix dans les réglages, prospection interdite sur ces deux fournisseurs (erreur levée par le code), rebonds et plaintes alimentant la liste d'exclusion (webhook SNS signé). Détails : [ENVOI-EMAILS.md](ENVOI-EMAILS.md).
+
 ### E9 — Emailing (3 jalons) · **L** + **M** + **L**
 - **E9a** : boîtes d'envoi (OAuth), envoi 1 à 1, modèles à variables, désinscription, liste de suppression, quotas et chauffe, journal d'envoi.
 - **E9b** : lecture des réponses, rattachement à la fiche, classement (manuel puis assisté), rebonds.

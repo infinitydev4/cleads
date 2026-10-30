@@ -2,8 +2,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { resetDatabase } from "./helpers/reset-db"
 
-// The development .env holds a real email key: no test may ever reach the provider.
-vi.mock("@/lib/resend", () => ({ getResend: vi.fn(() => null) }))
+// The development .env holds real email keys: no test may ever reach a provider.
+const NOT_SENT = { ok: false, provider: null, messageId: null, skipped: "not_configured", attempts: [] } as const
+vi.mock("@/lib/mail", () => ({ sendMail: vi.fn(async () => NOT_SENT) }))
 
 const url = process.env.TEST_DATABASE_URL
 const suite = url ? describe : describe.skip
@@ -380,8 +381,8 @@ suite("meetings (database)", () => {
   describe("reminders", () => {
     it("sends one reminder per meeting and person, never twice, and skips what was booked at the last minute", async () => {
       const sent: string[] = []
-      const { getResend } = await import("@/lib/resend")
-      vi.mocked(getResend).mockReturnValue({ emails: { send: async (m: { to: string; subject: string }) => (sent.push(`${m.to}|${m.subject}`), { error: null }) } } as never)
+      const { sendMail } = await import("@/lib/mail")
+      vi.mocked(sendMail).mockImplementation((async (m: { to: string; subject: string }) => (sent.push(`${m.to}|${m.subject}`), { ok: true, provider: "ses", messageId: "x", attempts: [] })) as never)
       const l = await lead("Tau", u.sdr.id)
       const m = await book(u.sdr, l.id, u.closer.id, MON_10)
       const soon = await lead("Upsilon", u.sdr.id)
@@ -401,12 +402,12 @@ suite("meetings (database)", () => {
       const near = await prisma.meeting.create({ data: { workspaceId: ws, hostId: u.closer2.id, leadId: soon.id, contactId: soon.contactId, startsAt: new Date("2026-06-08T08:00:00Z"), endsAt: new Date("2026-06-08T08:30:00Z"), createdAt: new Date("2026-06-08T05:30:00Z") } })
       expect(await svc.sendMeetingReminders()).toEqual({ guests: 0, hosts: 0 })
       expect((await prisma.meeting.findUniqueOrThrow({ where: { id: near.id } })).reminderSentAt).not.toBeNull()
-      vi.mocked((await import("@/lib/resend")).getResend).mockReturnValue(null)
+      vi.mocked((await import("@/lib/mail")).sendMail).mockImplementation((async () => NOT_SENT) as never)
     })
 
     it("gives the claim back when the email fails, so the next run retries", async () => {
-      const { getResend } = await import("@/lib/resend")
-      vi.mocked(getResend).mockReturnValue({ emails: { send: async () => ({ error: { message: "down" } }) } } as never)
+      const { sendMail } = await import("@/lib/mail")
+      vi.mocked(sendMail).mockImplementation((async () => ({ ok: false, provider: null, messageId: null, attempts: [{ provider: "ses", error: "down" }] })) as never)
       const l = await lead("Phi", u.sdr.id)
       const m = await book(u.sdr, l.id, u.closer.id, MON_10)
       await prisma.meeting.update({ where: { id: m.id }, data: { createdAt: new Date("2026-06-01T00:00:00Z") } })
@@ -414,7 +415,7 @@ suite("meetings (database)", () => {
       expect(await svc.sendMeetingReminders()).toEqual({ guests: 0, hosts: 0 })
       expect((await prisma.meeting.findUniqueOrThrow({ where: { id: m.id } })).reminderSentAt).toBeNull()
       expect((await prisma.meeting.findUniqueOrThrow({ where: { id: m.id } })).hostReminderSentAt).toBeNull()
-      vi.mocked((await import("@/lib/resend")).getResend).mockReturnValue(null)
+      vi.mocked((await import("@/lib/mail")).sendMail).mockImplementation((async () => NOT_SENT) as never)
     })
   })
 })

@@ -1,6 +1,6 @@
 import { pusher } from "./pusher"
 import { prisma } from "./prisma"
-import { getResend } from "@/lib/resend"
+import { sendMail } from "@/lib/mail"
 
 
 interface SendNotificationParams {
@@ -54,16 +54,19 @@ export async function sendNotification({
       })
 
       if (user?.email) {
-        await getResend()?.emails.send({
-          from: "Cleads <notifications@cleads.fr>",
-          to: user.email,
-          subject: title,
-          html: `
+        await sendMail(
+          {
+            from: "Cleads <notifications@cleads.fr>",
+            to: user.email,
+            subject: title,
+            html: `
             <h1>${title}</h1>
             <p>${message}</p>
             ${data ? `<pre>${JSON.stringify(data, null, 2)}</pre>` : ""}
           `,
-        })
+          },
+          { purpose: "transactional" }
+        )
       }
     }
 
