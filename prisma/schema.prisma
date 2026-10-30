@@ -607,6 +607,8 @@ enum ActivityKind {
   MEETING
   STATUS_CHANGE
   SYSTEM
+  /// A task created, done, postponed or dropped.
+  TASK
 }
 
 enum MeetingType {

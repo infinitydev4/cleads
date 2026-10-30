@@ -6,6 +6,9 @@ import { canAccessRecord, can, recordFilter, scopeOf } from "@/lib/rbac"
 import { companyDomain, emailDomain, nameKey, normalizeEmail } from "@/lib/crm/normalize"
 import { LeadError } from "./errors"
 import { closeOpenDeals, ensureOpenDeal } from "@/features/pipeline/deals"
+import { canWorkLead, closeOpenTasks, insertTask } from "@/features/activity/core"
+import { NOT_A_CONTACT, type ActivityInput } from "@/features/activity/rules"
+import { canChangeTask } from "@/features/activity/rules"
 import { OPEN_STAGES } from "@/features/pipeline/rules"
 import { MATCH_LABELS, cleanCompany, cleanContact, matchCompany, normalizeTags } from "./keys"
 import { scoreLead } from "./scoring"
@@ -135,6 +138,40 @@ export async function listLeads(user: CurrentUser, filters: LeadFilters): Promis
   return { rows: leads.map(toRow), total, page: filters.page, pageSize: filters.pageSize, pageCount: Math.max(1, Math.ceil(total / filters.pageSize)) }
 }
 
+const actorName = (u: { name: string | null; email: string | null } | null) => u?.name ?? u?.email ?? null
+
+type ActivityRow = Prisma.ActivityGetPayload<{ include: { actor: { select: { name: true; email: true } } } }>
+
+export function toActivity(a: ActivityRow): LeadDetail["activities"][number] {
+  const d = (a.data && typeof a.data === "object" && !Array.isArray(a.data) ? a.data : {}) as Record<string, unknown>
+  return {
+    id: a.id,
+    kind: a.kind,
+    body: a.body,
+    actorName: actorName(a.actor),
+    actorKind: a.actorKind,
+    occurredAt: a.occurredAt.toISOString(),
+    outcome: typeof d.outcome === "string" ? d.outcome : null,
+    durationMin: typeof d.durationMin === "number" ? d.durationMin : null,
+  }
+}
+
+/** One page of a fiche's history, newest first. `before` is the `occurredAt` of the last entry already shown. */
+export async function listTimeline(user: CurrentUser, id: string, opts: { kinds?: string[]; before?: string; take?: number } = {}) {
+  const lead = await prisma.lead.findFirst({ where: { id, workspaceId: user.workspaceId, ...scopeWhere(user, "lead:read") }, select: { id: true } })
+  if (!lead) throw new LeadError("not_found", "Fiche introuvable.", 404)
+  const take = Math.min(opts.take ?? 50, 100)
+  const kinds = (opts.kinds ?? []).filter((k): k is import("@prisma/client").ActivityKind => ["NOTE", "CALL", "EMAIL", "MEETING", "STATUS_CHANGE", "SYSTEM", "TASK"].includes(k))
+  const before = opts.before && !Number.isNaN(Date.parse(opts.before)) ? new Date(opts.before) : undefined
+  const rows = await prisma.activity.findMany({
+    where: { leadId: id, ...(kinds.length ? { kind: { in: kinds } } : {}), ...(before ? { occurredAt: { lt: before } } : {}) },
+    orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
+    take: take + 1,
+    include: { actor: { select: { name: true, email: true } } },
+  })
+  return { items: rows.slice(0, take).map(toActivity), hasMore: rows.length > take }
+}
+
 export async function getLead(user: CurrentUser, id: string): Promise<LeadDetail> {
   const lead = await prisma.lead.findFirst({
     where: { id, workspaceId: user.workspaceId, ...scopeWhere(user, "lead:read") },
@@ -142,7 +179,7 @@ export async function getLead(user: CurrentUser, id: string): Promise<LeadDetail
       company: true,
       contact: true,
       owner: { select: { name: true, email: true } },
-      activities: { orderBy: { occurredAt: "desc" }, take: 100, include: { actor: { select: { name: true, email: true } } } },
+      activities: { orderBy: [{ occurredAt: "desc" }, { id: "desc" }], take: 30, include: { actor: { select: { name: true, email: true } } } },
       deals: { include: { owner: { select: { name: true, email: true } } }, orderBy: { createdAt: "desc" } },
       meetings: { include: { host: { select: { name: true, email: true } } }, orderBy: { startsAt: "desc" }, take: 20 },
       tasks: { where: { doneAt: null }, include: { assignee: { select: { name: true, email: true } } }, orderBy: { dueAt: "asc" } },
@@ -172,13 +209,14 @@ export async function getLead(user: CurrentUser, id: string): Promise<LeadDetail
       id: k.id, name: k.name, jobTitle: k.jobTitle, email: k.email, emailKind: k.emailKind, phone: k.phone, doNotContact: k.doNotContact,
       doNotContactReason: k.doNotContactReason, source: k.source, collectedFrom: k.collectedFrom, collectedAt: iso(k.collectedAt), legalBasis: k.legalBasis,
     },
-    activities: lead.activities.map((a) => ({ id: a.id, kind: a.kind, body: a.body, actorName: who(a.actor), actorKind: a.actorKind, occurredAt: a.occurredAt.toISOString() })),
+    activities: lead.activities.map(toActivity),
     qualification: (lead.qualification as LeadDetail["qualification"]) ?? null,
     deals: lead.deals.map((d) => ({ id: d.id, stage: d.stage, amountCents: d.amountCents, expectedCloseAt: iso(d.expectedCloseAt), lostReason: d.lostReason, ownerId: d.ownerId, ownerName: who(d.owner), canMove: dealMoveScope === "all" || (dealMoveScope === "own" && d.ownerId === user.id) })),
     meetings: lead.meetings.map((m) => ({ id: m.id, startsAt: m.startsAt.toISOString(), endsAt: m.endsAt.toISOString(), status: m.status, type: m.type, hostName: who(m.host) })),
-    tasks: lead.tasks.map((t) => ({ id: t.id, title: t.title, dueAt: iso(t.dueAt), doneAt: iso(t.doneAt), assigneeName: who(t.assignee) })),
+    tasks: lead.tasks.map((t) => ({ id: t.id, title: t.title, dueAt: iso(t.dueAt), doneAt: iso(t.doneAt), assigneeId: t.assigneeId, assigneeName: who(t.assignee), canChange: canChangeTask(user, t, canWorkLead(user, lead)) })),
     can: {
       write: canAccessRecord(user, "lead:write", lead.ownerId),
+      log: canWorkLead(user, lead),
       assignOthers: can(user.role, "lead:write") && recordFilter(user, "lead:write").kind === "all",
       delete: can(user.role, "data:delete"),
       qualify: canAccessRecord(user, "lead:write", lead.ownerId) && canAccessRecord(user, "deal:qualify", lead.ownerId),
@@ -433,21 +471,33 @@ async function changeStatus(tx: Tx, user: CurrentUser, lead: LeadWithContact, st
       throw new LeadError("conflict", "Une opportunité est ouverte sur cette fiche : gagnez-la ou perdez-la d’abord.", 409)
     }
     await tx.lead.update({ where: { id: lead.id }, data: { status } })
-    if (status === "DISQUALIFIED" || status === "DO_NOT_CONTACT") await closeOpenDeals(tx, user, lead.id, status === "DO_NOT_CONTACT" ? "Ne pas contacter" : "Prospect disqualifié")
+    if (status === "DISQUALIFIED" || status === "DO_NOT_CONTACT") {
+      await closeOpenDeals(tx, user, lead.id, status === "DO_NOT_CONTACT" ? "Ne pas contacter" : "Prospect disqualifié")
+      await closeOpenTasks(tx, user, lead.id, status === "DO_NOT_CONTACT" ? "ne pas contacter" : "prospect disqualifié")
+    }
   }
   await log(tx, user, lead.id, "STATUS_CHANGE", null, { from: lead.status, to: status })
 }
 
-export async function addActivity(user: CurrentUser, id: string, input: { kind: "NOTE" | "CALL"; body: string }): Promise<void> {
-  const lead = await prisma.lead.findFirst({ where: { id, workspaceId: user.workspaceId, ...scopeWhere(user, "lead:read") }, select: { id: true, ownerId: true, status: true } })
+export async function addActivity(user: CurrentUser, id: string, input: ActivityInput): Promise<void> {
+  const lead = await prisma.lead.findFirst({
+    where: { id, workspaceId: user.workspaceId, ...scopeWhere(user, "lead:read") },
+    select: { id: true, ownerId: true, status: true, deals: { select: { ownerId: true, stage: true } } },
+  })
   if (!lead) throw new LeadError("not_found", "Fiche introuvable.", 404)
-  if (!canAccessRecord(user, "lead:write", lead.ownerId)) throw new LeadError("forbidden", "Cette fiche ne vous est pas attribuée.", 403)
+  if (!canWorkLead(user, lead)) throw new LeadError("forbidden", "Cette fiche ne vous est pas attribuée.", 403)
+  if (input.followUp && lead.status === "DO_NOT_CONTACT") throw new LeadError("conflict", "Cette fiche est marquée « ne pas contacter » : aucune relance ne peut être planifiée.", 409)
   await prisma.$transaction(async (tx) => {
-    await log(tx, user, id, input.kind, input.body)
-    if (input.kind === "CALL") {
-      // A call is a contact: the fiche leaves "Nouveau" and remembers when.
-      await tx.lead.update({ where: { id }, data: { lastContactedAt: new Date(), ...(lead.status === "NEW" ? { status: "CONTACTED" } : {}) } })
-      if (lead.status === "NEW") await log(tx, user, id, "STATUS_CHANGE", null, { from: "NEW", to: "CONTACTED", reason: "call" })
+    const data = input.kind === "CALL" ? { ...(input.outcome ? { outcome: input.outcome } : {}), ...(input.durationMin != null ? { durationMin: input.durationMin } : {}) } : undefined
+    await log(tx, user, id, input.kind, input.body || null, data && Object.keys(data).length ? data : undefined)
+    if (input.kind === "CALL" && !(input.outcome && NOT_A_CONTACT.includes(input.outcome))) {
+      // A call is a contact: the fiche leaves "Nouveau" and remembers when. Having spoken to someone is a reply.
+      const next = lead.status === "NEW" || lead.status === "CONTACTED" ? (input.outcome === "reached" ? "REPLIED" : lead.status === "NEW" ? "CONTACTED" : null) : null
+      await tx.lead.update({ where: { id }, data: { lastContactedAt: new Date(), ...(next ? { status: next } : {}) } })
+      if (next) await log(tx, user, id, "STATUS_CHANGE", null, { from: lead.status, to: next, reason: "call" })
+    }
+    if (input.followUp) {
+      await insertTask(tx, user, { leadId: id, title: input.followUp.title ?? (input.outcome === "callback" ? "Rappeler" : "Relancer"), dueDay: input.followUp.dueDay, assigneeId: user.id })
     }
   })
 }

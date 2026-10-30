@@ -113,10 +113,7 @@ export const updateLeadSchema = z
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), { message: "Aucun changement demandé" })
 
-export const activitySchema = z.object({
-  kind: z.enum(["NOTE", "CALL"]),
-  body: text(4000).min(1, "Écrivez quelque chose"),
-})
+export { activitySchema } from "@/features/activity/rules"
 
 export const bulkSchema = z.object({
   ids: z.array(z.string().min(1)).min(1).max(500),

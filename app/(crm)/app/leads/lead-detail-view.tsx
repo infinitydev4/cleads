@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Building2, CalendarDays, ClipboardCheck, Globe, Mail, MapPin, Pencil, Phone, PhoneCall, ShieldAlert, StickyNote, Trash2, UserRound, X } from "lucide-react"
+import { Building2, CalendarDays, ClipboardCheck, Globe, Mail, MapPin, Pencil, Phone, PhoneCall, ShieldAlert, Trash2, UserRound, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -24,6 +24,9 @@ import { DealsEditor } from "./deals-editor"
 import { QualifyDialog } from "./qualify-dialog"
 import { QUALIFICATION_LABELS } from "@/features/pipeline/rules"
 import { ScoreMeter } from "./score-meter"
+import { CallDialog } from "./call-dialog"
+import { TasksCard } from "./tasks-card"
+import { CALL_OUTCOMES } from "@/features/activity/rules"
 
 interface Props {
   lead: LeadDetail
@@ -41,22 +44,30 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [qualifying, setQualifying] = useState(false)
+  const [calling, setCalling] = useState(false)
+  const [addingTask, setAddingTask] = useState(false)
   const canQualifyNow = lead.can.write && lead.status !== "DO_NOT_CONTACT" && lead.status !== "QUALIFIED" && lead.status !== "DISQUALIFIED"
 
-  // "q" opens the qualification from the keyboard, unless a field has the focus.
+  // Shortcuts, unless a field has the focus: q qualifies, c logs a call, t plans a task.
   useEffect(() => {
-    if (!canQualifyNow) return
+    const busy = qualifying || calling || editing || confirmDelete
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement
       const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable || el.getAttribute("role") === "combobox"
-      if (e.key === "q" && !e.metaKey && !e.ctrlKey && !e.altKey && !typing && !qualifying) {
-        e.preventDefault()
-        setQualifying(true)
-      }
+      if (typing || busy || e.metaKey || e.ctrlKey || e.altKey) return
+      if (e.key === "q" && canQualifyNow) { e.preventDefault(); setQualifying(true) }
+      else if (e.key === "c" && lead.can.log) { e.preventDefault(); setCalling(true) }
+      else if (e.key === "t" && lead.can.log && lead.status !== "DO_NOT_CONTACT") { e.preventDefault(); setAddingTask(true) }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [canQualifyNow, qualifying])
+  }, [canQualifyNow, qualifying, calling, editing, confirmDelete, lead.can.log, lead.status])
+
+  /** Re-reads the fiche after a change made elsewhere (a task ticked, a call logged). */
+  async function reload() {
+    onChange(await api<LeadDetail>(`/api/leads/${lead.id}`))
+    router.refresh()
+  }
 
   async function patch(body: object, success?: string) {
     try {
@@ -100,6 +111,11 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
             {canQualifyNow && (
               <Button size="sm" onClick={() => setQualifying(true)} title="Raccourci : q">
                 <ClipboardCheck className="h-4 w-4" aria-hidden="true" /> Qualifier
+              </Button>
+            )}
+            {lead.can.log && (
+              <Button variant="outline" size="sm" onClick={() => setCalling(true)} title="Raccourci : c">
+                <PhoneCall className="h-4 w-4" aria-hidden="true" /> Appel
               </Button>
             )}
             {lead.can.write && (
@@ -189,22 +205,16 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
         </Card>
       )}
 
-      {(lead.meetings.length > 0 || lead.tasks.length > 0) && (
-        <Card className="space-y-4 p-4">
-          {lead.meetings.length > 0 && (
-            <section aria-label="Rendez-vous" className="space-y-2">
-              <h3 className="flex items-center gap-2 text-sm font-bold"><CalendarDays className="h-4 w-4" aria-hidden="true" /> Rendez-vous</h3>
-              {lead.meetings.map((m) => <p key={m.id} className="flex flex-wrap items-center gap-2 text-sm"><span className="capitalize">{formatDateTime(m.startsAt)}</span><StatusBadge map={meetingStatus} value={m.status} /><span className="text-muted-foreground">avec {m.hostName}</span></p>)}
-            </section>
-          )}
-          {lead.tasks.length > 0 && (
-            <section aria-label="Tâches" className="space-y-2">
-              <h3 className="text-sm font-bold">À faire</h3>
-              {lead.tasks.map((t) => <p key={t.id} className="text-sm">{t.title} <span className={cn("text-muted-foreground", t.dueAt && new Date(t.dueAt) < new Date() && "font-semibold text-destructive-text")}>{t.dueAt ? `· ${formatDate(t.dueAt)}` : ""}</span></p>)}
-            </section>
-          )}
+      {lead.meetings.length > 0 && (
+        <Card className="space-y-2 p-4">
+          <section aria-label="Rendez-vous" className="space-y-2">
+            <h3 className="flex items-center gap-2 text-sm font-bold"><CalendarDays className="h-4 w-4" aria-hidden="true" /> Rendez-vous</h3>
+            {lead.meetings.map((m) => <div key={m.id} className="flex flex-wrap items-center gap-2 text-sm"><span className="capitalize">{formatDateTime(m.startsAt)}</span><StatusBadge map={meetingStatus} value={m.status} /><span className="text-muted-foreground">avec {m.hostName}</span></div>)}
+          </section>
         </Card>
       )}
+
+      <TasksCard lead={lead} assignees={assignees} currentUserId={currentUserId} adding={addingTask} onAddingChange={setAddingTask} onChange={(next) => { onChange(next); router.refresh() }} refresh={reload} />
 
       <Timeline lead={lead} onChange={onChange} />
 
@@ -216,6 +226,7 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
         </div>
       )}
 
+      {calling && <CallDialog open={calling} onOpenChange={setCalling} leadId={lead.id} leadName={title} onDone={(next) => { onChange(next); router.refresh() }} />}
       {qualifying && <QualifyDialog open={qualifying} onOpenChange={setQualifying} lead={lead} assignees={assignees} onDone={(next) => { onChange(next); router.refresh() }} />}
       {editing && <EditDialog open={editing} onOpenChange={setEditing} lead={lead} onSave={async (body) => { const ok = await patch(body, "Fiche mise à jour"); if (ok) setEditing(false); return !!ok }} />}
       <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
@@ -268,52 +279,121 @@ function TagEditor({ tags, disabled, onChange }: { tags: string[]; disabled: boo
   )
 }
 
+const FILTERS = [
+  { id: "ALL", label: "Tout", kinds: "" },
+  { id: "NOTE", label: "Notes", kinds: "NOTE" },
+  { id: "CALL", label: "Appels", kinds: "CALL" },
+  { id: "TASK", label: "Tâches", kinds: "TASK" },
+  { id: "CHANGES", label: "Changements", kinds: "STATUS_CHANGE,SYSTEM" },
+] as const
+
+type Entry = LeadDetail["activities"][number]
+
+function entryText(a: Entry) {
+  if (a.kind === "CALL") {
+    const head = ["Appel", a.outcome && (CALL_OUTCOMES as Record<string, string>)[a.outcome], a.durationMin != null ? `${a.durationMin} min` : null].filter(Boolean).join(" · ")
+    return { head, body: a.body }
+  }
+  if (a.kind === "STATUS_CHANGE") return { head: "Statut modifié", body: null }
+  return { head: null, body: a.body }
+}
+
+/** One chronology for the fiche: notes, calls, tasks, status and opportunity changes, newest first. */
 function Timeline({ lead, onChange }: { lead: LeadDetail; onChange: (lead: LeadDetail) => void }) {
-  const [kind, setKind] = useState<"NOTE" | "CALL">("NOTE")
   const [body, setBody] = useState("")
   const [busy, setBusy] = useState(false)
+  const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("ALL")
+  // Entries fetched beyond the first page or under a filter; the unfiltered first page comes with the fiche.
+  const [extra, setExtra] = useState<{ items: Entry[]; hasMore: boolean } | null>(null)
+  const [loading, setLoading] = useState(false)
+  const kinds = FILTERS.find((f) => f.id === filter)!.kinds
+  const newest = lead.activities[0]?.id
+  // Something new was written (here or from another dialog): the filtered pages are stale, start again from the top.
+  const [seen, setSeen] = useState(newest)
+  if (seen !== newest) {
+    setSeen(newest)
+    setExtra(null)
+    setFilter("ALL")
+  }
+  const first: Entry[] = lead.activities
+  const shown = filter === "ALL" ? [...first, ...(extra?.items ?? [])] : (extra?.items ?? [])
+  const hasMore = filter === "ALL" ? (extra ? extra.hasMore : first.length >= 30) : (extra?.hasMore ?? false)
+
+  async function load(reset: boolean) {
+    setLoading(true)
+    try {
+      const last = reset ? undefined : shown.at(-1)?.occurredAt
+      const qs = new URLSearchParams()
+      if (kinds) qs.set("kind", kinds)
+      if (last) qs.set("before", last)
+      const page = await api<{ items: Entry[]; hasMore: boolean }>(`/api/leads/${lead.id}/timeline?${qs}`)
+      setExtra(reset || !extra ? page : { items: [...extra.items, ...page.items], hasMore: page.hasMore })
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Échec")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function choose(id: (typeof FILTERS)[number]["id"]) {
+    setFilter(id)
+    setExtra(null)
+    if (id !== "ALL") {
+      const k = FILTERS.find((f) => f.id === id)!.kinds
+      setLoading(true)
+      api<{ items: Entry[]; hasMore: boolean }>(`/api/leads/${lead.id}/timeline?kind=${k}`)
+        .then(setExtra)
+        .catch((e) => toast.error(e instanceof Error ? e.message : "Échec"))
+        .finally(() => setLoading(false))
+    }
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
     setBusy(true)
     try {
-      onChange(await api<LeadDetail>(`/api/leads/${lead.id}/activities`, { method: "POST", body: JSON.stringify({ kind, body }) }))
+      onChange(await api<LeadDetail>(`/api/leads/${lead.id}/activities`, { method: "POST", body: JSON.stringify({ kind: "NOTE", body }) }))
       setBody("")
+      setExtra(null)
+      if (filter !== "ALL") setFilter("ALL")
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Échec")
     } finally {
       setBusy(false)
     }
   }
-  const text = (a: LeadDetail["activities"][number]) => (a.kind === "STATUS_CHANGE" ? "Statut modifié" : a.body)
 
   return (
     <section aria-label="Historique" className="space-y-4">
-      <h3 className="text-sm font-bold">Historique</h3>
-      {lead.can.write && (
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-bold">Historique</h3>
+        <div className="flex flex-wrap gap-1" role="group" aria-label="Filtrer l’historique">
+          {FILTERS.map((f) => <Button key={f.id} type="button" size="sm" variant={filter === f.id ? "secondary" : "ghost"} aria-pressed={filter === f.id} onClick={() => choose(f.id)}>{f.label}</Button>)}
+        </div>
+      </div>
+      {lead.can.log && (
         <form onSubmit={submit} className="space-y-2 rounded-xl border bg-card p-3">
-          <div className="flex gap-2" role="group" aria-label="Type d’entrée">
-            {([["NOTE", "Note", StickyNote], ["CALL", "Appel", PhoneCall]] as const).map(([value, label, Icon]) => (
-              <Button key={value} type="button" size="sm" variant={kind === value ? "secondary" : "ghost"} aria-pressed={kind === value} onClick={() => setKind(value)}>
-                <Icon className="h-4 w-4" aria-hidden="true" /> {label}
-              </Button>
-            ))}
-          </div>
-          <Textarea value={body} onChange={(e) => setBody(e.target.value)} aria-label="Contenu" placeholder={kind === "CALL" ? "Résultat de l’appel…" : "Une note pour l’équipe…"} />
-          <div className="flex justify-end"><Button type="submit" size="sm" loading={busy} disabled={!body.trim()}>Ajouter</Button></div>
+          <Textarea value={body} onChange={(e) => setBody(e.target.value)} aria-label="Nouvelle note" placeholder="Une note pour l’équipe…" onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && body.trim()) { e.preventDefault(); e.currentTarget.form?.requestSubmit() } }} />
+          <div className="flex justify-end"><Button type="submit" size="sm" loading={busy} disabled={!body.trim()}>Ajouter la note</Button></div>
         </form>
       )}
+      {shown.length === 0 && !loading && <p className="text-sm text-muted-foreground">{filter === "ALL" ? "Aucune activité pour l’instant." : "Rien dans cette catégorie."}</p>}
       <ol className="space-y-3">
-        {lead.activities.map((a) => (
-          <li key={a.id} className="flex gap-3 text-sm">
-            <span aria-hidden="true" className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", a.kind === "NOTE" ? "bg-info" : a.kind === "CALL" ? "bg-success" : a.kind === "STATUS_CHANGE" ? "bg-warning" : "bg-muted-foreground/50")} />
-            <div className="min-w-0 flex-1">
-              <p className="whitespace-pre-wrap break-words">{text(a)}</p>
-              <p className="text-xs text-muted-foreground">{a.actorName ?? (a.actorKind === "SYSTEM" ? "Système" : "—")} · {ago(a.occurredAt)}</p>
-            </div>
-          </li>
-        ))}
+        {shown.map((a) => {
+          const { head, body: text } = entryText(a)
+          return (
+            <li key={a.id} className="flex gap-3 text-sm">
+              <span aria-hidden="true" className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", a.kind === "NOTE" ? "bg-info" : a.kind === "CALL" ? "bg-success" : a.kind === "TASK" ? "bg-primary" : a.kind === "STATUS_CHANGE" ? "bg-warning" : "bg-muted-foreground/50")} />
+              <div className="min-w-0 flex-1">
+                {head && <p className="font-medium">{head}</p>}
+                {text && <p className="whitespace-pre-wrap break-words">{text}</p>}
+                <p className="text-xs text-muted-foreground">{a.actorName ?? (a.actorKind === "SYSTEM" ? "Système" : "—")} · {ago(a.occurredAt)}</p>
+              </div>
+            </li>
+          )
+        })}
       </ol>
+      {hasMore && <div className="flex justify-center"><Button type="button" variant="outline" size="sm" loading={loading} onClick={() => load(false)}>Voir plus</Button></div>}
     </section>
   )
 }

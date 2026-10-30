@@ -5,6 +5,7 @@ import type { CurrentUser } from "@/lib/auth/guard"
 import { canAccessRecord, recordFilter, scopeOf } from "@/lib/rbac"
 import { LeadError } from "@/features/leads/errors"
 import { scopeWhere } from "@/features/leads/service"
+import { closeOpenTasks } from "@/features/activity/core"
 import { assertDealOwner, closeOpenDeals, ensureOpenDeal, lockLead, logDeal } from "./deals"
 import { DISQUALIFY_REASONS, LOST_REASONS, OPEN_STAGES, STAGES, checkDealAssign, checkDealMove, isOpen, qualificationSchema, type Qualification } from "./rules"
 import { z } from "zod"
@@ -52,6 +53,7 @@ export async function qualifyLead(user: CurrentUser, leadId: string, input: Qual
       await tx.lead.update({ where: { id: leadId }, data: { status: "DISQUALIFIED", qualification: merged as Prisma.InputJsonValue } })
       await logDeal(tx, user, { leadId, body: `Disqualifiée : ${input.reason}${input.detail ? ` (${input.detail})` : ""}`, data: { from: lead.status, to: "DISQUALIFIED" } })
       await closeOpenDeals(tx, user, leadId, `Prospect disqualifié : ${input.reason}`)
+      await closeOpenTasks(tx, user, leadId, "prospect disqualifié")
       return null
     }
 

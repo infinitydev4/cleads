@@ -417,6 +417,10 @@ Statuts de prospect, qualification guidée (budget, besoin, décideur, échéanc
 - **Critères** : un SDR qualifie une fiche en moins d'une minute au clavier ; transitions interdites refusées côté serveur.
 
 ### E7 — Activités, tâches et file « Aujourd'hui » · **M**
+> **Avancement (branche `refactor/e0-cleanup`)** — fait : historique unique et filtrable (pages sans trou), appels avec résultat, durée et relance planifiée dans le même geste, tâches datées avec droits par rôle, une ligne d'historique exactement par changement (testé, y compris deux personnes en parallèle), tâches abandonnées à la disqualification, file « Aujourd'hui » par rôle (en retard, du jour, rendez-vous, à planifier, à venir, équipe pour les managers) qui se vide en place avec annulation. Détails : [ACTIVITES.md](ACTIVITES.md). Une valeur d'enum ajoutée, aucune table.
+> **Vérifié dans le navigateur** (SDR, base jetable) : tâche cochée et disparue de la file, appel « pas de réponse » enregistré au clavier avec relance du lendemain et tâche terminée, historique de la fiche à jour.
+> **Écarts assumés** : une échéance est un jour, pas une heure ; pas de rappel par email ou notification (E9/E11) ; le closer qui détient l'opportunité peut désormais noter, appeler et planifier sur la fiche. **Reste** : compteur d'en-retard dans la navigation, tâches sans fiche.
+
 Chronologie unifiée, notes, appels (durée, résultat), tâches avec échéance, rappels, file du jour par rôle.
 - **Critères** : aucune action sans trace dans la chronologie ; la file du jour se vide sans quitter l'écran.
 

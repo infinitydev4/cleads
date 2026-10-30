@@ -8,6 +8,7 @@ const expected: Record<string, Record<CrmRole, string>> = {
   "lead:write": { OWNER: "all", MANAGER: "all", SDR: "pool", CLOSER: "own", VIEWER: "-" },
   "lead:import": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "-", VIEWER: "-" },
   "lead:merge": { OWNER: "all", MANAGER: "all", SDR: "-", CLOSER: "-", VIEWER: "-" },
+  "task:write": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "all", VIEWER: "-" },
   "search:run": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "-", VIEWER: "-" },
   "email:send": { OWNER: "all", MANAGER: "all", SDR: "own", CLOSER: "own", VIEWER: "-" },
   "sequence:manage": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "-", VIEWER: "-" },

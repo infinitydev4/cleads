@@ -49,6 +49,7 @@ Les tables d'envoi d'emails (boîtes, modèles, séquences, inscriptions, messag
 |---|---|---|
 | `20261030000000_rename_billing_company` | `Company` devient `BillingCompany` (société d'émission des factures) pour libérer le nom | aucune donnée touchée ; factures et RIB conservés |
 | `20261030000100_crm_data_model` | tables CRM, espace par défaut `ws_default`, rattachement des comptes d'équipe, invitations et journal existants, contraintes CHECK | additive |
+| `20261030000400_task_activity_kind` | valeur `TASK` de `ActivityKind` : les tâches laissent une trace dans l'historique | additive, aucune donnée touchée |
 
 Vérifié sur une base contenant des comptes d'équipe, un ancien client, une invitation, une ligne de journal, une société d'émission et une facture : tout est conservé, les comptes d'équipe reçoivent l'espace, l'ancien client n'en reçoit pas.
 

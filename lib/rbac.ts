@@ -23,6 +23,8 @@ const matrix = {
   /** SDRs move an opportunity up to "Qualifié" only. */
   "deal:qualify": { OWNER: "all", MANAGER: "all", SDR: "pool" },
   "deal:move": { OWNER: "all", MANAGER: "all", CLOSER: "own" },
+  /** Tasks follow the fiche they belong to: the service checks the record (assignee, author, who holds the fiche). */
+  "task:write": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "all" },
   // Prospecting tools
   "search:run": { OWNER: "all", MANAGER: "all", SDR: "all" },
   "sequence:manage": { OWNER: "all", MANAGER: "all", SDR: "all" },

@@ -73,7 +73,7 @@ export interface LeadDetail {
     collectedAt: string | null
     legalBasis: string | null
   } | null
-  activities: { id: string; kind: string; body: string | null; actorName: string | null; actorKind: string; occurredAt: string }[]
+  activities: { id: string; kind: string; body: string | null; actorName: string | null; actorKind: string; occurredAt: string; outcome: string | null; durationMin: number | null }[]
   qualification: {
     need?: string
     budget?: "unknown" | "none" | "yes"
@@ -86,7 +86,7 @@ export interface LeadDetail {
   } | null
   deals: { id: string; stage: string; amountCents: number | null; expectedCloseAt: string | null; lostReason: string | null; ownerId: string | null; ownerName: string | null; canMove: boolean }[]
   meetings: { id: string; startsAt: string; endsAt: string; status: string; type: string; hostName: string | null }[]
-  tasks: { id: string; title: string; dueAt: string | null; doneAt: string | null; assigneeName: string | null }[]
+  tasks: { id: string; title: string; dueAt: string | null; doneAt: string | null; assigneeId: string | null; assigneeName: string | null; canChange: boolean }[]
   /** What the signed-in person may do with this fiche, computed on the server. */
-  can: { write: boolean; assignOthers: boolean; delete: boolean; qualify: boolean }
+  can: { write: boolean; log: boolean; assignOthers: boolean; delete: boolean; qualify: boolean }
 }
