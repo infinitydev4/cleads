@@ -19,11 +19,22 @@ export function useNotifications() {
   useEffect(() => {
     if (!session?.user?.email) return
 
-    // Initialiser Pusher
-    const pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY!, {
-      cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
-      authEndpoint: "/api/pusher/auth",
-    })
+    // La liste des notifications fonctionne sans temps réel ; seul le push en direct a besoin de la clé Pusher.
+    // Sans clé (ou si Pusher refuse de démarrer), on garde la liste et on n'abat jamais la page : tout le CRM monte ce hook.
+    fetchNotifications()
+    const key = process.env.NEXT_PUBLIC_PUSHER_KEY
+    if (!key) return
+
+    let pusher: Pusher
+    try {
+      pusher = new Pusher(key, {
+        cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
+        authEndpoint: "/api/pusher/auth",
+      })
+    } catch (error) {
+      console.error("[PUSHER]", error)
+      return
+    }
 
     // S'abonner au canal de l'utilisateur
     const channel = pusher.subscribe(`private-user-${session.user.email}`)
@@ -66,9 +77,6 @@ export function useNotifications() {
       }
       addNotification(notification)
     })
-
-    // Charger les notifications existantes
-    fetchNotifications()
 
     return () => {
       channel.unbind_all()
