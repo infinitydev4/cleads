@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { CheckCircle2, CircleAlert, Pause, Pencil, Play, PlugZap, Plus, Send, Trash2 } from "lucide-react"
+import { CheckCircle2, CircleAlert, Pause, Pencil, Play, PlugZap, Plus, RefreshCw, Send, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -95,6 +95,12 @@ export function MailboxesManager({ initial, senders, canSeal, protectedDomains }
     put(r.mailbox)
     report(r.test, "Test terminé")
   })
+  const poll = (m: MailboxView) => run(`poll:${m.id}`, async () => {
+    const r = await api<{ mailbox: MailboxView; summary: { replies: number; bounces: number; errors: number } }>(`/api/mailboxes/${m.id}/poll`, { method: "POST" })
+    put(r.mailbox)
+    if (r.mailbox.lastPollError) toast.error(`Lecture impossible : ${r.mailbox.lastPollError}`)
+    else toast.success(r.summary.replies || r.summary.bounces ? `${r.summary.replies} réponse(s), ${r.summary.bounces} rebond(s)` : "Rien de nouveau")
+  })
   const testEmail = (m: MailboxView) => run(`mail:${m.id}`, async () => {
     const r = await api<{ to: string }>(`/api/mailboxes/${m.id}/test-email`, { method: "POST" })
     toast.success(`Test envoyé à ${r.to} : vérifiez qu’il arrive en boîte de réception, pas en spam.`)
@@ -146,6 +152,7 @@ export function MailboxesManager({ initial, senders, canSeal, protectedDomains }
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Button variant="outline" size="sm" loading={busy === `test:${m.id}`} onClick={() => test(m)}><PlugZap className="h-4 w-4" aria-hidden="true" /> Tester</Button>
+                      {m.imapHost && <Button variant="outline" size="sm" disabled={m.status !== "ACTIVE"} loading={busy === `poll:${m.id}`} onClick={() => poll(m)}><RefreshCw className="h-4 w-4" aria-hidden="true" /> Lire les réponses</Button>}
                       <Button variant="outline" size="sm" disabled={m.status !== "ACTIVE"} loading={busy === `mail:${m.id}`} onClick={() => testEmail(m)}><Send className="h-4 w-4" aria-hidden="true" /> M’envoyer un test</Button>
                       <Button variant="outline" size="sm" onClick={() => setEditing(m)}><Pencil className="h-4 w-4" aria-hidden="true" /> Modifier</Button>
                       {m.status === "PAUSED" || m.status === "ERROR" ? (
@@ -163,6 +170,13 @@ export function MailboxesManager({ initial, senders, canSeal, protectedDomains }
                   </div>
                   {m.status !== "ACTIVE" && m.statusReason && (
                     <p role="status" className="flex items-start gap-2 text-sm text-destructive-text"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /> {m.statusReason}</p>
+                  )}
+                  {!m.imapHost ? (
+                    <p className="flex items-start gap-2 text-sm text-warning"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /> Sans serveur IMAP, les réponses et les rebonds ne sont pas lus : ajoutez-le dans « Modifier ».</p>
+                  ) : m.lastPollError ? (
+                    <p role="status" className="flex items-start gap-2 text-sm text-destructive-text"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /> Lecture des réponses en échec : {m.lastPollError}</p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">{m.lastPolledAt ? `Réponses lues ${ago(m.lastPolledAt)}` : "Réponses pas encore lues (toutes les 5 minutes)"}</p>
                   )}
                   {m.status === "ACTIVE" && m.lastTestedAt && (
                     <p className="flex items-center gap-2 text-sm text-muted-foreground"><CheckCircle2 className="h-4 w-4 text-success" aria-hidden="true" /> Prête à envoyer</p>

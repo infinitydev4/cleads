@@ -57,6 +57,9 @@ export interface MailboxView {
   status: MailboxStatus
   statusReason: string | null
   lastTestedAt: string | null
+  /** E9b: when replies were last read, and why the last read failed (null when it worked). */
+  lastPolledAt: string | null
+  lastPollError: string | null
 }
 
 type MailboxRow = Mailbox & { owner: { name: string | null; email: string | null } | null }
@@ -85,6 +88,8 @@ async function toView(m: MailboxRow, now = new Date()): Promise<MailboxView> {
     status: m.status,
     statusReason: m.statusReason,
     lastTestedAt: m.lastTestedAt?.toISOString() ?? null,
+    lastPolledAt: m.lastPolledAt?.toISOString() ?? null,
+    lastPollError: m.lastPollError,
   }
 }
 

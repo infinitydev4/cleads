@@ -1,4 +1,4 @@
-# Emailing de prospection (E9a)
+# Emailing de prospection (E9a, E9b)
 
 Pages : **Emails** (`/app/mailbox` : journal d'envoi et modèles), **Réglages → Boîtes d'envoi** (`/app/settings/mailboxes`, propriétaire seulement), bouton **Email** sur la fiche (raccourci `e`). Code : `features/outreach/`.
 
@@ -12,6 +12,20 @@ Pages : **Emails** (`/app/mailbox` : journal d'envoi et modèles), **Réglages �
 - **Désinscription** : la page `/u/<jeton>` affiche l'adresse masquée et attend un clic (un GET ne désinscrit jamais, parce que les antivirus ouvrent les liens). Le POST un clic arrive sur `/api/public/unsubscribe/<jeton>`. Le jeton signe l'identifiant du message, jamais l'adresse. Effet : ligne `Suppression` (`UNSUBSCRIBED`), contact « ne pas contacter », ligne dans l'historique. Un motif plus fort déjà enregistré (rebond, plainte) est gardé, et un double clic ne change rien.
 - **Chauffe et plafonds** : 5, 10, 20 puis 30 envois par jour, semaine après semaine pendant 4 semaines, jamais au-dessus du plafond de la boîte, et 50 par jour au plus. Une boîte qui envoie déjà depuis longtemps peut sauter la chauffe ; on peut aussi la recommencer.
 - **Journal d'envoi** : chaque message (`EmailMessage`) garde l'expéditeur, le destinataire, l'objet, le texte exact envoyé, le `Message-ID`, le statut et la raison d'un échec. Le propriétaire et les managers voient tous les envois de l'équipe ; les autres membres ne voient que les leurs.
+
+## Réponses et rebonds (jalon b)
+
+Onglet **Réponses** de la page Emails (pastille de non-lus), bouton **Lire les réponses** sur chaque boîte (Réglages → Boîtes d'envoi). Code : `features/outreach/{inbound,poll,replies}.ts`.
+
+- **Lecture** : toutes les 5 minutes, chaque boîte active avec un serveur IMAP est lue en lecture seule (aucun message n'est marqué lu, déplacé ni supprimé). La fonction planifiée `netlify/functions/mailbox-poll.mts` appelle `POST /api/cron/mailbox-poll` (protégé par `CRON_SECRET`, comme les rappels de rendez-vous). Une boîte n'est lue que par un seul traitement à la fois ; relire un message ne le duplique pas. Première lecture : 14 jours en arrière, 100 messages par passage.
+- **Rattachement** : une réponse est reconnue par `In-Reply-To` / `References`, qui doivent contenir le `Message-ID` d'un email envoyé par cette boîte. Le reste de la boîte (newsletters, courrier personnel, mails sans lien avec un envoi) est ignoré et jamais stocké.
+- **Réponse humaine** : ligne `INBOUND` dans le journal, entrée « répondu » dans l'historique de la fiche, statut **Nouveau / Contacté → Répondu**. Seul le texte écrit est gardé (l'historique cité est coupé).
+- **Réponse automatique** (absence, `Auto-Submitted`, `Precedence: bulk`…) : rangée d'office « Absent », déjà lue, **sans** changer le statut de la fiche.
+- **Rebond définitif** (rapport 5.x.x) : l'email passe en **Rebond**, l'adresse entre dans la liste d'exclusion (`BOUNCED`), le contact devient « ne pas contacter », la fiche le note. Un rebond **temporaire** (4.x.x, retard) est noté sur la fiche et ne bloque rien. Un rebond sur un email de test n'exclut personne. Un rebond non rattachable à un de nos envois est ignoré.
+- **Classement manuel** : Intéressé, Pas maintenant, Pas intéressé, Absent, Mauvais interlocuteur, Ne plus écrire, Autre. Classer ouvre le message (lu) et note le choix sur la fiche. Seul **Ne plus écrire** a un effet : l'adresse écrite et celle qui a répondu sont exclues, comme après un clic de désinscription. Les autres classes n'ont pas d'effet sur le statut de la fiche : qualifier ou disqualifier reste une décision de la personne.
+- **Droits** : propriétaire et managers voient les réponses de l'équipe, les autres seulement celles à leurs envois.
+- **Panne** : identifiants IMAP refusés → la boîte passe « En erreur » (elle n'envoie plus non plus) ; réseau coupé → l'erreur s'affiche sur la boîte, la lecture reprend seule.
+- **Envois bloqués** : un email resté `SENDING` plus de 15 minutes passe en échec (« vérifiez le dossier Envoyés ») et libère sa place du jour.
 
 ## Ce qui bloque un envoi (vérifié sur le serveur)
 
@@ -48,13 +62,14 @@ Dans l'ordre :
 
 ## Vérifié
 
+- E9b : `tests/inbound.test.ts` (rapports de rebond, retards, réponses, absences, citations) et `tests/replies.integration.test.ts` (base jetable, faux serveur IMAP : réponse rattachée, relecture sans doublon, boucle concurrente, absence, courrier étranger, rebond définitif/temporaire/de test, identifiants refusés, envoi bloqué, classement et « Ne plus écrire »). Un test a été vérifié en retirant volontairement l'exclusion : il échoue. **Pas encore vérifié** : la lecture IMAP contre un vrai serveur Google (le faux serveur remplace `transport.fetchNew`), et la fonction planifiée Netlify en production.
+
 - Tests : `tests/outreach.test.ts` (règles, modèles, chiffrement, jetons, erreurs SMTP) et `tests/outreach.integration.test.ts` (base jetable : plafond en parallèle, exclusions, droits, échecs, désinscription concurrente, modèles).
 - Dans le navigateur, sur une base jetable avec un faux serveur SMTP local : ajout d'une boîte avec test de connexion, email de test reçu (en-têtes, `Message-ID`, pied de page), modèle créé puis rempli depuis une fiche, envoi par un SDR, historique et statut « Contacté » à jour, désinscription par la page, puis envoi bloqué avec les raisons affichées.
 - **Pas encore vérifié** : un envoi réel depuis une vraie boîte vers Gmail ou Outlook, et l'arrivée en boîte de réception plutôt qu'en spam.
 
 ## Pas dans ce jalon
 
-- **E9b** : lecture des réponses par IMAP (rattachement par `In-Reply-To`), classement des réponses, rebonds lus dans les boîtes. Il faut une tâche régulière : une fonction planifiée Netlify toutes les quelques minutes suffit pour quelques boîtes ; le VPS OVH reste l'option si le volume grandit.
+- **E9b** (fait, ci-dessus). Pas encore : classement assisté par IA, notification à l'arrivée d'une réponse, réponse depuis le CRM (on répond pour l'instant depuis la messagerie de la boîte), plaintes de spam (les fournisseurs de boîtes ne les renvoient pas toujours ; SES les gère déjà côté transactionnel).
 - **E9c** : séquences, arrêt automatique (réponse, rebond, désinscription, plainte), fenêtres horaires, délais aléatoires, pause automatique sur seuils, tableau de délivrabilité. Cette étape n'est lancée que si les premiers envois montrent des rebonds et des plaintes sous contrôle.
 - Connexion OAuth (API Gmail, Microsoft Graph) : à ajouter si l'hébergeur choisi refuse les mots de passe d'application.
-- Un envoi resté `SENDING` après un plantage du serveur garde sa place dans le plafond jusqu'au lendemain ; le nettoyage arrivera avec la tâche régulière d'E9b.

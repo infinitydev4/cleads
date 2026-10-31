@@ -160,4 +160,54 @@ export const transport = {
       await client.logout().catch(() => {})
     }
   },
+  /**
+   * Reads INBOX messages newer than `lastUid` without changing any flag. With no usable cursor (first read, or the
+   * server renumbered the folder) it starts from the last `sinceDays` days. At most `limit` messages per call, oldest
+   * first, so a backlog is worked off over several runs. Messages above `maxBytes` are skipped.
+   */
+  async fetchNew(c: MailboxCredentials, cursor: { lastUid: number | null; uidValidity: string | null }, opts: { sinceDays?: number; limit?: number; maxBytes?: number } = {}): Promise<FetchResult> {
+    if (!c.imapHost) throw new TransportError("other", "Cette boîte n’a pas de serveur IMAP.")
+    const { sinceDays = 14, limit = 100, maxBytes = 2_000_000 } = opts
+    const client = imap(c)
+    try {
+      await client.connect()
+      const lock = await client.getMailboxLock("INBOX", { readOnly: true })
+      try {
+        const box = client.mailbox
+        const uidValidity = box && typeof box === "object" ? String(box.uidValidity) : ""
+        const usable = cursor.lastUid !== null && cursor.uidValidity === uidValidity
+        const found = (usable
+          ? await client.search({ uid: `${cursor.lastUid! + 1}:*` }, { uid: true })
+          : await client.search({ since: new Date(Date.now() - sinceDays * 86_400_000) }, { uid: true })) || []
+        // "N:*" always includes the newest message, even when it is older than N.
+        const uids = found.filter((u) => !usable || u > cursor.lastUid!).sort((a, b) => a - b).slice(0, limit)
+        const messages: { uid: number; source: Buffer }[] = []
+        let lastUid = usable ? cursor.lastUid : null
+        if (uids.length) {
+          for await (const m of client.fetch(uids, { uid: true, size: true, source: true }, { uid: true })) {
+            lastUid = Math.max(lastUid ?? 0, m.uid)
+            if ((m.size ?? 0) <= maxBytes && m.source) messages.push({ uid: m.uid, source: m.source })
+          }
+        } else if (!usable) {
+          lastUid = box && typeof box === "object" ? Math.max(0, box.uidNext - 1) : 0
+        }
+        return { uidValidity, lastUid, messages, more: found.length > uids.length }
+      } finally {
+        lock.release()
+      }
+    } catch (error) {
+      throw toTransportError(error, "imap")
+    } finally {
+      await client.logout().catch(() => {})
+    }
+  },
+}
+
+export interface FetchResult {
+  uidValidity: string
+  /** Highest UID looked at (including skipped ones): the next read starts after it. */
+  lastUid: number | null
+  messages: { uid: number; source: Buffer }[]
+  /** More new messages are waiting beyond the limit. */
+  more: boolean
 }
