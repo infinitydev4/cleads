@@ -10,6 +10,7 @@ import { canWorkLead, closeOpenTasks, insertTask } from "@/features/activity/cor
 import { NOT_A_CONTACT, type ActivityInput } from "@/features/activity/rules"
 import { canChangeTask } from "@/features/activity/rules"
 import { OPEN_STAGES } from "@/features/pipeline/rules"
+import { mayEmailLead } from "@/features/outreach/rules"
 import { MATCH_LABELS, cleanCompany, cleanContact, matchCompany, normalizeTags } from "./keys"
 import { scoreLead } from "./scoring"
 import type { BulkInput, CreateLeadInput, LeadFilters, LeadSort, UpdateLeadInput } from "./schemas"
@@ -153,6 +154,7 @@ export function toActivity(a: ActivityRow): LeadDetail["activities"][number] {
     occurredAt: a.occurredAt.toISOString(),
     outcome: typeof d.outcome === "string" ? d.outcome : null,
     durationMin: typeof d.durationMin === "number" ? d.durationMin : null,
+    event: typeof d.event === "string" ? d.event : null,
   }
 }
 
@@ -222,6 +224,7 @@ export async function getLead(user: CurrentUser, id: string): Promise<LeadDetail
       qualify: canAccessRecord(user, "lead:write", lead.ownerId) && canAccessRecord(user, "deal:qualify", lead.ownerId),
       meet: can(user.role, "meeting:book") && lead.status !== "DO_NOT_CONTACT",
       meetAnywhere: user.role === "OWNER" || user.role === "MANAGER",
+      email: can(user.role, "email:send") && mayEmailLead(user, lead),
     },
   }
 }

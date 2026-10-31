@@ -29,6 +29,10 @@ L'accès au CRM se donne par invitation (`/app/settings/team`) : la personne cho
 TEST_DATABASE_URL=postgresql://… npm test
 ```
 
+## Emailing de prospection
+
+Les emails de prospection partent de boîtes dédiées sur des domaines secondaires, jamais de SES ni de Resend : voir [docs/crm-v1/EMAILING.md](docs/crm-v1/EMAILING.md) (variable `MAILBOX_SECRET_KEY`, boîtes, plafonds, désinscription).
+
 ## Cleads Extractor
 
 La recherche d'entreprises (`/app/search`) s'appuie sur Cleads Extractor : voir [docs/crm-v1/EXTRACTOR.md](docs/crm-v1/EXTRACTOR.md) pour les variables `EXTRACTOR_*` et le fonctionnement.

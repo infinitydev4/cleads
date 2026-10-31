@@ -26,6 +26,7 @@ import { QUALIFICATION_LABELS } from "@/features/pipeline/rules"
 import { ScoreMeter } from "./score-meter"
 import { CallDialog } from "./call-dialog"
 import { MeetingDialog } from "./meeting-dialog"
+import { EmailDialog } from "./email-dialog"
 import { TasksCard } from "./tasks-card"
 import { CALL_OUTCOMES } from "@/features/activity/rules"
 
@@ -47,23 +48,25 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
   const [qualifying, setQualifying] = useState(false)
   const [calling, setCalling] = useState(false)
   const [planning, setPlanning] = useState(false)
+  const [emailing, setEmailing] = useState(false)
   const [addingTask, setAddingTask] = useState(false)
   const canQualifyNow = lead.can.write && lead.status !== "DO_NOT_CONTACT" && lead.status !== "QUALIFIED" && lead.status !== "DISQUALIFIED"
 
-  // Shortcuts, unless a field has the focus: q qualifies, c logs a call, t plans a task.
+  // Shortcuts, unless a field has the focus: q qualifies, c logs a call, e writes an email, t plans a task.
   useEffect(() => {
-    const busy = qualifying || calling || editing || confirmDelete
+    const busy = qualifying || calling || emailing || editing || confirmDelete
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement
       const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable || el.getAttribute("role") === "combobox"
       if (typing || busy || e.metaKey || e.ctrlKey || e.altKey) return
       if (e.key === "q" && canQualifyNow) { e.preventDefault(); setQualifying(true) }
       else if (e.key === "c" && lead.can.log) { e.preventDefault(); setCalling(true) }
+      else if (e.key === "e" && lead.can.email) { e.preventDefault(); setEmailing(true) }
       else if (e.key === "t" && lead.can.log && lead.status !== "DO_NOT_CONTACT") { e.preventDefault(); setAddingTask(true) }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [canQualifyNow, qualifying, calling, editing, confirmDelete, lead.can.log, lead.status])
+  }, [canQualifyNow, qualifying, calling, emailing, editing, confirmDelete, lead.can.log, lead.can.email, lead.status])
 
   /** Re-reads the fiche after a change made elsewhere (a task ticked, a call logged). */
   async function reload() {
@@ -104,12 +107,12 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
   return (
     <div className="space-y-6">
       <header className="space-y-3">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-start 2xl:justify-between">
           <div className="min-w-0">
             <h2 className="truncate text-2xl font-extrabold tracking-[-0.04em]">{title}</h2>
             <p className="text-sm text-muted-foreground">{[c?.city, c?.sector].filter(Boolean).join(" · ") || "Aucune localisation"} · ajoutée {formatDate(lead.createdAt)}</p>
           </div>
-          <div className="flex shrink-0 gap-2">
+          <div className="flex flex-wrap gap-2 2xl:shrink-0">
             {canQualifyNow && (
               <Button size="sm" onClick={() => setQualifying(true)} title="Raccourci : q">
                 <ClipboardCheck className="h-4 w-4" aria-hidden="true" /> Qualifier
@@ -118,6 +121,11 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
             {lead.can.meet && (
               <Button variant="outline" size="sm" onClick={() => setPlanning(true)}>
                 <CalendarDays className="h-4 w-4" aria-hidden="true" /> Rendez-vous
+              </Button>
+            )}
+            {lead.can.email && (
+              <Button variant="outline" size="sm" onClick={() => setEmailing(true)} title="Raccourci : e">
+                <Mail className="h-4 w-4" aria-hidden="true" /> Email
               </Button>
             )}
             {lead.can.log && (
@@ -234,6 +242,7 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
       )}
 
       {planning && <MeetingDialog open={planning} onOpenChange={setPlanning} leadId={lead.id} leadName={title} currentUserId={currentUserId} canOverride={lead.can.meetAnywhere} onDone={() => { reload(); router.refresh() }} />}
+      {emailing && <EmailDialog open={emailing} onOpenChange={setEmailing} leadId={lead.id} leadName={title} onDone={reload} />}
       {calling && <CallDialog open={calling} onOpenChange={setCalling} leadId={lead.id} leadName={title} onDone={(next) => { onChange(next); router.refresh() }} />}
       {qualifying && <QualifyDialog open={qualifying} onOpenChange={setQualifying} lead={lead} assignees={assignees} onDone={(next) => { onChange(next); router.refresh() }} />}
       {editing && <EditDialog open={editing} onOpenChange={setEditing} lead={lead} onSave={async (body) => { const ok = await patch(body, "Fiche mise à jour"); if (ok) setEditing(false); return !!ok }} />}
@@ -291,6 +300,7 @@ const FILTERS = [
   { id: "ALL", label: "Tout", kinds: "" },
   { id: "NOTE", label: "Notes", kinds: "NOTE" },
   { id: "CALL", label: "Appels", kinds: "CALL" },
+  { id: "EMAIL", label: "Emails", kinds: "EMAIL" },
   { id: "TASK", label: "Tâches", kinds: "TASK" },
   { id: "CHANGES", label: "Changements", kinds: "STATUS_CHANGE,SYSTEM" },
 ] as const
@@ -302,6 +312,7 @@ function entryText(a: Entry) {
     const head = ["Appel", a.outcome && (CALL_OUTCOMES as Record<string, string>)[a.outcome], a.durationMin != null ? `${a.durationMin} min` : null].filter(Boolean).join(" · ")
     return { head, body: a.body }
   }
+  if (a.kind === "EMAIL") return a.event === "unsubscribed" ? { head: "Désinscription", body: "Ne veut plus recevoir d’emails de prospection." } : { head: "Email envoyé", body: a.body }
   if (a.kind === "STATUS_CHANGE") return { head: "Statut modifié", body: null }
   return { head: null, body: a.body }
 }
@@ -391,7 +402,7 @@ function Timeline({ lead, onChange }: { lead: LeadDetail; onChange: (lead: LeadD
           const { head, body: text } = entryText(a)
           return (
             <li key={a.id} className="flex gap-3 text-sm">
-              <span aria-hidden="true" className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", a.kind === "NOTE" ? "bg-info" : a.kind === "CALL" ? "bg-success" : a.kind === "TASK" ? "bg-primary" : a.kind === "STATUS_CHANGE" ? "bg-warning" : "bg-muted-foreground/50")} />
+              <span aria-hidden="true" className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", a.kind === "NOTE" ? "bg-info" : a.kind === "CALL" ? "bg-success" : a.kind === "EMAIL" ? "bg-info" : a.kind === "TASK" ? "bg-primary" : a.kind === "STATUS_CHANGE" ? "bg-warning" : "bg-muted-foreground/50")} />
               <div className="min-w-0 flex-1">
                 {head && <p className="font-medium">{head}</p>}
                 {text && <p className="whitespace-pre-wrap break-words">{text}</p>}

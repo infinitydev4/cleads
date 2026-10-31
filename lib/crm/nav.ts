@@ -4,6 +4,7 @@ import {
   CalendarDays,
   Copy,
   Handshake,
+  Inbox,
   LayoutGrid,
   Mail,
   Palette,
@@ -53,7 +54,7 @@ export const navGroups: NavGroup[] = [
       { id: "leads", label: "Prospects", href: "/app/leads", icon: Users, permission: "lead:read", keywords: ["contacts", "entreprises", "fiches"] },
       { id: "search", label: "Recherche", href: "/app/search", icon: Search, permission: "search:run", keywords: ["extractor", "google maps", "trouver", "entreprises"] },
       { id: "sequences", label: "Séquences", href: "/app/sequences", icon: Send, permission: "sequence:manage", soon: true, keywords: ["relances", "emails"] },
-      { id: "mailbox", label: "Emails", href: "/app/mailbox", icon: Mail, permission: "email:send", soon: true, keywords: ["boîte", "envoi"] },
+      { id: "mailbox", label: "Emails", href: "/app/mailbox", icon: Mail, permission: "email:send", keywords: ["boîte", "envoi", "modèles", "prospection", "cold mail"] },
     ],
   },
   {
@@ -74,7 +75,8 @@ export const navGroups: NavGroup[] = [
 
 export const footerItems: NavItem[] = [
   { id: "team", label: "Équipe", href: "/app/settings/team", icon: UserCog, permission: "team:read", keywords: ["membres", "rôles", "invitations", "accès"] },
-  { id: "mail-providers", label: "Fournisseurs d’envoi", href: "/app/settings/emails", icon: Mail, permission: "mailbox:manage", keywords: ["ses", "resend", "email", "smtp", "rebonds", "expéditeur"] },
+  { id: "mailboxes", label: "Boîtes d’envoi", href: "/app/settings/mailboxes", icon: Inbox, permission: "mailbox:manage", keywords: ["smtp", "imap", "prospection", "chauffe", "quota", "domaine"] },
+  { id: "mail-providers", label: "Fournisseurs d’envoi", href: "/app/settings/emails", icon: Mail, permission: "mailbox:manage", keywords: ["ses", "resend", "email", "transactionnel", "rebonds", "expéditeur"] },
   { id: "audit", label: "Journal d’audit", href: "/app/settings/audit", icon: ScrollText, permission: "audit:read", keywords: ["historique", "sécurité", "connexions"] },
   { id: "design", label: "Design system", href: "/app/design", icon: Palette, permission: "admin:tools", keywords: ["composants", "catalogue"] },
   { id: "legacy", label: "Ancien back-office", href: "/dashboard", icon: CalendarClock, permission: "legacy:access", keywords: ["rendez-vous", "clients"] },

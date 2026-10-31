@@ -43,5 +43,5 @@ Un rebond **définitif** ajoute l'adresse à la liste d'exclusion (`BOUNCED`) et
 ## Pas dans cette version
 
 - Pas de choix de fournisseur par type d'email : un seul fournisseur actif pour tout le transactionnel.
-- Les boîtes de prospection (identifiants chiffrés en base, quotas, chauffe) : E9a.
+- Les boîtes de prospection (identifiants chiffrés en base, quotas, chauffe) : voir [EMAILING.md](EMAILING.md).
 - SMTP générique (Zoho, etc.) : volontairement absent du transactionnel ; Zoho reste la messagerie humaine.

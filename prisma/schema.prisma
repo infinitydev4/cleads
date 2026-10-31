@@ -57,6 +57,9 @@ model User {
   settings               Settings?
   sharedDocuments        SharedDocument[]
   ExtractionSearch       ExtractionSearch[]
+  mailboxes              Mailbox[]               @relation("MailboxOwner")
+  emailTemplates         EmailTemplate[]
+  sentEmails             EmailMessage[]          @relation("EmailSender")
 }
 
 /// LEGACY (blog, AI keys, NextAuth adapter): unused, dropped by prisma/pending/drop-legacy-blog.sql once a dump is taken.
@@ -569,6 +572,9 @@ model Workspace {
   extractionSearches     ExtractionSearch[]
   bookingProfiles        BookingProfile[]
   mailSetting            MailSetting?
+  mailboxes              Mailbox[]
+  emailTemplates         EmailTemplate[]
+  emailMessages          EmailMessage[]
 }
 
 enum LeadSource {
@@ -722,6 +728,7 @@ model Contact {
 
   leads    Lead[]
   meetings Meeting[]
+  emails   EmailMessage[]
 
   @@unique([workspaceId, email])
   @@index([workspaceId, companyId])
@@ -781,6 +788,7 @@ model Lead {
   activities Activity[]
   tasks      Task[]
   meetings   Meeting[]
+  emails     EmailMessage[]
 
   @@unique([workspaceId, companyId])
   @@index([workspaceId, status])
@@ -1054,4 +1062,130 @@ model MailSetting {
   fallbackEnabled       Boolean   @default(true)
   updatedById           String?
   updatedAt             DateTime  @updatedAt
+}
+
+// ── Outreach email (E9a): dedicated mailboxes on secondary domains, never SES or Resend ─────────────────────────
+
+enum MailboxProvider {
+  /// Any provider reachable by SMTP (sending) and IMAP (copy in "Sent", replies in E9b).
+  SMTP
+}
+
+enum MailboxStatus {
+  ACTIVE
+  /// Stopped by a person; nothing leaves it.
+  PAUSED
+  /// The last connection or send failed on credentials or the server: fixed by a new test.
+  ERROR
+}
+
+enum EmailDirection {
+  OUTBOUND
+  INBOUND
+}
+
+enum EmailStatus {
+  /// The slot is reserved in the day's quota and the message is on its way.
+  SENDING
+  SENT
+  FAILED
+  BOUNCED
+}
+
+/// A real mailbox prospecting mail leaves from. Its password is encrypted (lib/crypto/secret-box) and never sent to the browser.
+model Mailbox {
+  id              String          @id @default(cuid())
+  workspaceId     String
+  workspace       Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  /// The person who sends from it; owners and managers may use every mailbox.
+  ownerId         String?
+  owner           User?           @relation("MailboxOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  /// Stored lower-case (CHECK constraint).
+  address         String
+  displayName     String
+  provider        MailboxProvider @default(SMTP)
+  smtpHost        String
+  smtpPort        Int
+  /// TLS from the first byte (port 465); otherwise STARTTLS is required.
+  smtpSecure      Boolean         @default(true)
+  username        String
+  /// AES-256-GCM sealed password (`v1.<iv>.<tag>.<data>`).
+  secret          String
+  imapHost        String?
+  imapPort        Int?
+  imapSecure      Boolean         @default(true)
+  /// IMAP folder a copy of each sent message is filed in; null = found automatically.
+  sentFolder      String?
+  /// Hard ceiling per day once warmed up. The worker and the 1-to-1 send both enforce it.
+  dailyCap        Int             @default(30)
+  /// Day 0 of the progressive warm-up; the allowance grows week after week from here.
+  warmupStartedAt DateTime        @default(now())
+  status          MailboxStatus   @default(ACTIVE)
+  statusReason    String?
+  /// Plain-text signature added under every message.
+  signature       String?
+  lastTestedAt    DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  messages EmailMessage[]
+
+  @@unique([workspaceId, address])
+  @@index([workspaceId, ownerId])
+}
+
+/// A reusable message with variables (`{{prenom}}`, `{{entreprise|votre entreprise}}`…), plain text.
+model EmailTemplate {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  subject     String
+  body        String
+  createdById String?
+  createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  /// Archived templates stay attached to the messages sent with them but are no longer offered.
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  messages EmailMessage[]
+
+  @@unique([workspaceId, name])
+}
+
+/// One prospecting email, sent or received. The day's quota of a mailbox is counted on these rows.
+model EmailMessage {
+  id          String         @id @default(cuid())
+  workspaceId String
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  mailboxId   String
+  mailbox     Mailbox        @relation(fields: [mailboxId], references: [id], onDelete: Restrict)
+  leadId      String?
+  lead        Lead?          @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  contactId   String?
+  contact     Contact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  sentById    String?
+  sentBy      User?          @relation("EmailSender", fields: [sentById], references: [id], onDelete: SetNull)
+  templateId  String?
+  template    EmailTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  direction   EmailDirection @default(OUTBOUND)
+  status      EmailStatus
+  fromEmail   String
+  toEmail     String
+  subject     String
+  bodyText    String
+  /// RFC 5322 Message-ID, with the angle brackets: replies are matched on it (E9b).
+  messageId   String         @unique
+  inReplyTo   String?
+  error       String?
+  /// A test sent to a member's own address: counted in the quota, never on a fiche.
+  isTest      Boolean        @default(false)
+  sentAt      DateTime?
+  createdAt   DateTime       @default(now())
+
+  @@index([mailboxId, createdAt])
+  @@index([leadId, createdAt])
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, toEmail])
 }

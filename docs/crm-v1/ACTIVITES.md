@@ -66,5 +66,5 @@ Manager, propriétaire et lecteur ont aussi **Équipe** (tâches en retard et du
 
 - Rappels par email ou notification quand une tâche arrive à échéance (worker de l'emailing, E9, et notifications, E11) : la file et le décompte de l'accueil en tiennent lieu.
 - Tâches sans fiche (rappels personnels) ; heure d'échéance ; tâches récurrentes.
-- Rendez-vous et emails dans l'historique : ils y entrent avec leurs epics (E8, E9) ; la file affiche déjà les rendez-vous du jour.
+- Rendez-vous dans l'historique : ils y entrent avec E8. Les emails envoyés et les désinscriptions y entrent depuis E9a (filtre « Emails »).
 - Compteur d'en-retard dans la navigation.
