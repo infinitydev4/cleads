@@ -3,6 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
+import type { ReplyClass } from "@prisma/client"
 import { Archive, ChevronDown, FileText, Pencil, Plus } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -17,6 +18,7 @@ import { formatDateTime } from "@/lib/crm/format"
 import { cn } from "@/lib/utils"
 import type { MailboxView as Mailbox } from "@/features/outreach/mailboxes"
 import type { EmailView } from "@/features/outreach/service"
+import type { ReplyView } from "@/features/outreach/replies"
 import type { TemplateView } from "@/features/outreach/templates"
 import { VARIABLES, templateErrors } from "@/features/outreach/template"
 import { api } from "../leads/api"
@@ -26,18 +28,31 @@ export const EMAIL_STATUS: Record<EmailView["status"], { label: string; variant:
   SENDING: { label: "En cours", variant: "info" },
   FAILED: { label: "Échec", variant: "destructive" },
   BOUNCED: { label: "Rebond", variant: "warning" },
+  RECEIVED: { label: "Reçu", variant: "info" },
+}
+
+export const REPLY_LABELS: Record<ReplyClass, string> = {
+  INTERESTED: "Intéressé",
+  NOT_NOW: "Pas maintenant",
+  NOT_INTERESTED: "Pas intéressé",
+  OUT_OF_OFFICE: "Absent (réponse automatique)",
+  WRONG_PERSON: "Mauvais interlocuteur",
+  STOP: "Ne plus écrire",
+  OTHER: "Autre",
 }
 
 interface Props {
   initialEmails: { items: EmailView[]; hasMore: boolean }
+  initialReplies: { items: ReplyView[]; hasMore: boolean; unread: number }
   mailboxes: Mailbox[]
   initialTemplates: TemplateView[]
   canManageTemplates: boolean
   showSender: boolean
 }
 
-export function MailboxView({ initialEmails, mailboxes, initialTemplates, canManageTemplates, showSender }: Props) {
+export function MailboxView({ initialEmails, initialReplies, mailboxes, initialTemplates, canManageTemplates, showSender }: Props) {
   const [templates, setTemplates] = useState(initialTemplates)
+  const [unread, setUnread] = useState(initialReplies.unread)
   return (
     <div className="space-y-6">
       {mailboxes.length > 0 && (
@@ -54,13 +69,17 @@ export function MailboxView({ initialEmails, mailboxes, initialTemplates, canMan
         </ul>
       )}
 
-      <Tabs defaultValue="sent">
+      <Tabs defaultValue={initialReplies.unread > 0 ? "replies" : "sent"}>
         <TabsList>
           <TabsTrigger value="sent">Envoyés</TabsTrigger>
+          <TabsTrigger value="replies">Réponses{unread > 0 ? ` (${unread})` : ""}</TabsTrigger>
           <TabsTrigger value="templates">Modèles ({templates.length})</TabsTrigger>
         </TabsList>
         <TabsContent value="sent" className="mt-4">
           <SentList initial={initialEmails} showSender={showSender} hasMailbox={mailboxes.length > 0} />
+        </TabsContent>
+        <TabsContent value="replies" className="mt-4">
+          <Replies initial={initialReplies} onUnread={(d) => setUnread((n) => Math.max(0, n + d))} showSender={showSender} />
         </TabsContent>
         <TabsContent value="templates" className="mt-4">
           <Templates templates={templates} onChange={setTemplates} canManage={canManageTemplates} />
@@ -124,6 +143,99 @@ function SentList({ initial, showSender, hasMailbox }: { initial: { items: Email
         })}
       </ul>
       {page.hasMore && <div className="flex justify-center"><Button variant="outline" size="sm" loading={loading} onClick={more}>Voir plus</Button></div>}
+    </div>
+  )
+}
+
+function Replies({ initial, onUnread, showSender }: { initial: { items: ReplyView[]; hasMore: boolean; unread: number }; onUnread: (delta: number) => void; showSender: boolean }) {
+  const [items, setItems] = useState(initial.items)
+  const [hasMore, setHasMore] = useState(initial.hasMore)
+  const [open, setOpen] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  function patchLocal(id: string, change: Partial<ReplyView>) {
+    setItems((list) => {
+      const next = list.map((r) => (r.id === id ? { ...r, ...change } : r))
+      return next
+    })
+  }
+
+  async function update(r: ReplyView, body: { replyClass?: ReplyClass | null; read?: boolean }) {
+    try {
+      await api(`/api/replies/${r.id}`, { method: "PATCH", body: JSON.stringify(body) })
+      const wasUnread = !r.read
+      const nowRead = body.read ?? true
+      patchLocal(r.id, { ...(body.replyClass !== undefined ? { replyClass: body.replyClass } : {}), read: nowRead })
+      if (wasUnread !== !nowRead) onUnread(nowRead ? -1 : 1)
+      if (body.replyClass === "STOP") toast.success("Cette adresse ne recevra plus rien")
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Échec")
+    }
+  }
+
+  async function toggle(r: ReplyView) {
+    const expanded = open === r.id
+    setOpen(expanded ? null : r.id)
+    if (!expanded && !r.read) await update(r, { read: true })
+  }
+
+  async function more() {
+    setLoading(true)
+    try {
+      const next = await api<{ items: ReplyView[]; hasMore: boolean }>(`/api/replies?before=${encodeURIComponent(items.at(-1)!.receivedAt)}`)
+      setItems([...items, ...next.items])
+      setHasMore(next.hasMore)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Échec")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (items.length === 0) {
+    return <EmptyState art="target" title="Aucune réponse pour l’instant" description="Les réponses à vos emails apparaissent ici quelques minutes après leur arrivée dans la boîte d’envoi. Les rebonds sont lus aussi : l’adresse est alors exclue automatiquement." />
+  }
+  return (
+    <div className="space-y-3">
+      <ul className="divide-y rounded-xl border bg-card">
+        {items.map((r) => {
+          const expanded = open === r.id
+          return (
+            <li key={r.id} className="p-3 sm:p-4">
+              <button type="button" className="flex w-full min-w-0 items-start gap-3 text-left" aria-expanded={expanded} onClick={() => toggle(r)}>
+                <div className="min-w-0 flex-1">
+                  <p className="flex flex-wrap items-center gap-2 text-sm">
+                    {!r.read && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" role="img" aria-label="Non lu" />}
+                    <span className={cn("truncate", r.read ? "font-medium" : "font-semibold")}>{r.leadName ?? r.fromEmail}</span>
+                    {r.replyClass && <Badge variant={r.replyClass === "INTERESTED" ? "success" : "outline"}>{REPLY_LABELS[r.replyClass]}</Badge>}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">{r.subject}{showSender ? ` · reçu sur ${r.toEmail}` : ""}</p>
+                </div>
+                <span className="shrink-0 text-xs text-muted-foreground">{formatDateTime(r.receivedAt)}</span>
+                <ChevronDown className={cn("mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-180")} aria-hidden="true" />
+              </button>
+              {expanded && (
+                <div className="mt-3 space-y-3">
+                  <p className="text-xs text-muted-foreground">De {r.fromEmail}{r.sentSubject ? ` · en réponse à « ${r.sentSubject} »` : ""}</p>
+                  <pre className="whitespace-pre-wrap break-words rounded-lg bg-muted p-3 font-sans text-sm">{r.bodyText || "(message vide)"}</pre>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="flex items-center gap-2 text-sm">
+                      <span className="text-muted-foreground">Classer :</span>
+                      <select className="h-9 rounded-md border bg-background px-2 text-sm" value={r.replyClass ?? ""} onChange={(e) => update(r, { replyClass: (e.target.value || null) as ReplyClass | null })}>
+                        <option value="">Non classée</option>
+                        {(Object.keys(REPLY_LABELS) as ReplyClass[]).map((c) => <option key={c} value={c}>{REPLY_LABELS[c]}</option>)}
+                      </select>
+                    </label>
+                    {r.leadId && <Link className="text-sm font-medium underline underline-offset-4" href={`/app/leads/${r.leadId}`}>Ouvrir la fiche</Link>}
+                  </div>
+                  {r.replyClass === "STOP" && <p className="text-xs text-muted-foreground">Cette adresse est exclue : plus aucun email de prospection ne lui sera envoyé.</p>}
+                </div>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      {hasMore && <div className="flex justify-center"><Button variant="outline" size="sm" loading={loading} onClick={more}>Voir plus</Button></div>}
     </div>
   )
 }

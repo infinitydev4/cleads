@@ -1090,6 +1090,19 @@ enum EmailStatus {
   SENT
   FAILED
   BOUNCED
+  /// An INBOUND message read from a mailbox (E9b).
+  RECEIVED
+}
+
+/// How a person filed a reply (E9b). `STOP` also stops all prospecting to the sender.
+enum ReplyClass {
+  INTERESTED
+  NOT_NOW
+  NOT_INTERESTED
+  OUT_OF_OFFICE
+  WRONG_PERSON
+  STOP
+  OTHER
 }
 
 /// A real mailbox prospecting mail leaves from. Its password is encrypted (lib/crypto/secret-box) and never sent to the browser.
@@ -1125,6 +1138,14 @@ model Mailbox {
   /// Plain-text signature added under every message.
   signature       String?
   lastTestedAt    DateTime?
+  /// E9b: highest INBOX UID already read, and the UIDVALIDITY it belongs to (a change means the numbering restarted).
+  imapLastUid     Int?
+  imapUidValidity String?
+  lastPolledAt    DateTime?
+  /// Why the last read failed; null once a read works again.
+  lastPollError   String?
+  /// Set while a read is running so two overlapping runs do not read the same mailbox.
+  pollClaimedAt   DateTime?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
@@ -1181,10 +1202,18 @@ model EmailMessage {
   error       String?
   /// A test sent to a member's own address: counted in the quota, never on a fiche.
   isTest      Boolean        @default(false)
+  /// INBOUND: how a person (or the reader, for out-of-office notices) filed the reply.
+  replyClass  ReplyClass?
+  /// INBOUND: when someone opened it in the CRM; null = unread.
+  readAt      DateTime?
+  /// INBOUND: the message we sent that this answers.
+  repliesToId String?
+  /// OUTBOUND: when the server accepted it; INBOUND: the message's own date.
   sentAt      DateTime?
   createdAt   DateTime       @default(now())
 
   @@index([mailboxId, createdAt])
+  @@index([workspaceId, direction, createdAt])
   @@index([leadId, createdAt])
   @@index([workspaceId, createdAt])
   @@index([workspaceId, toEmail])

@@ -234,6 +234,7 @@ export interface EmailView {
   bodyText: string
   error: string | null
   isTest: boolean
+  direction: "OUTBOUND" | "INBOUND"
   leadId: string | null
   leadName: string | null
   sentByName: string | null
@@ -243,13 +244,14 @@ export interface EmailView {
 }
 
 /** Sent emails, newest first. Owners and managers see the team's; everyone else their own. */
-export async function listEmails(user: CurrentUser, opts: { leadId?: string; mailboxId?: string; before?: string; take?: number } = {}): Promise<{ items: EmailView[]; hasMore: boolean }> {
+export async function listEmails(user: CurrentUser, opts: { leadId?: string; mailboxId?: string; before?: string; take?: number; direction?: "OUTBOUND" | "INBOUND" } = {}): Promise<{ items: EmailView[]; hasMore: boolean }> {
   const take = Math.min(Math.max(opts.take ?? 50, 1), 100)
   const before = opts.before ? new Date(opts.before) : null
   const rows = await prisma.emailMessage.findMany({
     where: {
       workspaceId: user.workspaceId,
       ...(mayUseAnyMailbox(user) ? {} : { sentById: user.id }),
+      ...(opts.direction ? { direction: opts.direction } : {}),
       ...(opts.leadId ? { leadId: opts.leadId } : {}),
       ...(opts.mailboxId ? { mailboxId: opts.mailboxId } : {}),
       ...(before && !Number.isNaN(before.getTime()) ? { createdAt: { lt: before } } : {}),
@@ -268,6 +270,7 @@ export async function listEmails(user: CurrentUser, opts: { leadId?: string; mai
       bodyText: m.bodyText,
       error: m.error,
       isTest: m.isTest,
+      direction: m.direction,
       leadId: m.leadId,
       leadName: m.lead?.company?.name ?? m.lead?.contact?.name ?? null,
       sentByName: m.sentBy?.name ?? m.sentBy?.email ?? null,
