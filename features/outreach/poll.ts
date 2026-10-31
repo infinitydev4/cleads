@@ -5,6 +5,8 @@ import { applySuppressions } from "@/lib/mail/events"
 import { credentialsOf } from "./mailboxes"
 import { analyze, type Inbound } from "./inbound"
 import { transport, TransportError } from "./transport"
+import { stopForLead } from "./stops"
+import { pauseUnhealthyMailboxes } from "./deliverability"
 
 const CLAIM_TTL_MS = 5 * 60_000
 /** A message still `SENDING` after this long never got its answer from the server (the process died in between). */
@@ -87,6 +89,7 @@ async function handleReply(box: Mailbox, r: Extract<Inbound, { kind: "reply" }>,
       if (sent.leadId && !sent.isTest) {
         await tx.activity.create({ data: { workspaceId: sent.workspaceId, leadId: sent.leadId, actorKind: "SYSTEM", kind: "EMAIL", body: r.subject, data: { event: r.automatic ? "auto_reply" : "replied", emailId: sent.id, from: r.fromEmail } } })
         if (!r.automatic) {
+          await stopForLead(tx, sent.leadId, "REPLIED")
           const lead = await tx.lead.findUnique({ where: { id: sent.leadId }, select: { status: true } })
           if (lead && (lead.status === "NEW" || lead.status === "CONTACTED")) {
             await tx.lead.update({ where: { id: sent.leadId }, data: { status: "REPLIED", lastContactedAt: new Date() } })
@@ -160,5 +163,7 @@ export async function pollAll(now = new Date()): Promise<PollSummary> {
     total.automatic += s.automatic
     total.errors += s.errors
   }
+  // Fresh bounces just landed: judge the mailboxes before anything else leaves them.
+  await pauseUnhealthyMailboxes(now)
   return total
 }

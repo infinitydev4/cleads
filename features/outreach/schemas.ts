@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { BODY_MAX, SUBJECT_MAX } from "./footer"
 import { MAX_DAILY_CAP } from "./rules"
+import { MAX_DELAY_DAYS, MAX_STEPS } from "./sequence-rules"
 
 const host = z.string().trim().toLowerCase().min(3, "Hôte invalide").max(253).regex(/^[a-z0-9.-]+$/, "Hôte invalide (ex. smtp.exemple.com)")
 const port = z.coerce.number().int().min(1).max(65535)
@@ -54,7 +55,33 @@ export const sendSchema = z.object({
   confirmGeneric: z.boolean().optional(),
 })
 
+const stepSchema = z.object({
+  /** Days after the previous message; ignored for step 1, which leaves at enrollment. */
+  delayDays: z.coerce.number().int().min(0).max(MAX_DELAY_DAYS, `${MAX_DELAY_DAYS} jours au plus entre deux messages`),
+  /** May be empty on steps 2+: the message then continues the first one's thread. */
+  subject: z.string().trim().max(SUBJECT_MAX),
+  body: z.string().trim().min(10, "Le message est trop court").max(BODY_MAX),
+})
+
+export const sequenceSchema = z.object({
+  name: z.string().trim().min(2, "Donnez un nom à la séquence").max(80),
+  steps: z.array(stepSchema).min(1, "Il faut au moins un message").max(MAX_STEPS, `${MAX_STEPS} messages au plus`),
+}).superRefine((v, ctx) => {
+  if (v.steps[0].subject.length < 2) ctx.addIssue({ code: "custom", path: ["steps", 0, "subject"], message: "Indiquez l’objet du premier message" })
+  v.steps.forEach((st, i) => {
+    if (i > 0 && st.delayDays < 1) ctx.addIssue({ code: "custom", path: ["steps", i, "delayDays"], message: "Attendez au moins 1 jour entre deux messages" })
+  })
+})
+
+export const enrollSchema = z.object({
+  leadIds: z.array(z.string().min(1)).min(1).max(100, "100 fiches au plus à la fois"),
+  mailboxId: z.string().min(1),
+  confirmGeneric: z.boolean().optional(),
+})
+
 export type CreateMailboxInput = z.infer<typeof createMailboxSchema>
 export type UpdateMailboxInput = z.infer<typeof updateMailboxSchema>
 export type TemplateInput = z.infer<typeof templateSchema>
 export type SendInput = z.infer<typeof sendSchema>
+export type SequenceInput = z.infer<typeof sequenceSchema>
+export type EnrollInput = z.infer<typeof enrollSchema>

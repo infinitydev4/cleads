@@ -23,12 +23,13 @@ interface Props {
   canAssignOthers: boolean
   canShareViews: boolean
   canImport: boolean
+  canSequence: boolean
 }
 
 const EMPTY: Set<string> = new Set()
 
 /** Filters, sorting and paging live in the URL: a link or a saved view reproduces exactly what you see. */
-export function LeadsView({ list, filters, assignees, views, currentUserId, canWrite, canAssignOthers, canShareViews, canImport }: Props) {
+export function LeadsView({ list, filters, assignees, views, currentUserId, canWrite, canAssignOthers, canShareViews, canImport, canSequence }: Props) {
   const router = useRouter()
   const pathname = usePathname()
   const params = useSearchParams()
@@ -100,7 +101,7 @@ export function LeadsView({ list, filters, assignees, views, currentUserId, canW
       )}
 
       {canWrite && selected.size > 0 && (
-        <BulkBar ids={[...selected]} assignees={assignees} currentUserId={currentUserId} canAssignOthers={canAssignOthers} onDone={() => setSelected(new Set())} />
+        <BulkBar ids={[...selected]} assignees={assignees} currentUserId={currentUserId} canAssignOthers={canAssignOthers} canSequence={canSequence} onDone={() => setSelected(new Set())} />
       )}
       <LeadPanel id={openId} assignees={assignees} currentUserId={currentUserId} onClose={() => setOpenId(null)} />
     </div>

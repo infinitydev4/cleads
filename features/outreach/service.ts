@@ -89,7 +89,17 @@ function later(task: () => Promise<unknown>) {
   }
 }
 
-interface Reserved {
+/** Who sends: a signed-in person, or the sequence worker (`id` null) acting for the person who enrolled the fiche. */
+export interface Actor {
+  id: string | null
+  workspaceId: string
+  /** May use any mailbox of the workspace (owners and managers, or the worker, whose mailbox was checked at enrollment). */
+  anyMailbox: boolean
+}
+
+export const actorOf = (user: CurrentUser): Actor => ({ id: user.id, workspaceId: user.workspaceId, anyMailbox: mayUseAnyMailbox(user) })
+
+export interface Reserved {
   id: string
   credentials: MailboxCredentials
   mailboxId: string
@@ -104,21 +114,41 @@ interface Reserved {
  * Takes one slot in the mailbox's allowance for today, under a row lock on the mailbox: two sends at the same
  * moment cannot both take the last slot. The network call happens after the lock is released.
  */
-async function reserve(
+export async function reserve(
   tx: Tx,
-  user: CurrentUser,
-  input: { mailboxId: string; to: string; subject: string; body: string; leadId: string | null; contactId: string | null; templateId: string | null; origin: string; isTest: boolean },
+  user: Actor,
+  input: {
+    mailboxId: string
+    to: string
+    subject: string
+    body: string
+    leadId: string | null
+    contactId: string | null
+    templateId: string | null
+    origin: string
+    isTest: boolean
+    /** Sequence steps: which enrollment and step this is, and the earlier message ids it continues (same thread). */
+    sequence?: { enrollmentId: string; stepNumber: number; thread: string[] } | null
+  },
 ): Promise<Reserved> {
   await tx.$queryRaw`SELECT id FROM "Mailbox" WHERE id = ${input.mailboxId} FOR UPDATE`
   const box = await tx.mailbox.findFirst({ where: { id: input.mailboxId, workspaceId: user.workspaceId } })
   if (!box) throw new LeadError("not_found", "Boîte d’envoi introuvable.", 404)
-  if (!mayUseAnyMailbox(user) && box.ownerId !== user.id) throw new LeadError("forbidden", "Cette boîte d’envoi ne vous est pas attribuée.", 403)
+  if (!user.anyMailbox && box.ownerId !== user.id) throw new LeadError("forbidden", "Cette boîte d’envoi ne vous est pas attribuée.", 403)
   const blocker = mailboxBlocker(box, await sentToday(tx, box.id), dailyAllowance(box))
   if (blocker) throw new LeadError("conflict", blocker === "mailbox_inactive" && box.statusReason ? `${BLOCKER_LABELS[blocker]} ${box.statusReason}` : BLOCKER_LABELS[blocker], 409, { blocker })
 
   if (!input.isTest) {
     const recent = await tx.emailMessage.findFirst({
-      where: { workspaceId: user.workspaceId, toEmail: input.to, direction: "OUTBOUND", status: { in: ["SENDING", "SENT"] }, createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) } },
+      where: {
+        workspaceId: user.workspaceId,
+        toEmail: input.to,
+        direction: "OUTBOUND",
+        status: { in: ["SENDING", "SENT"] },
+        createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) },
+        // The steps of one sequence are spaced by the schedule, not by this guard; another stream to the same address still counts.
+        ...(input.sequence ? { OR: [{ enrollmentId: null }, { enrollmentId: { not: input.sequence.enrollmentId } }] } : {}),
+      },
       select: { id: true },
     })
     if (recent) throw new LeadError("conflict", BLOCKER_LABELS.just_sent, 409, { blocker: "just_sent" })
@@ -137,6 +167,9 @@ async function reserve(
       contactId: input.contactId,
       sentById: user.id,
       templateId: input.templateId,
+      enrollmentId: input.sequence?.enrollmentId ?? null,
+      stepNumber: input.sequence?.stepNumber ?? null,
+      inReplyTo: input.sequence?.thread.at(-1) ?? null,
       status: "SENDING",
       fromEmail: box.address,
       toEmail: input.to,
@@ -146,11 +179,11 @@ async function reserve(
       isTest: input.isTest,
     },
   })
-  return { id, credentials: credentialsOf(box), mailboxId: box.id, to: input.to, subject: input.subject, text, messageId, headers: outreachHeaders(links.oneClick) }
+  return { id, credentials: credentialsOf(box), mailboxId: box.id, to: input.to, subject: input.subject, text, messageId, headers: { ...outreachHeaders(links.oneClick), ...(input.sequence?.thread.length ? { "In-Reply-To": input.sequence.thread.at(-1)!, References: input.sequence.thread.join(" ") } : {}) } }
 }
 
 /** Hands the reserved message to the mailbox's server and records what happened. Throws LeadError on failure. */
-async function deliver(user: CurrentUser, r: Reserved): Promise<void> {
+export async function deliver(user: Actor, r: Reserved): Promise<void> {
   try {
     const { raw } = await transport.send(r.credentials, { to: r.to, subject: r.subject, text: r.text, messageId: r.messageId, headers: r.headers })
     await prisma.emailMessage.update({ where: { id: r.id }, data: { status: "SENT", sentAt: new Date() } })
@@ -163,6 +196,21 @@ async function deliver(user: CurrentUser, r: Reserved): Promise<void> {
     await audit({ action: "email.failed", actorId: user.id, workspaceId: user.workspaceId, entityType: "EmailMessage", entityId: r.id, metadata: { kind: e.kind, detail: e.detail ?? null } })
     throw new LeadError("conflict", `L’email n’est pas parti. ${e.message}`, 409, { emailId: r.id, failure: e.kind })
   }
+}
+
+/** The fiche's history and status after a send: an email sent is a contact. */
+export async function recordSent(actor: Actor, leadId: string, r: Reserved, extra: Record<string, unknown> = {}): Promise<void> {
+  const by = { actorId: actor.id, actorKind: actor.id ? ("USER" as const) : ("SYSTEM" as const) }
+  await prisma.$transaction(async (tx) => {
+    await tx.activity.create({
+      data: { workspaceId: actor.workspaceId, leadId, ...by, kind: "EMAIL", body: r.subject, data: { event: "sent", emailId: r.id, to: r.to, from: r.credentials.address, ...extra } as Prisma.InputJsonValue },
+    })
+    const current = await tx.lead.findUniqueOrThrow({ where: { id: leadId }, select: { status: true } })
+    await tx.lead.update({ where: { id: leadId }, data: { lastContactedAt: new Date(), ...(current.status === "NEW" ? { status: "CONTACTED" } : {}) } })
+    if (current.status === "NEW") {
+      await tx.activity.create({ data: { workspaceId: actor.workspaceId, leadId, ...by, kind: "STATUS_CHANGE", data: { from: "NEW", to: "CONTACTED", reason: "email" } } })
+    }
+  })
 }
 
 export async function sendToLead(user: CurrentUser, leadId: string, input: SendInput, ip?: string | null): Promise<{ emailId: string }> {
@@ -183,21 +231,11 @@ export async function sendToLead(user: CurrentUser, leadId: string, input: SendI
   const reserved = await prisma.$transaction(async (tx) => {
     // Checked again under the lock: an unsubscribe may have landed since the composer opened.
     if (await isSuppressed(tx, user.workspaceId, recipient!.email)) throw new LeadError("conflict", BLOCKER_LABELS.suppressed, 409, { blocker: "suppressed" })
-    return reserve(tx, user, { mailboxId: input.mailboxId, to: recipient!.email, subject: input.subject, body: input.body, leadId: lead.id, contactId: recipient!.contactId, templateId: input.templateId ?? null, origin: originText(lead.source), isTest: false })
+    return reserve(tx, actorOf(user), { mailboxId: input.mailboxId, to: recipient!.email, subject: input.subject, body: input.body, leadId: lead.id, contactId: recipient!.contactId, templateId: input.templateId ?? null, origin: originText(lead.source), isTest: false })
   })
-  await deliver(user, reserved)
+  await deliver(actorOf(user), reserved)
 
-  // The fiche's history and status: an email sent is a contact.
-  await prisma.$transaction(async (tx) => {
-    await tx.activity.create({
-      data: { workspaceId: user.workspaceId, leadId: lead.id, actorId: user.id, actorKind: "USER", kind: "EMAIL", body: input.subject, data: { event: "sent", emailId: reserved.id, to: reserved.to, from: reserved.credentials.address } },
-    })
-    const current = await tx.lead.findUniqueOrThrow({ where: { id: lead.id }, select: { status: true } })
-    await tx.lead.update({ where: { id: lead.id }, data: { lastContactedAt: new Date(), ...(current.status === "NEW" ? { status: "CONTACTED" } : {}) } })
-    if (current.status === "NEW") {
-      await tx.activity.create({ data: { workspaceId: user.workspaceId, leadId: lead.id, actorId: user.id, actorKind: "USER", kind: "STATUS_CHANGE", data: { from: "NEW", to: "CONTACTED", reason: "email" } } })
-    }
-  })
+  await recordSent(actorOf(user), lead.id, reserved)
   await audit({ action: "email.sent", actorId: user.id, workspaceId: user.workspaceId, entityType: "EmailMessage", entityId: reserved.id, subject: reserved.to, metadata: { leadId: lead.id, mailboxId: reserved.mailboxId, templateId: input.templateId ?? null }, ip })
   return { emailId: reserved.id }
 }
@@ -206,7 +244,7 @@ export async function sendToLead(user: CurrentUser, leadId: string, input: SendI
 export async function sendTestEmail(user: CurrentUser, mailboxId: string): Promise<{ emailId: string; to: string }> {
   if (!user.email) throw new LeadError("invalid", "Votre compte n’a pas d’adresse email.")
   const reserved = await prisma.$transaction((tx) =>
-    reserve(tx, user, {
+    reserve(tx, actorOf(user), {
       mailboxId,
       to: user.email.toLowerCase(),
       subject: "Test d’envoi Cleads",
@@ -218,7 +256,7 @@ export async function sendTestEmail(user: CurrentUser, mailboxId: string): Promi
       isTest: true,
     }),
   )
-  await deliver(user, reserved)
+  await deliver(actorOf(user), reserved)
   await audit({ action: "email.test_sent", actorId: user.id, workspaceId: user.workspaceId, entityType: "Mailbox", entityId: mailboxId })
   return { emailId: reserved.id, to: reserved.to }
 }
@@ -239,6 +277,9 @@ export interface EmailView {
   leadName: string | null
   sentByName: string | null
   templateName: string | null
+  /** Set when a sequence sent it: its name and the step. */
+  sequenceName: string | null
+  stepNumber: number | null
   createdAt: string
   sentAt: string | null
 }
@@ -256,7 +297,7 @@ export async function listEmails(user: CurrentUser, opts: { leadId?: string; mai
       ...(opts.mailboxId ? { mailboxId: opts.mailboxId } : {}),
       ...(before && !Number.isNaN(before.getTime()) ? { createdAt: { lt: before } } : {}),
     },
-    include: { lead: { select: { company: { select: { name: true } }, contact: { select: { name: true } } } }, sentBy: { select: { name: true, email: true } }, template: { select: { name: true } } },
+    include: { lead: { select: { company: { select: { name: true } }, contact: { select: { name: true } } } }, sentBy: { select: { name: true, email: true } }, template: { select: { name: true } }, enrollment: { select: { sequence: { select: { name: true } } } } },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: take + 1,
   })
@@ -275,6 +316,8 @@ export async function listEmails(user: CurrentUser, opts: { leadId?: string; mai
       leadName: m.lead?.company?.name ?? m.lead?.contact?.name ?? null,
       sentByName: m.sentBy?.name ?? m.sentBy?.email ?? null,
       templateName: m.template?.name ?? null,
+      sequenceName: m.enrollment?.sequence.name ?? null,
+      stepNumber: m.stepNumber,
       createdAt: m.createdAt.toISOString(),
       sentAt: m.sentAt?.toISOString() ?? null,
     })),

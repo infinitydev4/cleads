@@ -16,7 +16,7 @@ Workspace ─┬─ User (workspaceId)  ·  Invitation  ·  AuditLog
            ├─ Suppression · SavedView
 ```
 
-Les tables d'envoi d'emails arrivent avec leur jalon : `Mailbox`, `EmailTemplate` et `EmailMessage` avec E9a ([EMAILING.md](EMAILING.md)) ; les séquences et inscriptions avec E9c, pour ne pas figer un schéma que rien n'utilise encore. `Suppression` existe depuis le début parce que l'import et les contacts en ont besoin.
+Les tables d'envoi d'emails arrivent avec leur jalon : `Mailbox`, `EmailTemplate` et `EmailMessage` avec E9a ([EMAILING.md](EMAILING.md)) ; `Sequence`, `SequenceStep` et `SequenceEnrollment` avec E9c (une inscription = une fiche dans une séquence, son étape, sa prochaine échéance, la raison de son arrêt). `Suppression` existe depuis le début parce que l'import et les contacts en ont besoin.
 
 ## Règles portées par la base
 

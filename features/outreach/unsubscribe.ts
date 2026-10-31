@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { audit } from "@/lib/audit"
 import { verifyUnsubscribeToken } from "./compose"
+import { stopForEmail } from "./stops"
 
 /** "j•••@exemple.fr": enough for the person to recognise their address, not enough to harvest it from the page. */
 export function maskEmail(email: string): string {
@@ -33,6 +34,8 @@ export async function unsubscribe(token: string, ip?: string | null): Promise<bo
   const m = await messageOf(token)
   if (!m) return false
   const { workspaceId, toEmail: email } = m
+  // Attributes the opt-out to the mailbox that sent the message (deliverability), once.
+  await prisma.emailMessage.updateMany({ where: { id: m.id, unsubscribedAt: null }, data: { unsubscribedAt: new Date() } })
   const created = await prisma
     .$transaction(async (tx) => {
       const existing = await tx.suppression.findUnique({ where: { workspaceId_email: { workspaceId, email } } })
@@ -51,6 +54,8 @@ export async function unsubscribe(token: string, ip?: string | null): Promise<bo
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return false
       throw error
     })
+  // Also when the address was already excluded: a running sequence must not outlive it.
+  await stopForEmail(prisma, workspaceId, email, "UNSUBSCRIBED")
   if (created) await audit({ action: "email.unsubscribed", workspaceId, actorKind: "SYSTEM", entityType: "EmailMessage", entityId: m.id, subject: email, ip })
   return true
 }

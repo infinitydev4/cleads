@@ -2,6 +2,7 @@ import type { SuppressionReason } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { audit } from "@/lib/audit"
 import { normalizeEmail } from "@/lib/crm/normalize"
+import { stopForEmail } from "@/features/outreach/stops"
 
 export interface SuppressionTarget {
   email: string
@@ -55,6 +56,7 @@ export async function applySuppressions(workspaceId: string, targets: Suppressio
       where: { workspaceId, email: t.email, doNotContact: false },
       data: { doNotContact: true, doNotContactReason: t.reason === "BOUNCED" ? `Adresse en rebond définitif (${source === "ses" ? "SES" : "boîte d’envoi"})` : `Plainte pour spam (${source === "ses" ? "SES" : "boîte d’envoi"})` },
     })
+    await stopForEmail(prisma, workspaceId, t.email, t.reason === "BOUNCED" ? "BOUNCED" : "COMPLAINED")
     await audit({ action: t.reason === "BOUNCED" ? "mail.bounce" : "mail.complaint", workspaceId, actorKind: "SYSTEM", subject: t.email, metadata: { detail: t.detail } })
   }
   return added

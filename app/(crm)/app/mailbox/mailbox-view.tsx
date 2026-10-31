@@ -18,6 +18,9 @@ import { formatDateTime } from "@/lib/crm/format"
 import { cn } from "@/lib/utils"
 import type { MailboxView as Mailbox } from "@/features/outreach/mailboxes"
 import type { EmailView } from "@/features/outreach/service"
+import type { DeliverabilityRow } from "@/features/outreach/deliverability"
+import { HEALTH } from "@/features/outreach/sequence-rules"
+import { REPLY_LABELS } from "@/features/outreach/labels"
 import type { ReplyView } from "@/features/outreach/replies"
 import type { TemplateView } from "@/features/outreach/templates"
 import { VARIABLES, templateErrors } from "@/features/outreach/template"
@@ -31,26 +34,18 @@ export const EMAIL_STATUS: Record<EmailView["status"], { label: string; variant:
   RECEIVED: { label: "Reçu", variant: "info" },
 }
 
-export const REPLY_LABELS: Record<ReplyClass, string> = {
-  INTERESTED: "Intéressé",
-  NOT_NOW: "Pas maintenant",
-  NOT_INTERESTED: "Pas intéressé",
-  OUT_OF_OFFICE: "Absent (réponse automatique)",
-  WRONG_PERSON: "Mauvais interlocuteur",
-  STOP: "Ne plus écrire",
-  OTHER: "Autre",
-}
 
 interface Props {
   initialEmails: { items: EmailView[]; hasMore: boolean }
   initialReplies: { items: ReplyView[]; hasMore: boolean; unread: number }
+  health: DeliverabilityRow[]
   mailboxes: Mailbox[]
   initialTemplates: TemplateView[]
   canManageTemplates: boolean
   showSender: boolean
 }
 
-export function MailboxView({ initialEmails, initialReplies, mailboxes, initialTemplates, canManageTemplates, showSender }: Props) {
+export function MailboxView({ initialEmails, initialReplies, health, mailboxes, initialTemplates, canManageTemplates, showSender }: Props) {
   const [templates, setTemplates] = useState(initialTemplates)
   const [unread, setUnread] = useState(initialReplies.unread)
   return (
@@ -73,6 +68,7 @@ export function MailboxView({ initialEmails, initialReplies, mailboxes, initialT
         <TabsList>
           <TabsTrigger value="sent">Envoyés</TabsTrigger>
           <TabsTrigger value="replies">Réponses{unread > 0 ? ` (${unread})` : ""}</TabsTrigger>
+          <TabsTrigger value="health">Délivrabilité</TabsTrigger>
           <TabsTrigger value="templates">Modèles ({templates.length})</TabsTrigger>
         </TabsList>
         <TabsContent value="sent" className="mt-4">
@@ -80,6 +76,9 @@ export function MailboxView({ initialEmails, initialReplies, mailboxes, initialT
         </TabsContent>
         <TabsContent value="replies" className="mt-4">
           <Replies initial={initialReplies} onUnread={(d) => setUnread((n) => Math.max(0, n + d))} showSender={showSender} />
+        </TabsContent>
+        <TabsContent value="health" className="mt-4">
+          <Deliverability rows={health} />
         </TabsContent>
         <TabsContent value="templates" className="mt-4">
           <Templates templates={templates} onChange={setTemplates} canManage={canManageTemplates} />
@@ -125,7 +124,7 @@ function SentList({ initial, showSender, hasMailbox }: { initial: { items: Email
                     {m.isTest && <Badge variant="outline">Test</Badge>}
                   </p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {m.leadName ? `${m.leadName} · ` : ""}{m.toEmail} · depuis {m.fromEmail}{showSender && m.sentByName ? ` · par ${m.sentByName}` : ""}{m.templateName ? ` · modèle « ${m.templateName} »` : ""}
+                    {m.leadName ? `${m.leadName} · ` : ""}{m.toEmail} · depuis {m.fromEmail}{showSender && m.sentByName ? ` · par ${m.sentByName}` : ""}{m.templateName ? ` · modèle « ${m.templateName} »` : ""}{m.sequenceName ? ` · séquence « ${m.sequenceName} », message ${m.stepNumber}` : ""}
                   </p>
                 </div>
                 <span className="shrink-0 text-xs text-muted-foreground">{formatDateTime(m.sentAt ?? m.createdAt)}</span>
@@ -236,6 +235,59 @@ function Replies({ initial, onUnread, showSender }: { initial: { items: ReplyVie
         })}
       </ul>
       {hasMore && <div className="flex justify-center"><Button variant="outline" size="sm" loading={loading} onClick={more}>Voir plus</Button></div>}
+    </div>
+  )
+}
+
+const LEVELS: Record<DeliverabilityRow["health"]["level"], { label: string; variant: "success" | "warning" | "destructive" | "outline" }> = {
+  few: { label: "Pas assez d’envois pour juger", variant: "outline" },
+  ok: { label: "Bon", variant: "success" },
+  warn: { label: "À surveiller", variant: "warning" },
+  pause: { label: "Seuil dépassé", variant: "destructive" },
+}
+
+const rate = (n: number, total: number) => (total ? `${((n / total) * 100).toFixed(1).replace(".", ",")} %` : "—")
+
+function Deliverability({ rows }: { rows: DeliverabilityRow[] }) {
+  if (rows.length === 0) return <EmptyState art="target" title="Aucune boîte" description="Le propriétaire ajoute des boîtes dans Réglages → Boîtes d’envoi." />
+  return (
+    <div className="space-y-4">
+      <ul className="space-y-3">
+        {rows.map((r) => {
+          const l = LEVELS[r.health.level]
+          return (
+            <li key={r.id}>
+              <Card className="space-y-3 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-semibold">{r.address}</p>
+                  <div className="flex items-center gap-2">
+                    {r.status !== "ACTIVE" && <Badge variant="warning">{r.status === "PAUSED" ? "En pause" : "En erreur"}</Badge>}
+                    <Badge variant={l.variant}>{l.label}</Badge>
+                  </div>
+                </div>
+                {r.status !== "ACTIVE" && r.statusReason && <p className="text-sm text-muted-foreground">{r.statusReason}</p>}
+                {r.health.reason && <p role="status" className="text-sm">{r.health.reason}</p>}
+                <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
+                  <div><dt className="text-xs text-muted-foreground">Envoyés ({HEALTH.windowDays} j)</dt><dd className="text-lg font-semibold">{r.health.sent}</dd></div>
+                  <div><dt className="text-xs text-muted-foreground">Rebonds définitifs</dt><dd className="text-lg font-semibold">{r.health.bounced} <span className="text-sm font-normal text-muted-foreground">{rate(r.health.bounced, r.health.sent)}</span></dd></div>
+                  <div><dt className="text-xs text-muted-foreground">Désinscriptions</dt><dd className="text-lg font-semibold">{r.health.optOuts} <span className="text-sm font-normal text-muted-foreground">{rate(r.health.optOuts, r.health.sent)}</span></dd></div>
+                  <div><dt className="text-xs text-muted-foreground">Réponses (30 j)</dt><dd className="text-lg font-semibold">{r.month.replies} <span className="text-sm font-normal text-muted-foreground">sur {r.month.sent} envoyés</span></dd></div>
+                </dl>
+              </Card>
+            </li>
+          )
+        })}
+      </ul>
+      <div className="rounded-xl border bg-muted/40 p-3 text-xs text-muted-foreground">
+        <p className="font-semibold text-foreground">Comment lire ces chiffres</p>
+        <ul className="mt-1 list-disc space-y-0.5 pl-4">
+          <li><span className="font-medium">Envoyés</span> : messages de prospection partis de la boîte (tests exclus), sur les {HEALTH.windowDays} derniers jours ou depuis la dernière reprise de la boîte.</li>
+          <li><span className="font-medium">Rebonds définitifs</span> : adresses qui n’existent pas ou refusent le courrier. Une boîte est mise en pause à {HEALTH.bouncePause * 100} % ; elle est signalée à {HEALTH.bounceWarn * 100} %.</li>
+          <li><span className="font-medium">Désinscriptions</span> : clics sur le lien de désinscription et réponses classées « Ne plus écrire ». Pause à {HEALTH.optOutPause * 100} %, signalée à {HEALTH.optOutWarn * 100} %.</li>
+          <li>Les chiffres n’ont de sens qu’à partir de {HEALTH.minSample} envois. Les signalements de spam faits dans Gmail ou Outlook ne nous parviennent pas : ils se lisent dans Google Postmaster Tools.</li>
+          <li>Une boîte mise en pause automatiquement garde ses séquences en attente. Réactivez-la dans Réglages → Boîtes d’envoi une fois la cause réglée : le décompte repart de zéro.</li>
+        </ul>
+      </div>
     </div>
   )
 }
