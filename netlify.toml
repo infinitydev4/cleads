@@ -2,6 +2,11 @@
   command = "npm run build"
   publish = ".next"
 
+[build.environment]
+  # Pusher's app key is publishable: the client bundle must contain NEXT_PUBLIC_PUSHER_KEY.
+  # A duplicate secret named PUSHER_KEY makes Netlify fail the build when it finds that same value.
+  SECRETS_SCAN_OMIT_KEYS = "PUSHER_KEY"
+
 [functions]
   directory = "netlify/functions"
   # On garde seulement prisma pour l'accès à la base de données
