@@ -9,13 +9,9 @@ suite("outreach: reading replies and bounces (database)", () => {
   let prisma: typeof import("@/lib/prisma").prisma
   let boxes: typeof import("@/features/outreach/mailboxes")
   let svc: typeof import("@/features/outreach/service")
-  let templates: typeof import("@/features/outreach/templates")
   let poll: typeof import("@/features/outreach/poll")
   let replies: typeof import("@/features/outreach/replies")
-  let unsub: typeof import("@/features/outreach/unsubscribe")
-  let compose: typeof import("@/features/outreach/compose")
   let transport: typeof import("@/features/outreach/transport")
-  let secret: typeof import("@/lib/crypto/secret-box")
   type U = import("@/lib/auth/guard").CurrentUser
   const u: Record<string, U> = {}
   const ws = "ws_default"
@@ -31,13 +27,9 @@ suite("outreach: reading replies and bounces (database)", () => {
     prisma = (await import("@/lib/prisma")).prisma
     boxes = await import("@/features/outreach/mailboxes")
     svc = await import("@/features/outreach/service")
-    templates = await import("@/features/outreach/templates")
-    unsub = await import("@/features/outreach/unsubscribe")
     poll = await import("@/features/outreach/poll")
     replies = await import("@/features/outreach/replies")
-    compose = await import("@/features/outreach/compose")
     transport = await import("@/features/outreach/transport")
-    secret = await import("@/lib/crypto/secret-box")
   })
   afterAll(async () => {
     await prisma.$disconnect()

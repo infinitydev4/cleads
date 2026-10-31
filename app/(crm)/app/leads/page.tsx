@@ -47,6 +47,7 @@ export default async function LeadsPage(props: { searchParams: Promise<Record<st
         canAssignOthers={scopeOf(user.role, "lead:write") === "all"}
         canShareViews={can(user.role, "team:read")}
         canImport={can(user.role, "lead:import")}
+        canSequence={can(user.role, "sequence:manage") && can(user.role, "email:send")}
       />
     </>
   )

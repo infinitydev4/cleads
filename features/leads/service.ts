@@ -13,6 +13,7 @@ import { OPEN_STAGES } from "@/features/pipeline/rules"
 import { mayEmailLead } from "@/features/outreach/rules"
 import { MATCH_LABELS, cleanCompany, cleanContact, matchCompany, normalizeTags } from "./keys"
 import { scoreLead } from "./scoring"
+import { stopForLead } from "@/features/outreach/stops"
 import type { BulkInput, CreateLeadInput, LeadFilters, LeadSort, UpdateLeadInput } from "./schemas"
 import type { LeadDetail, LeadList, LeadRow } from "./types"
 
@@ -481,6 +482,9 @@ async function changeStatus(tx: Tx, user: CurrentUser, lead: LeadWithContact, st
       await closeOpenTasks(tx, user, lead.id, status === "DO_NOT_CONTACT" ? "ne pas contacter" : "prospect disqualifié")
     }
   }
+  // A prospect who answered, qualified, was dropped or opted out gets no more automatic follow-ups.
+  const stop = ({ REPLIED: "REPLIED", QUALIFIED: "LEAD_CLOSED", DISQUALIFIED: "LEAD_CLOSED", DO_NOT_CONTACT: "DO_NOT_CONTACT" } as const)[status as "REPLIED"]
+  if (stop) await stopForLead(tx, lead.id, stop, user.id)
   await log(tx, user, lead.id, "STATUS_CHANGE", null, { from: lead.status, to: status })
 }
 
@@ -500,6 +504,7 @@ export async function addActivity(user: CurrentUser, id: string, input: Activity
       const next = lead.status === "NEW" || lead.status === "CONTACTED" ? (input.outcome === "reached" ? "REPLIED" : lead.status === "NEW" ? "CONTACTED" : null) : null
       await tx.lead.update({ where: { id }, data: { lastContactedAt: new Date(), ...(next ? { status: next } : {}) } })
       if (next) await log(tx, user, id, "STATUS_CHANGE", null, { from: lead.status, to: next, reason: "call" })
+      if (next === "REPLIED") await stopForLead(tx, id, "REPLIED", user.id)
     }
     if (input.followUp) {
       await insertTask(tx, user, { leadId: id, title: input.followUp.title ?? (input.outcome === "callback" ? "Rappeler" : "Relancer"), dueDay: input.followUp.dueDay, assigneeId: user.id })

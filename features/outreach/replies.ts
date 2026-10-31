@@ -3,7 +3,9 @@ import { prisma } from "@/lib/prisma"
 import { audit } from "@/lib/audit"
 import type { CurrentUser } from "@/lib/auth/guard"
 import { LeadError } from "@/features/leads/errors"
+import { REPLY_LABELS } from "./labels"
 import { mayUseAnyMailbox } from "./mailboxes"
+import { stopForEmail } from "./stops"
 
 export const REPLY_CLASSES = ["INTERESTED", "NOT_NOW", "NOT_INTERESTED", "OUT_OF_OFFICE", "WRONG_PERSON", "STOP", "OTHER"] as const satisfies readonly ReplyClass[]
 
@@ -94,10 +96,11 @@ export async function updateReply(user: CurrentUser, id: string, patch: { replyC
         const existing = await tx.suppression.findUnique({ where: { workspaceId_email: { workspaceId: m.workspaceId, email } } })
         if (!existing) await tx.suppression.create({ data: { workspaceId: m.workspaceId, email, reason: "UNSUBSCRIBED", source: "réponse classée « ne plus écrire »" } })
         await tx.contact.updateMany({ where: { workspaceId: m.workspaceId, email, doNotContact: false }, data: { doNotContact: true, doNotContactReason: "A demandé de ne plus être contacté (réponse)" } })
+        await stopForEmail(tx, m.workspaceId, email, "UNSUBSCRIBED")
       }
     }
     if (patch.replyClass !== undefined && m.leadId) {
-      await tx.activity.create({ data: { workspaceId: m.workspaceId, leadId: m.leadId, actorId: user.id, actorKind: "USER", kind: "EMAIL", body: m.subject, data: { event: "reply_classified", emailId: m.id, replyClass: patch.replyClass } } })
+      await tx.activity.create({ data: { workspaceId: m.workspaceId, leadId: m.leadId, actorId: user.id, actorKind: "USER", kind: "EMAIL", body: patch.replyClass ? `« ${REPLY_LABELS[patch.replyClass]} » : ${m.subject}` : `Classement retiré : ${m.subject}`, data: { event: "reply_classified", emailId: m.id, replyClass: patch.replyClass } } })
     }
   })
   if (patch.replyClass !== undefined) await audit({ action: "email.reply_classified", actorId: user.id, workspaceId: user.workspaceId, entityType: "EmailMessage", entityId: id, metadata: { replyClass: patch.replyClass }, ip })

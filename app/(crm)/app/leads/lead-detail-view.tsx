@@ -26,7 +26,9 @@ import { QUALIFICATION_LABELS } from "@/features/pipeline/rules"
 import { ScoreMeter } from "./score-meter"
 import { CallDialog } from "./call-dialog"
 import { MeetingDialog } from "./meeting-dialog"
+import { EMAIL_EVENT_HEADS } from "@/features/outreach/labels"
 import { EmailDialog } from "./email-dialog"
+import { SequenceCard } from "./sequence-card"
 import { TasksCard } from "./tasks-card"
 import { CALL_OUTCOMES } from "@/features/activity/rules"
 
@@ -229,6 +231,8 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
         </Card>
       )}
 
+      {lead.can.email && <SequenceCard leadId={lead.id} refreshKey={lead.activities[0]?.id} onChange={reload} />}
+
       <TasksCard lead={lead} assignees={assignees} currentUserId={currentUserId} adding={addingTask} onAddingChange={setAddingTask} onChange={(next) => { onChange(next); router.refresh() }} refresh={reload} />
 
       <Timeline lead={lead} onChange={onChange} />
@@ -312,7 +316,7 @@ function entryText(a: Entry) {
     const head = ["Appel", a.outcome && (CALL_OUTCOMES as Record<string, string>)[a.outcome], a.durationMin != null ? `${a.durationMin} min` : null].filter(Boolean).join(" · ")
     return { head, body: a.body }
   }
-  if (a.kind === "EMAIL") return a.event === "unsubscribed" ? { head: "Désinscription", body: "Ne veut plus recevoir d’emails de prospection." } : { head: "Email envoyé", body: a.body }
+  if (a.kind === "EMAIL") return a.event === "unsubscribed" ? { head: "Désinscription", body: "Ne veut plus recevoir d’emails de prospection." } : { head: (a.event && EMAIL_EVENT_HEADS[a.event]) || "Email", body: a.body }
   if (a.kind === "STATUS_CHANGE") return { head: "Statut modifié", body: null }
   return { head: null, body: a.body }
 }

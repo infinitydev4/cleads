@@ -244,6 +244,8 @@ export async function updateMailbox(user: CurrentUser, id: string, patch: Update
   const connectionChanged = CONNECTION_FIELDS.some((f) => patch[f] !== undefined && (f !== "password" || !!patch.password))
   // A mailbox that resumes, or whose connection changed, sends again only once a fresh test passes.
   const resuming = patch.status === "ACTIVE" && m.status !== "ACTIVE"
+  // Resuming means the cause was dealt with: bounces and opt-outs are counted from now on.
+  if (resuming) data.healthResetAt = new Date()
   const updated = await prisma.mailbox.update({ where: { id }, data })
   const test = connectionChanged || resuming ? await runTest(updated, { activate: resuming }) : null
 

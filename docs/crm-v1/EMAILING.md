@@ -1,4 +1,4 @@
-# Emailing de prospection (E9a, E9b)
+# Emailing de prospection (E9a, E9b, E9c)
 
 Pages : **Emails** (`/app/mailbox` : journal d'envoi et modèles), **Réglages → Boîtes d'envoi** (`/app/settings/mailboxes`, propriétaire seulement), bouton **Email** sur la fiche (raccourci `e`). Code : `features/outreach/`.
 
@@ -26,6 +26,20 @@ Onglet **Réponses** de la page Emails (pastille de non-lus), bouton **Lire les 
 - **Droits** : propriétaire et managers voient les réponses de l'équipe, les autres seulement celles à leurs envois.
 - **Panne** : identifiants IMAP refusés → la boîte passe « En erreur » (elle n'envoie plus non plus) ; réseau coupé → l'erreur s'affiche sur la boîte, la lecture reprend seule.
 - **Envois bloqués** : un email resté `SENDING` plus de 15 minutes passe en échec (« vérifiez le dossier Envoyés ») et libère sa place du jour.
+
+## Séquences (jalon c)
+
+Page **Séquences** (`/app/sequences`, propriétaire, managers et SDR : `sequence:manage`), bouton **Inscrire dans une séquence** dans la barre qui apparaît quand on coche des prospects, carte **Séquence** sur la fiche, onglet **Délivrabilité** de la page Emails. Code : `features/outreach/{sequences,sequence-run,sequence-rules,stops,deliverability}.ts`.
+
+- **Une séquence** : 1 à 4 messages en texte brut, avec les mêmes variables que les modèles. Le premier part à l'inscription ; chaque relance part N jours après le message précédent (1 à 30). Une relance sans objet répond dans le **même fil** (`Re: …`, en-têtes `In-Reply-To` et `References`), ce qui se lit comme une vraie relance. Le pied de page et la désinscription restent imposés à chaque message.
+- **Inscrire** : jusqu'à 100 fiches à la fois, depuis une boîte qu'on peut utiliser. Chaque fiche est vérifiée sur le serveur avec les règles d'un envoi 1 à 1 (droit d'écrire, exclusion, « ne pas contacter », adresse générique confirmée), et en plus : statut **Nouveau ou Contacté** seulement, **une seule séquence en cours par fiche** (index unique en base), toutes les étapes remplissables depuis la fiche. Une fiche refusée est écartée avec sa raison, les autres sont inscrites.
+- **Le moteur** : `netlify/functions/sequence-run.mts` appelle toutes les 5 minutes `POST /api/cron/sequence-run` (même `CRON_SECRET` que les autres). Il n'envoie que **du lundi au vendredi, de 9 h à 17 h 30 (Paris)**, **au plus 2 messages par boîte et par passage**, et chaque message est planifié à **une minute au hasard** de la fenêtre (le premier 5 à 45 minutes après l'inscription, ou à l'ouverture suivante). Les jours fériés ne sont pas exclus. Une inscription est réservée par un bail de 10 minutes avant l'envoi : deux passages en même temps n'envoient qu'un message.
+- **Mêmes garde-fous qu'un envoi 1 à 1** : le moteur passe par la même réservation sous verrou (plafond du jour, chauffe, boîte active, exclusion relue). Plafond atteint : la fiche attend le lendemain, sans échec. Boîte en pause ou en erreur : elle attend une heure, rien n'est perdu.
+- **Arrêt automatique** (testé dans chaque cas) : réponse d'une personne, rebond définitif, désinscription (lien ou un clic), signalement de spam, réponse classée « Ne plus écrire », fiche qualifiée, disqualifiée ou « ne pas contacter », appel abouti, adresse ajoutée à la liste d'exclusion, variable devenue vide. Une réponse automatique d'absence **n'arrête pas** la séquence. Le moteur revérifie tout juste avant chaque envoi (statut, adresse, exclusion, réponses reçues), même si un arrêt a été manqué. Chaque arrêt est écrit dans l'historique de la fiche avec sa raison.
+- **Échecs d'envoi** : une panne du serveur est réessayée (1 h, puis 2 h), puis la fiche est arrêtée « envoi impossible » après 3 essais ; une adresse refusée arrête la fiche tout de suite ; des identifiants refusés mettent la boîte en erreur et la fiche attend.
+- **Pause automatique d'une boîte** : sur les 7 derniers jours (ou depuis sa dernière reprise), à partir de 20 envois, **5 % de rebonds définitifs** ou **8 % de désinscriptions** (clics sur le lien et « Ne plus écrire ») la mettent en pause avec la raison ; 2 % et 3 % la font passer « À surveiller ». Ses séquences attendent. La réactiver (Réglages → Boîtes d'envoi) remet les compteurs à zéro. Les chiffres et leur définition sont dans l'onglet Délivrabilité.
+- **Pas visible** : les signalements de spam faits dans Gmail ou Outlook ne reviennent pas à l'expéditeur ; ils se lisent dans Google Postmaster Tools. Ils ne sont donc pas dans la pause automatique.
+- **Droits** : un SDR voit et arrête les fiches qu'il a inscrites ; propriétaire et managers voient toutes les inscriptions. Archiver une séquence arrête toutes ses fiches en cours.
 
 ## Ce qui bloque un envoi (vérifié sur le serveur)
 
@@ -62,6 +76,8 @@ Dans l'ordre :
 
 ## Vérifié
 
+- E9c : `tests/sequence-rules.test.ts` (fenêtre, planification, seuils de santé) et `tests/sequences.integration.test.ts` (base jetable : refus à l'inscription, cycle complet en un fil, passages simultanés, limite par boîte, plafond du jour, boîte ou séquence en pause, chacun des arrêts, échecs d'envoi, bail abandonné, pause automatique et reprise). Quatre garde-fous ont été retirés tour à tour (fenêtre horaire, arrêt sur réponse, vérification d'exclusion avant envoi, limite par boîte) : le test correspondant échoue à chaque fois. Dans le navigateur, sur base jetable : création d'une séquence, inscription de 3 fiches depuis la liste (premiers envois lundi à des minutes différentes), fiches inscrites, onglet Délivrabilité. **Pas encore vérifié** : un envoi réel par la tâche planifiée, et les écrans sur téléphone.
+
 - E9b : `tests/inbound.test.ts` (rapports de rebond, retards, réponses, absences, citations) et `tests/replies.integration.test.ts` (base jetable, faux serveur IMAP : réponse rattachée, relecture sans doublon, boucle concurrente, absence, courrier étranger, rebond définitif/temporaire/de test, identifiants refusés, envoi bloqué, classement et « Ne plus écrire »). Un test a été vérifié en retirant volontairement l'exclusion : il échoue. **Pas encore vérifié** : la lecture IMAP contre un vrai serveur Google (le faux serveur remplace `transport.fetchNew`), et la fonction planifiée Netlify en production.
 
 - Tests : `tests/outreach.test.ts` (règles, modèles, chiffrement, jetons, erreurs SMTP) et `tests/outreach.integration.test.ts` (base jetable : plafond en parallèle, exclusions, droits, échecs, désinscription concurrente, modèles).
@@ -71,5 +87,5 @@ Dans l'ordre :
 ## Pas dans ce jalon
 
 - **E9b** (fait, ci-dessus). Pas encore : classement assisté par IA, notification à l'arrivée d'une réponse, réponse depuis le CRM (on répond pour l'instant depuis la messagerie de la boîte), plaintes de spam (les fournisseurs de boîtes ne les renvoient pas toujours ; SES les gère déjà côté transactionnel).
-- **E9c** : séquences, arrêt automatique (réponse, rebond, désinscription, plainte), fenêtres horaires, délais aléatoires, pause automatique sur seuils, tableau de délivrabilité. Cette étape n'est lancée que si les premiers envois montrent des rebonds et des plaintes sous contrôle.
+- **E9c** (fait, ci-dessus). Pas encore : jours fériés, fuseau par prospect, A/B de textes, branches selon la réponse, rapports par séquence au-delà des compteurs de la page.
 - Connexion OAuth (API Gmail, Microsoft Graph) : à ajouter si l'hébergeur choisi refuse les mots de passe d'application.

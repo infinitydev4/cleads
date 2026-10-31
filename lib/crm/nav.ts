@@ -53,7 +53,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { id: "leads", label: "Prospects", href: "/app/leads", icon: Users, permission: "lead:read", keywords: ["contacts", "entreprises", "fiches"] },
       { id: "search", label: "Recherche", href: "/app/search", icon: Search, permission: "search:run", keywords: ["extractor", "google maps", "trouver", "entreprises"] },
-      { id: "sequences", label: "Séquences", href: "/app/sequences", icon: Send, permission: "sequence:manage", soon: true, keywords: ["relances", "emails"] },
+      { id: "sequences", label: "Séquences", href: "/app/sequences", icon: Send, permission: "sequence:manage", keywords: ["relances", "emails"] },
       { id: "mailbox", label: "Emails", href: "/app/mailbox", icon: Mail, permission: "email:send", keywords: ["boîte", "envoi", "modèles", "prospection", "cold mail"] },
     ],
   },

@@ -3,21 +3,23 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Tag, X } from "lucide-react"
+import { Send, Tag, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { leadStatus } from "@/lib/crm/status"
 import { api } from "./api"
+import { EnrollDialog } from "./enroll-dialog"
 import { personName, type Assignee } from "./filter-bar"
 
 const NONE = "__none__"
 
 /** Appears when rows are selected. Each action reports what it could not do instead of failing silently. */
-export function BulkBar({ ids, assignees, currentUserId, canAssignOthers, onDone }: { ids: string[]; assignees: Assignee[]; currentUserId: string; canAssignOthers: boolean; onDone: () => void }) {
+export function BulkBar({ ids, assignees, currentUserId, canAssignOthers, canSequence, onDone }: { ids: string[]; assignees: Assignee[]; currentUserId: string; canAssignOthers: boolean; canSequence: boolean; onDone: () => void }) {
   const router = useRouter()
   const [tag, setTag] = useState("")
   const [busy, setBusy] = useState(false)
+  const [enrolling, setEnrolling] = useState(false)
 
   async function run(action: object, label: string) {
     setBusy(true)
@@ -55,6 +57,8 @@ export function BulkBar({ ids, assignees, currentUserId, canAssignOthers, onDone
         <Input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Étiquette" aria-label="Ajouter une étiquette" className="h-9 w-32 border-sidebar-border bg-sidebar-accent text-sidebar-foreground placeholder:text-sidebar-muted" />
         <Button type="submit" size="sm" disabled={busy || !tag.trim()}>Ajouter</Button>
       </form>
+      {canSequence && <Button variant="secondary" size="sm" disabled={busy} onClick={() => setEnrolling(true)}><Send className="h-4 w-4" aria-hidden="true" /> Inscrire dans une séquence</Button>}
+      {enrolling && <EnrollDialog ids={ids} currentUserId={currentUserId} onClose={() => setEnrolling(false)} onDone={() => { onDone(); router.refresh() }} />}
       <Button variant="ghost" size="icon" className="ml-auto text-sidebar-foreground hover:bg-sidebar-accent" onClick={onDone} aria-label="Désélectionner"><X className="h-4 w-4" aria-hidden="true" /></Button>
     </div>
   )

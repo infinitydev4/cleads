@@ -58,6 +58,8 @@ model User {
   sharedDocuments        SharedDocument[]
   ExtractionSearch       ExtractionSearch[]
   mailboxes              Mailbox[]               @relation("MailboxOwner")
+  sequencesCreated       Sequence[]              @relation("SequenceCreator")
+  enrollmentsCreated     SequenceEnrollment[]    @relation("EnrollmentCreator")
   emailTemplates         EmailTemplate[]
   sentEmails             EmailMessage[]          @relation("EmailSender")
 }
@@ -575,6 +577,8 @@ model Workspace {
   mailboxes              Mailbox[]
   emailTemplates         EmailTemplate[]
   emailMessages          EmailMessage[]
+  sequences              Sequence[]
+  sequenceEnrollments    SequenceEnrollment[]
 }
 
 enum LeadSource {
@@ -784,11 +788,12 @@ model Lead {
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
-  deals      Deal[]
-  activities Activity[]
-  tasks      Task[]
-  meetings   Meeting[]
-  emails     EmailMessage[]
+  deals               Deal[]
+  activities          Activity[]
+  tasks               Task[]
+  meetings            Meeting[]
+  emails              EmailMessage[]
+  sequenceEnrollments SequenceEnrollment[]
 
   @@unique([workspaceId, companyId])
   @@index([workspaceId, status])
@@ -1144,12 +1149,15 @@ model Mailbox {
   lastPolledAt    DateTime?
   /// Why the last read failed; null once a read works again.
   lastPollError   String?
+  /// E9c: health (bounces, opt-outs) is measured from this moment when set: a person who fixed an auto-paused mailbox starts a fresh count.
+  healthResetAt   DateTime?
   /// Set while a read is running so two overlapping runs do not read the same mailbox.
   pollClaimedAt   DateTime?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
-  messages EmailMessage[]
+  messages    EmailMessage[]
+  enrollments SequenceEnrollment[]
 
   @@unique([workspaceId, address])
   @@index([workspaceId, ownerId])
@@ -1177,44 +1185,146 @@ model EmailTemplate {
 
 /// One prospecting email, sent or received. The day's quota of a mailbox is counted on these rows.
 model EmailMessage {
-  id          String         @id @default(cuid())
-  workspaceId String
-  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  mailboxId   String
-  mailbox     Mailbox        @relation(fields: [mailboxId], references: [id], onDelete: Restrict)
-  leadId      String?
-  lead        Lead?          @relation(fields: [leadId], references: [id], onDelete: SetNull)
-  contactId   String?
-  contact     Contact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
-  sentById    String?
-  sentBy      User?          @relation("EmailSender", fields: [sentById], references: [id], onDelete: SetNull)
-  templateId  String?
-  template    EmailTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  direction   EmailDirection @default(OUTBOUND)
-  status      EmailStatus
-  fromEmail   String
-  toEmail     String
-  subject     String
-  bodyText    String
+  id             String              @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  mailboxId      String
+  mailbox        Mailbox             @relation(fields: [mailboxId], references: [id], onDelete: Restrict)
+  leadId         String?
+  lead           Lead?               @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  contactId      String?
+  contact        Contact?            @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  sentById       String?
+  sentBy         User?               @relation("EmailSender", fields: [sentById], references: [id], onDelete: SetNull)
+  templateId     String?
+  template       EmailTemplate?      @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  direction      EmailDirection      @default(OUTBOUND)
+  status         EmailStatus
+  fromEmail      String
+  toEmail        String
+  subject        String
+  bodyText       String
   /// RFC 5322 Message-ID, with the angle brackets: replies are matched on it (E9b).
-  messageId   String         @unique
-  inReplyTo   String?
-  error       String?
+  messageId      String              @unique
+  inReplyTo      String?
+  error          String?
   /// A test sent to a member's own address: counted in the quota, never on a fiche.
-  isTest      Boolean        @default(false)
+  isTest         Boolean             @default(false)
   /// INBOUND: how a person (or the reader, for out-of-office notices) filed the reply.
-  replyClass  ReplyClass?
+  replyClass     ReplyClass?
   /// INBOUND: when someone opened it in the CRM; null = unread.
-  readAt      DateTime?
+  readAt         DateTime?
   /// INBOUND: the message we sent that this answers.
-  repliesToId String?
+  repliesToId    String?
+  /// E9c: the sequence enrollment this message was sent for, and its step (1 = first message).
+  enrollmentId   String?
+  enrollment     SequenceEnrollment? @relation(fields: [enrollmentId], references: [id], onDelete: SetNull)
+  stepNumber     Int?
+  /// OUTBOUND: when the recipient used this message's unsubscribe link. Attributes opt-outs to a mailbox.
+  unsubscribedAt DateTime?
   /// OUTBOUND: when the server accepted it; INBOUND: the message's own date.
-  sentAt      DateTime?
-  createdAt   DateTime       @default(now())
+  sentAt         DateTime?
+  createdAt      DateTime            @default(now())
 
   @@index([mailboxId, createdAt])
   @@index([workspaceId, direction, createdAt])
+  @@index([enrollmentId])
   @@index([leadId, createdAt])
   @@index([workspaceId, createdAt])
   @@index([workspaceId, toEmail])
+}
+
+// ── Sequences (E9c): a few timed follow-ups, stopped automatically ──────────────────────────────────────────────
+
+enum SequenceStatus {
+  ACTIVE
+  /// Nothing is sent for it; its enrollments wait.
+  PAUSED
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  STOPPED
+}
+
+enum EnrollmentStopReason {
+  REPLIED
+  BOUNCED
+  UNSUBSCRIBED
+  COMPLAINED
+  /// The address joined the exclusion list some other way (manual, domain).
+  SUPPRESSED
+  DO_NOT_CONTACT
+  /// The fiche was qualified, disqualified or otherwise left prospecting.
+  LEAD_CLOSED
+  /// No address, or a template variable the fiche cannot fill.
+  MISSING_DATA
+  SEND_FAILED
+  MANUAL
+}
+
+model Sequence {
+  id          String         @id @default(cuid())
+  workspaceId String
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  status      SequenceStatus @default(ACTIVE)
+  createdById String?
+  createdBy   User?          @relation("SequenceCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  /// Archived sequences keep their history but take no new enrollment and send nothing.
+  archivedAt  DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  steps       SequenceStep[]
+  enrollments SequenceEnrollment[]
+
+  @@unique([workspaceId, name])
+}
+
+model SequenceStep {
+  id         String   @id @default(cuid())
+  sequenceId String
+  sequence   Sequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  /// 1-based. Step 1 goes out at enrollment; the others `delayDays` after the previous one.
+  position   Int
+  delayDays  Int      @default(0)
+  /// Empty on steps 2+ = a reply in the first message's thread ("Re: …").
+  subject    String
+  body       String
+
+  @@unique([sequenceId, position])
+}
+
+model SequenceEnrollment {
+  id            String                @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sequenceId    String
+  sequence      Sequence              @relation(fields: [sequenceId], references: [id], onDelete: Restrict)
+  leadId        String
+  lead          Lead                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  mailboxId     String
+  mailbox       Mailbox               @relation(fields: [mailboxId], references: [id], onDelete: Restrict)
+  enrolledById  String?
+  enrolledBy    User?                 @relation("EnrollmentCreator", fields: [enrolledById], references: [id], onDelete: SetNull)
+  status        EnrollmentStatus      @default(ACTIVE)
+  stoppedReason EnrollmentStopReason?
+  /// Steps already sent.
+  currentStep   Int                   @default(0)
+  /// When the next step may leave (null once finished). The worker takes a short lease on it while sending.
+  nextAt        DateTime?
+  lastSentAt    DateTime?
+  /// Consecutive failed attempts on the current step.
+  failures      Int                   @default(0)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  stoppedAt     DateTime?
+
+  messages EmailMessage[]
+
+  @@index([status, nextAt])
+  @@index([leadId])
+  @@index([sequenceId, status])
 }
