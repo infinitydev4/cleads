@@ -25,10 +25,21 @@ Certains objets de la scène sont dessinés à partir des données : le tableau 
 
 - **Cliquer un espace** (ou son étiquette, ou une étape du parcours) : la caméra s'en approche, des crochets lime l'entourent, une barre « Qualification 2/8 · ← → · Échap Quitter » apparaît, le panneau de droite montre ses chiffres et ses listes.
 - **Cliquer une fiche** dans une liste : carte du prospect (statut, score, coordonnées, prochaine action) avec **Planifier le RDV**, **Contacter**, **Fiche complète** (le panneau latéral habituel : qualifier, appeler, tâches…) et **Ouvrir en 2D**. Ce sont les dialogues du CRM, avec les mêmes contrôles côté serveur.
+- **Tout se fait dans la 3D** : chaque action qui mène à une page du CRM l'ouvre dans une **fenêtre** au-dessus de la scène, sans quitter la vue (voir « Fenêtres » plus bas). C'est le cas de **Nouvelle recherche**, **Importer un CSV**, **Nouvelle campagne** (le formulaire s'ouvre directement), des recherches passées, des campagnes, de « Ouvrir le pipeline / l'agenda / les emails / les fiches à qualifier / Aujourd'hui », des **Séquences**, de « Voir tout » et « Voir ses fiches ». C'est aussi le cas des liens de la barre du haut, du logo, de la palette ⌘K et de « Ouvrir en pleine page » dans une fiche. Seuls **2D** et **Ouvrir en 2D** quittent la vue.
 - **Cliquer une personne** : membre de l'équipe (rôle, statut « en rendez-vous » ou « connecté aujourd'hui », charge de travail pour les managers). Chacun **choisit son personnage** dans son propre panneau ; sans choix, un personnage est attribué à partir du rôle, toujours le même pour la même personne. Les personnages sans membre (un par espace vide) représentent le module : les cliquer ouvre l'espace.
 - **Caméra** : glisser pour se déplacer, clic droit ou deux doigts pour tourner, molette ou pincement pour zoomer ; boutons + − ⟲ ⟳ et « vue d'ensemble ».
 - **Visite guidée** : un espace toutes les 7 secondes, jusqu'à Échap ou un clic.
 - **Clavier** : 1 à 8, ← →, Échap (revient d'une fiche à l'espace, puis à la vue d'ensemble), + −, 0. Les étiquettes des espaces sont de vrais boutons (Tab, Entrée) ; un message vocal annonce l'espace cadré.
+
+## Fenêtres
+
+Une fenêtre affiche la page 2D elle-même (formulaire de recherche, import, kanban du pipeline, agenda, campagne, fiche…), chargée dans un cadre et sans la coque du CRM (ni barre latérale, ni barre du haut). Chaque module fonctionne donc en 3D exactement comme en 2D, avec ses règles et ses droits côté serveur, sans rien écrire deux fois.
+
+- **Adresse** : la fenêtre ouverte fait partie de l'adresse (`/app/3d?w=/app/pipeline`). Le bouton Précédent la ferme, un rechargement la rouvre, et une navigation à l'intérieur (une carte du pipeline vers la fiche) met à jour le titre et l'adresse.
+- **Fermer** : bouton ×, Échap (le premier Échap ferme d'abord le dialogue ou le menu ouvert dans la page), Précédent. À la fermeture, les chiffres de la scène sont rechargés : ce qui a été fait dans la fenêtre s'y voit aussitôt.
+- **Pendant ce temps** : la scène se repose (une image seulement quand quelque chose change), ses raccourcis et son HUD sont hors d'atteinte du clavier et des lecteurs d'écran. Un lien cliqué dans un dialogue ou un panneau de la vue 3D le ferme d'abord.
+- **Garde-fous** : seules les pages du CRM de ce site s'ouvrent dans une fenêtre (`windowPath`, testé : ni autre site, ni `//hôte`, ni `javascript:`, ni la vue 3D dans elle-même). Le clic du milieu ou ⌘-clic ouvre toujours la page 2D dans un nouvel onglet.
+- **Fichiers** : `lib/crm/hq-window.ts` (adresse, ouverture, fermeture), `components/crm/hq/hud/module-window.tsx` (la fenêtre, et l'interception des liens de la vue), `components/crm/shell/embed-bridge.tsx` (dans la page, signale l'adresse, le titre et Échap). La coque sait qu'elle est dans une fenêtre par l'en-tête `Sec-Fetch-Dest: iframe` (premier affichage sans clignotement), puis par le cadre lui-même.
 
 ## Jour et nuit
 
@@ -48,7 +59,7 @@ app/(crm)/app/3d/       la page (données rendues côté serveur au premier affi
 components/crm/hq/
   hq-view.tsx           magasin d'état, rafraîchissement (60 s, onglet visible), raccourcis, visite, chargement différé
   store.ts              état partagé scène / HUD (useSyncExternalStore, sans bibliothèque)
-  hud/                  indicateurs, parcours, campagnes, panneau de détail, contrôles, étiquettes DOM
+  hud/                  indicateurs, parcours, campagnes, panneau de détail, contrôles, étiquettes DOM, fenêtres
   scene/                React Three Fiber : layout.ts, materials.ts, kit.tsx, textures.ts, zones.tsx, world.tsx,
                         characters.tsx, props.tsx, circuits.tsx, effects.tsx, labels.tsx, camera-rig.tsx, hq-canvas.tsx
 public/3d/characters/   4 personnages GLB (≈ 550 Ko chacun)
@@ -73,9 +84,9 @@ scripts/                build-characters.mjs, build-props.mjs
 
 Géométries mises en cache par taille, matériaux partagés, arbres instanciés (un appel de dessin par partie du modèle), textures dessinées sur canvas et reconstruites seulement quand leurs chiffres changent. Étiquettes en DOM placées par une seule boucle (pas un rendu React par étiquette). Ombres d'une seule lumière. Avec `prefers-reduced-motion`, rien ne bouge seul et l'image n'est recalculée qu'en cas d'interaction.
 
-**Rendu léger** (sans ombres, sans occlusion, résolution 1) : un garde mesure la fluidité après 8 secondes (le chargement des modèles et la compilation des shaders ralentissent tout appareil au début), par fenêtres de 3 secondes ; deux fenêtres de suite sous 36 images par seconde le déclenchent, une seule fois. Les pauses (onglet masqué, image de plus de 0,5 s) ne comptent pas. Le bouton jauge permet de le forcer ou de l'enlever, et le choix fait à la main n'est plus contredit.
+**Rendu léger** (sans ombres, sans occlusion, résolution 1) : un garde mesure la fluidité seulement quand tous les modèles sont arrivés, puis après 5 secondes de calme, par fenêtres de 4 secondes ; deux fenêtres de suite sous 30 images par seconde le déclenchent, une seule fois. Les pauses (onglet masqué, image de plus de 0,5 s) et le temps passé sous une fenêtre ne comptent pas. Le bouton jauge permet de le forcer ou de l'enlever, et le choix fait à la main n'est plus contredit. Les shaders sont compilés dès l'arrivée des modèles (`compileAsync`, en parallèle quand le navigateur le permet), au lieu de saccader les premières images qui les montrent : c'est cette saccade qui, mesurée trop tôt, déclenchait le rendu léger à tort.
 
-Mesuré dans le navigateur de développement (fenêtre 1440 × 900, rendu complet, 2160 × 1266 px) : **60 images par seconde**, pire image 19 ms. Ce qui coûtait : l'occlusion ambiante en qualité « medium » à une résolution de 1,75 faisait tomber l'image à 26 images par seconde ; en qualité « performance » avec une résolution plafonnée à 1,5, elle ne coûte plus que quelques millisecondes. Build de production : three.js, React Three Fiber et Drei tiennent dans un morceau chargé seulement par `/app/3d` (aucune page 2D ne le référence) ; personnages (2,2 Mo) et objets (1,3 Mo) ne se téléchargent qu'en 3D. Non mesuré : un portable d'entrée de gamme, une tablette.
+Mesuré dans le navigateur de développement (Apple M4, rendu complet, 1636 × 1069 px puis 2160 × 1266 px) : **60 images par seconde de jour comme de nuit**, pire image 18 à 21 ms. Ce qui coûtait : l'occlusion ambiante en qualité « medium » à une résolution de 1,75 faisait tomber l'image à 26 images par seconde ; en qualité « performance » avec une résolution plafonnée à 1,5, elle ne coûte plus que quelques millisecondes. Build de production : three.js, React Three Fiber et Drei tiennent dans un morceau chargé seulement par `/app/3d` (aucune page 2D ne le référence) ; personnages (2,2 Mo) et objets (1,3 Mo) ne se téléchargent qu'en 3D. Non mesuré : un portable d'entrée de gamme, une tablette.
 
 ## Personnages (Meshy)
 
@@ -118,6 +129,14 @@ Tripo n'a pas été nécessaire (Meshy était déjà connecté). Total Meshy du 
 - `tests/hq.integration.test.ts` (base jetable) : indicateurs et tendance, portée par rôle, espaces verrouillés, répartition et charge de l'équipe, statut « en rendez-vous », ordre de la qualification, choix du personnage.
 - Dans le navigateur (base jetable, équipe et données fictives) : vue d'ensemble, zoom sur un espace, panneau et listes, clic sur un membre, choix du personnage, carte prospect, dialogue « Planifier le RDV » (annulé, rien envoyé), jour / nuit, pages 2D (Aujourd'hui, Prospects, Campagnes) inchangées.
 - Dans le navigateur, après la passe de rendu : personnages assis dans leur chaise (Coordination, accueil RDV, bureaux), logos du bâtiment sans fond et détachés du mur, salon et canapés, sélection et circuits lime de jour comme de nuit, lampadaires et flaques de lumière la nuit, 60 images par seconde en rendu complet.
+- Fenêtres, dans le navigateur : les huit espaces et leurs liens. Les vérifications :
+  - Nouvelle recherche, Importer un CSV et Nouvelle campagne (formulaire ouvert, le premier Échap ne ferme que lui) ;
+  - le pipeline, puis une carte et sa fiche en pleine page (titre et adresse suivent) ;
+  - la barre du haut, qui remplace la fenêtre ouverte, et la palette ⌘K ;
+  - le logo, « Voir tout » et « Voir toutes » ;
+  - « Ouvrir en pleine page » depuis la fiche de la vue 3D (le panneau se ferme d'abord) ;
+  - Précédent, un rechargement avec `?w=`, et « Ouvrir en 2D », qui quitte vers la page 2D.
+- La vue 2D reste inchangée.
 - **Pas encore vérifié** : un vrai téléphone (le HUD passe en panneau bas sous 640 px), un lecteur d'écran réel, un poste peu puissant.
 
 ## Écarts assumés

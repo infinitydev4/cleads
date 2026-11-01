@@ -36,9 +36,10 @@ function Goal({ value, goal, label }: { value: number; goal: number | null; labe
   )
 }
 
-export function CampaignsView({ campaigns, archived, people, currentUserId, canManage }: { campaigns: CampaignView[]; archived: boolean; people: Person[]; currentUserId: string; canManage: boolean }) {
+/** `startCreating`: arrived through "Nouvelle campagne" elsewhere (?new=1, the 3D view): the form is already open. */
+export function CampaignsView({ campaigns, archived, people, currentUserId, canManage, startCreating = false }: { campaigns: CampaignView[]; archived: boolean; people: Person[]; currentUserId: string; canManage: boolean; startCreating?: boolean }) {
   const router = useRouter()
-  const [creating, setCreating] = useState(false)
+  const [creating, setCreating] = useState(startCreating)
 
   return (
     <div className="space-y-4">

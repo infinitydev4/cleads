@@ -113,7 +113,7 @@ export function CampaignsCard() {
     <Glass className="p-4">
       <h2 className="mb-2 flex items-center justify-between gap-3 text-sm font-bold">
         Performances des campagnes
-        <Link href="/app/campaigns" className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground">Voir toutes <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>
+        <Link href="/app/campaigns" prefetch={false} className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground">Voir toutes <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>
       </h2>
       {campaigns.length === 0 ? (
         <p className="text-xs text-muted-foreground">Aucune campagne pour l’instant. Créez-en une pour mesurer une cible.</p>
@@ -132,7 +132,7 @@ export function CampaignsCard() {
             {campaigns.slice(0, 3).map((c) => (
               <tr key={c.id} className="border-t">
                 <td className="max-w-[150px] truncate py-1.5">
-                  <Link href={`/app/campaigns/${c.id}`} className="inline-flex items-center gap-1.5 font-medium hover:underline">
+                  <Link href={`/app/campaigns/${c.id}`} prefetch={false} className="inline-flex items-center gap-1.5 font-medium hover:underline">
                     <span className={cn("h-2 w-2 shrink-0 rounded-full", c.status === "ACTIVE" ? "bg-primary ring-1 ring-sidebar/30" : "bg-border")} aria-hidden="true" />
                     {c.name}
                     <span className="sr-only">, {campaignStatus[c.status].label}</span>

@@ -3,10 +3,10 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname, useSearchParams } from "next/navigation"
+import { HQ_PATH } from "@/lib/crm/hq-window"
 import { cn } from "@/lib/utils"
 
 const LAST_2D = "cleads.last2d"
-export const HQ_PATH = "/app/3d"
 
 /** Where "2D" leads back to: the last 2D page of this tab, else the home page. */
 function readLast2d() {
@@ -52,7 +52,8 @@ export function ViewSwitch({ tone = "light", className }: { tone?: "light" | "da
     )
   return (
     <nav aria-label="Vue du CRM" className={cn("flex items-center gap-0.5 rounded-lg border p-0.5", tone === "dark" ? "border-sidebar-border bg-sidebar-accent/60" : "bg-card", className)}>
-      <Link href={in3d ? back : pathname} aria-current={!in3d ? "page" : undefined} className={item(!in3d)} title="Vue classique">
+      {/* data-hq-leave: in 3D, the one link that really leaves the view rather than opening a window. */}
+      <Link href={in3d ? back : pathname} data-hq-leave aria-current={!in3d ? "page" : undefined} className={item(!in3d)} title="Vue classique">
         2D
       </Link>
       <Link href={HQ_PATH} aria-current={in3d ? "page" : undefined} className={item(in3d)} title="Vue 3D isométrique">

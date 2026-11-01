@@ -100,11 +100,15 @@ function MeetingRow({ m, onOpen }: { m: MeetingMini; onOpen: (id: string) => voi
   )
 }
 
+/**
+ * The panels link to the CRM pages: in the 3D view a click opens the page in a window over the scene
+ * (hud/module-window.tsx), a middle click still gives the 2D page in a new tab. No prefetch: the window loads it.
+ */
 function OpenModule({ zone }: { zone: ZoneId }) {
   const def = zoneById(zone)!
   return (
     <Button asChild className="w-full">
-      <Link href={def.href}>{def.hrefLabel} <ArrowRight className="h-4 w-4" aria-hidden="true" /></Link>
+      <Link href={def.href} prefetch={false}>{def.hrefLabel} <ArrowRight className="h-4 w-4" aria-hidden="true" /></Link>
     </Button>
   )
 }
@@ -143,7 +147,7 @@ function ZoneBody({ data, openLead }: { data: ZoneDetail; openLead: (id: string)
               <ul className="space-y-1">
                 {data.searches.map((s) => (
                   <li key={s.id}>
-                    <Link href={`/app/search/${s.id}`} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-accent">
+                    <Link href={`/app/search/${s.id}`} prefetch={false} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-accent">
                       <span className="min-w-0 flex-1">
                         <span className="block truncate font-semibold">{s.label}</span>
                         <span className="block truncate text-xs text-muted-foreground">{formatCount(s.found)} trouvées · {formatCount(s.imported)} importées{s.campaignName ? ` · ${s.campaignName}` : ""}</span>
@@ -159,8 +163,8 @@ function ZoneBody({ data, openLead }: { data: ZoneDetail; openLead: (id: string)
             {data.bySource.length === 0 ? <Empty>Aucun prospect créé sur la période.</Empty> : <FunnelBars steps={data.bySource.map((b) => ({ key: b.source, label: b.label, count: b.count }))} />}
           </Section>
           <div className="grid gap-2 sm:grid-cols-2">
-            {data.can.search && <Button asChild><Link href="/app/search">Nouvelle recherche</Link></Button>}
-            {data.can.import && <Button asChild variant="outline"><Link href="/app/leads/import">Importer un CSV</Link></Button>}
+            {data.can.search && <Button asChild><Link href="/app/search" prefetch={false}>Nouvelle recherche</Link></Button>}
+            {data.can.import && <Button asChild variant="outline"><Link href="/app/leads/import" prefetch={false}>Importer un CSV</Link></Button>}
           </div>
         </>
       )
@@ -257,7 +261,7 @@ function ZoneBody({ data, openLead }: { data: ZoneDetail; openLead: (id: string)
           )}
           <div className="grid gap-2 sm:grid-cols-2">
             <OpenModule zone="outreach" />
-            <Button asChild variant="outline"><Link href="/app/sequences">Séquences</Link></Button>
+            <Button asChild variant="outline"><Link href="/app/sequences" prefetch={false}>Séquences</Link></Button>
           </div>
         </>
       )
@@ -334,7 +338,7 @@ function ZoneBody({ data, openLead }: { data: ZoneDetail; openLead: (id: string)
               <ul className="space-y-1 text-sm">
                 {data.campaigns.map((c) => (
                   <li key={c.id} className="flex items-center gap-2">
-                    <Link href={`/app/campaigns/${c.id}`} className="min-w-0 flex-1 truncate font-medium hover:underline">{c.name}</Link>
+                    <Link href={`/app/campaigns/${c.id}`} prefetch={false} className="min-w-0 flex-1 truncate font-medium hover:underline">{c.name}</Link>
                     <span className="text-xs tabular-nums text-muted-foreground">{formatCount(c.leads)} · {formatCount(c.meetings)} RDV</span>
                     <span className="w-14 text-right text-xs font-bold tabular-nums">{formatRate(c.conversion)}</span>
                   </li>
@@ -352,7 +356,7 @@ function ZoneBody({ data, openLead }: { data: ZoneDetail; openLead: (id: string)
             <ul className="space-y-2">
               {data.campaigns.map((c) => (
                 <li key={c.id}>
-                  <Link href={`/app/campaigns/${c.id}`} className="block rounded-xl border px-3 py-2 hover:bg-accent">
+                  <Link href={`/app/campaigns/${c.id}`} prefetch={false} className="block rounded-xl border px-3 py-2 hover:bg-accent">
                     <span className="flex items-center gap-2"><span className="min-w-0 flex-1 truncate text-sm font-bold">{c.name}</span><StatusBadge map={campaignStatus} value={c.status} /></span>
                     <span className="mt-1 grid grid-cols-4 gap-1 text-[11px] text-muted-foreground">
                       {(["leads", "contacted", "replied", "meetings"] as const).map((k) => <span key={k}><span className="block font-bold tabular-nums text-foreground">{formatCount(c.stats[k])}</span>{CAMPAIGN_INDICATORS[k].label}</span>)}
@@ -364,7 +368,7 @@ function ZoneBody({ data, openLead }: { data: ZoneDetail; openLead: (id: string)
           )}
           <div className="grid gap-2 sm:grid-cols-2">
             <OpenModule zone="campaigns" />
-            {data.canManage && <Button asChild variant="outline"><Link href="/app/campaigns">Nouvelle campagne</Link></Button>}
+            {data.canManage && <Button asChild variant="outline"><Link href="/app/campaigns?new=1" prefetch={false}>Nouvelle campagne</Link></Button>}
           </div>
         </>
       )
@@ -455,7 +459,7 @@ function MemberPanel({ member, onClose, onBack }: { member: HqMember; onClose: (
             <p className="text-[11px] text-muted-foreground">Visible par toute l’équipe dans la vue 3D.</p>
           </Section>
         )}
-        <Button asChild variant="outline" className="w-full"><Link href={`/app/leads?owner=${member.isMe ? "me" : member.id}`}>Voir ses fiches</Link></Button>
+        <Button asChild variant="outline" className="w-full"><Link href={`/app/leads?owner=${member.isMe ? "me" : member.id}`} prefetch={false}>Voir ses fiches</Link></Button>
       </div>
     </>
   )
@@ -526,7 +530,7 @@ function LeadCard({ id, onClose, onBack, onChanged }: { id: string; onClose: () 
               {lead.can.meet && <Button onClick={() => setDialog("meeting")}><CalendarDays className="h-4 w-4" aria-hidden="true" /> Planifier le RDV</Button>}
               {lead.can.email && <Button variant="outline" onClick={() => setDialog("email")}><Mail className="h-4 w-4" aria-hidden="true" /> Contacter</Button>}
               <Button variant="outline" className={cn(!lead.can.meet && !lead.can.email && "col-span-2")} onClick={() => setDialog("full")}>Fiche complète</Button>
-              <Button asChild variant="ghost"><Link href={`/app/leads/${lead.id}`}>Ouvrir en 2D</Link></Button>
+              <Button asChild variant="ghost"><Link href={`/app/leads/${lead.id}`} data-hq-leave>Ouvrir en 2D</Link></Button>
             </div>
           </>
         )}
@@ -562,7 +566,7 @@ function HqPanel({ onClose, openLead }: { onClose: () => void; openLead: (id: st
         <Section title="Derniers prospects">
           {recent.length === 0 ? <Empty>Pas encore de prospect.</Empty> : <ul className="space-y-0.5">{recent.map((l) => <LeadRowButton key={l.id} lead={l} onOpen={openLead} extra={l.campaignName} />)}</ul>}
         </Section>
-        <Button asChild className="w-full"><Link href="/app">Ouvrir Aujourd’hui <ArrowRight className="h-4 w-4" aria-hidden="true" /></Link></Button>
+        <Button asChild className="w-full"><Link href="/app" prefetch={false}>Ouvrir Aujourd’hui <ArrowRight className="h-4 w-4" aria-hidden="true" /></Link></Button>
       </div>
     </>
   )
@@ -573,7 +577,7 @@ function Idle({ openLead }: { openLead: (id: string) => void }) {
   const recent = useHq((s) => s.overview.recentLeads)
   return (
     <div className="space-y-3 p-4">
-      <h2 className="flex items-center justify-between text-sm font-bold">Derniers prospects <Link href="/app/leads?sort=created" className="text-xs font-semibold text-muted-foreground hover:text-foreground">Voir tout</Link></h2>
+      <h2 className="flex items-center justify-between text-sm font-bold">Derniers prospects <Link href="/app/leads?sort=created" prefetch={false} className="text-xs font-semibold text-muted-foreground hover:text-foreground">Voir tout</Link></h2>
       {recent.length === 0 ? <Empty>Aucun prospect pour l’instant : lancez une recherche dans l’espace Scraping / Sources.</Empty> : <ul className="space-y-0.5">{recent.map((l) => <LeadRowButton key={l.id} lead={l} onOpen={openLead} extra={l.ownerName ?? "non attribué"} />)}</ul>}
       <p className="rounded-xl bg-muted/70 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
         Cliquez un espace ou un membre de l’équipe. Clavier : <kbd className="font-semibold">1</kbd>–<kbd className="font-semibold">8</kbd> pour les espaces, <kbd className="font-semibold">← →</kbd> pour passer de l’un à l’autre, <kbd className="font-semibold">Échap</kbd> pour revenir. Glisser pour se déplacer, clic droit pour tourner.

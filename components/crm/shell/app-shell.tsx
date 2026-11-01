@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useState } from "react"
+import { Suspense, useState, useSyncExternalStore } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
@@ -15,12 +15,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { allNavItems, navFor } from "@/lib/crm/nav"
+import { HQ_PATH } from "@/lib/crm/hq-window"
 import { useNotifications } from "@/hooks/useNotifications"
 import { NavList } from "./nav-list"
 import { UserMenu, type ShellUser } from "./user-menu"
 import { CommandPalette, useCommandShortcut } from "./command-palette"
 import { ThemeScope } from "./theme-scope"
-import { HQ_PATH, ViewSwitch } from "./view-switch"
+import { ViewSwitch } from "./view-switch"
+import { EmbedBridge } from "./embed-bridge"
 import { NavLink } from "./nav-list"
 import { cn } from "@/lib/utils"
 
@@ -65,12 +67,40 @@ function Notifications({ className }: { className?: string }) {
 /** Modules reachable from the top bar of the 3D view (filtered by role like the sidebar). */
 const IMMERSIVE_LINKS = ["leads", "campaigns", "pipeline", "meetings"]
 
-export function AppShell({ user, children }: { user: ShellUser; children: React.ReactNode }) {
+/** A page shown in a window of the 3D view: framed by the 3D view of this same site (lib/crm/hq-window.ts). */
+function inHqWindow() {
+  try {
+    return window.self !== window.top && window.parent.location.origin === window.location.origin && window.parent.location.pathname === HQ_PATH
+  } catch {
+    return false
+  }
+}
+const noSubscription = () => () => {}
+
+/**
+ * `embedded`: the server saw the page requested by a frame (Sec-Fetch-Dest), so the first render has no chrome to
+ * flash. In the browser the frame itself decides, and keeps deciding after a refresh of the page's data.
+ */
+export function AppShell({ user, embedded = false, children }: { user: ShellUser; embedded?: boolean; children: React.ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   useCommandShortcut(setPaletteOpen)
   const { groups, footer } = navFor(user.role)
   const pathname = usePathname()
+  const inWindow = useSyncExternalStore(noSubscription, inHqWindow, () => embedded)
+
+  // E16: in a window of the 3D view the page comes alone; the view around it is the shell.
+  if (inWindow) {
+    return (
+      <div className="crm-shell light min-h-screen bg-background text-foreground">
+        <ThemeScope />
+        <Suspense><EmbedBridge /></Suspense>
+        <main id="contenu" tabIndex={-1} className="w-full px-4 py-5 outline-none sm:px-6 lg:px-8">
+          {children}
+        </main>
+      </div>
+    )
+  }
 
   // E16: the 3D view takes the whole window, under a navy bar, like the reference design.
   if (pathname === HQ_PATH) {

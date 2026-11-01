@@ -4,6 +4,7 @@ import { CHARACTER_IDS, characterFor } from "@/features/hq/characters"
 import { JOURNEY, ZONES, ZONE_IDS, assignStations, HQ_SEATS, isZoneId, zoneById } from "@/features/hq/zones"
 import { deltaPct, deltaPts, formatDeltaPct, formatDeltaPts, formatRate, INDICATORS, parsePeriod, rate } from "@/features/metrics/definitions"
 import { PLATFORM_HALF, PLOT_HALF, RING, SEATS, onRing, spurs } from "@/components/crm/hq/scene/layout"
+import { windowPath } from "@/lib/crm/hq-window"
 
 const at = (iso: string) => new Date(iso)
 
@@ -136,5 +137,29 @@ describe("indicators (E10 rule: defined, never invented)", () => {
 
   it("has a definition for every indicator", () => {
     for (const i of Object.values(INDICATORS)) expect(i.definition.length).toBeGreaterThan(20)
+  })
+})
+
+describe("windows of the 3D view (E16)", () => {
+  const origin = "https://crm.cleads.fr"
+
+  it("opens the CRM pages, with their filters", () => {
+    expect(windowPath("/app")).toBe("/app")
+    expect(windowPath("/app/search")).toBe("/app/search")
+    expect(windowPath("/app/leads?status=REPLIED&owner=me")).toBe("/app/leads?status=REPLIED&owner=me")
+    expect(windowPath("/app/campaigns?new=1", origin)).toBe("/app/campaigns?new=1")
+    expect(windowPath(`${origin}/app/pipeline`, origin)).toBe("/app/pipeline")
+  })
+
+  it("never opens the 3D view inside itself", () => {
+    expect(windowPath("/app/3d")).toBeNull()
+    expect(windowPath("/app/3d?w=/app/leads")).toBeNull()
+    expect(windowPath("/app/3d/anything")).toBeNull()
+  })
+
+  it("refuses what is not a CRM page of this site", () => {
+    for (const href of ["https://evil.example/app/leads", "//evil.example/app/leads", "javascript:alert(1)", "mailto:a@b.fr", "tel:+33100000000", "/dashboard/settings", "/auth/login", "/api/leads", "/application", "/app/../auth/login", "", null, undefined]) {
+      expect(windowPath(href, origin), String(href)).toBeNull()
+    }
   })
 })

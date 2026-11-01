@@ -1,6 +1,6 @@
 "use client"
 
-import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import dynamic from "next/dynamic"
 import Link from "next/link"
 import { Loader2 } from "lucide-react"
@@ -12,6 +12,7 @@ import { api } from "@/app/(crm)/app/leads/api"
 import { clearSelection, createHqStore, HqStoreContext, selectZone, useHq, type HqStore } from "./store"
 import { AmbienceControl, FocusBar, PeriodControl, SceneControls, readAmbience } from "./hud/controls"
 import { DetailPanel } from "./hud/detail-panel"
+import { ModuleWindow, useWindowLinks } from "./hud/module-window"
 import { CampaignsCard, Journey, KpiStrip } from "./hud/parts"
 import { SceneLabels } from "./hud/scene-labels"
 
@@ -57,7 +58,7 @@ function NoScene({ reason }: { reason: string }) {
       <div className="max-w-sm rounded-2xl bg-card p-5 text-center shadow-pop">
         <p className="font-semibold">{reason}</p>
         <p className="mt-1 text-sm text-muted-foreground">Les chiffres et les panneaux restent disponibles ; la vue 2D contient tout le CRM.</p>
-        <Link href="/app" className="mt-3 inline-flex rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">Vue 2D</Link>
+        <Link href="/app" data-hq-leave className="mt-3 inline-flex rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">Vue 2D</Link>
       </div>
     </div>
   )
@@ -69,7 +70,7 @@ function useShortcuts(store: HqStore) {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable || e.metaKey || e.ctrlKey || e.altKey) return
-      if (document.querySelector("[role=dialog]")) return
+      if (store.get().covered || document.querySelector("[role=dialog]")) return
       const s = store.get()
       const zone = ZONES.find((z) => z.key === e.key)
       if (zone) {
@@ -104,6 +105,12 @@ function Announcer() {
   return <p className="sr-only" aria-live="polite">{text}</p>
 }
 
+/** The scene and its HUD, out of reach (focus, screen readers) while a window covers them. */
+function Behind({ children }: { children: ReactNode }) {
+  const covered = useHq((s) => s.covered)
+  return <div className="absolute inset-0" inert={covered}>{children}</div>
+}
+
 function Scene({ store }: { store: HqStore }) {
   const [webgl, setWebgl] = useState<boolean | null>(null)
   // eslint-disable-next-line react-hooks/set-state-in-effect -- WebGL can only be probed in the browser
@@ -131,6 +138,7 @@ export function HqView({ initial }: { initial: HqOverview }) {
         tour: false,
         reducedMotion: false,
         lowPower: false,
+        covered: false,
         command: null,
       }),
     // The store lives as long as the page; later data arrives through refresh().
@@ -210,39 +218,45 @@ export function HqView({ initial }: { initial: HqOverview }) {
   }, [store])
 
   useShortcuts(store)
+  useWindowLinks()
+  const onWindowClosed = useCallback(() => void refresh(), [refresh])
 
   return (
     <HqStoreContext.Provider value={store}>
       <div className="absolute inset-0 overflow-hidden">
         <h1 className="sr-only">Vue 3D du CRM</h1>
-        <Scene store={store} />
-        <SceneLabels />
-        <Announcer />
-        {/* HUD: the container lets clicks through to the scene; each card takes them back. */}
-        <div className="pointer-events-none absolute inset-0 flex flex-col gap-3 p-3 sm:p-4">
-          <div className="flex items-start gap-3">
-            <div className="min-w-0 flex-1"><KpiStrip /></div>
-            <div className="hidden shrink-0 flex-col items-end gap-2 md:flex">
-              <AmbienceControl />
-              <PeriodControl onChange={(d) => { store.set({ days: d }); void refresh(d) }} />
-            </div>
-          </div>
-          <div className="flex min-h-0 flex-1 gap-3">
-            <div className="flex min-w-0 flex-1 flex-col">
-              <div className="flex justify-center"><FocusBar /></div>
-              <div className="mt-auto hidden flex-wrap items-end gap-3 lg:flex">
-                <div className="w-full max-w-[640px]"><Journey /></div>
+        <Behind>
+          <Scene store={store} />
+          <SceneLabels />
+          <Announcer />
+          {/* HUD: the container lets clicks through to the scene; each card takes them back. */}
+          <div className="pointer-events-none absolute inset-0 flex flex-col gap-3 p-3 sm:p-4">
+            <div className="flex items-start gap-3">
+              <div className="min-w-0 flex-1"><KpiStrip /></div>
+              <div className="hidden shrink-0 flex-col items-end gap-2 md:flex">
+                <AmbienceControl />
+                <PeriodControl onChange={(d) => { store.set({ days: d }); void refresh(d) }} />
               </div>
             </div>
-            <div className="hidden shrink-0 flex-col gap-3 sm:flex">
-              <SceneControls />
-            </div>
-            <div className="flex w-full max-w-[360px] shrink-0 flex-col gap-3 max-sm:absolute max-sm:inset-x-3 max-sm:bottom-3 max-sm:max-h-[48%] max-sm:max-w-none">
-              <div className="min-h-0 flex-1"><DetailPanel onChanged={() => void refresh()} /></div>
-              <div className="hidden xl:block"><CampaignsCard /></div>
+            <div className="flex min-h-0 flex-1 gap-3">
+              <div className="flex min-w-0 flex-1 flex-col">
+                <div className="flex justify-center"><FocusBar /></div>
+                <div className="mt-auto hidden flex-wrap items-end gap-3 lg:flex">
+                  <div className="w-full max-w-[640px]"><Journey /></div>
+                </div>
+              </div>
+              <div className="hidden shrink-0 flex-col gap-3 sm:flex">
+                <SceneControls />
+              </div>
+              <div className="flex w-full max-w-[360px] shrink-0 flex-col gap-3 max-sm:absolute max-sm:inset-x-3 max-sm:bottom-3 max-sm:max-h-[48%] max-sm:max-w-none">
+                <div className="min-h-0 flex-1"><DetailPanel onChanged={() => void refresh()} /></div>
+                <div className="hidden xl:block"><CampaignsCard /></div>
+              </div>
             </div>
           </div>
-        </div>
+        </Behind>
+        {/* Every CRM page the view opens: over the scene, in the same address (lib/crm/hq-window.ts). */}
+        <Suspense><ModuleWindow onClosed={onWindowClosed} /></Suspense>
       </div>
     </HqStoreContext.Provider>
   )

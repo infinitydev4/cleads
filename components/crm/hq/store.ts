@@ -28,6 +28,8 @@ export interface HqState {
   reducedMotion: boolean
   /** Lower quality: fewer pixels, no shadows. Set once by the quality guard when the device cannot keep up, or by hand. */
   lowPower: boolean
+  /** A CRM page is open in a window over the scene (hud/module-window.tsx): the scene rests, its keys and HUD are off. */
+  covered: boolean
   /** Bumped on each camera button press; the rig acts on the change. */
   command: { kind: CameraCommand; at: number } | null
 }
