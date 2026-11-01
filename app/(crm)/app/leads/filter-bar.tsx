@@ -20,6 +20,8 @@ export const personName = (a: Pick<Assignee, "name" | "email">) => a.name ?? a.e
 interface Props {
   filters: LeadFilters
   assignees: Assignee[]
+  /** E15: campaigns to filter on (empty = no filter shown). */
+  campaigns: { id: string; name: string }[]
   canSeeOthers: boolean
   onChange: (patch: Record<string, string | undefined>) => void
   searchRef: React.RefObject<HTMLInputElement | null>
@@ -27,7 +29,7 @@ interface Props {
 
 const ANY = "__any__"
 
-export function FilterBar({ filters, assignees, canSeeOthers, onChange, searchRef }: Props) {
+export function FilterBar({ filters, assignees, campaigns, canSeeOthers, onChange, searchRef }: Props) {
   const [q, setQ] = useState(filters.q ?? "")
   const [more, setMore] = useState(!!(filters.city || filters.sector || filters.tag || filters.source))
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -46,7 +48,7 @@ export function FilterBar({ filters, assignees, canSeeOthers, onChange, searchRe
     const next = filters.status.includes(s as never) ? filters.status.filter((x) => x !== s) : [...filters.status, s as never]
     onChange({ status: next.join(",") || undefined })
   }
-  const active = !!(filters.q || filters.status.length || filters.owner || filters.minScore || filters.hasEmail || filters.hasPhone || filters.city || filters.sector || filters.tag || filters.source)
+  const active = !!(filters.q || filters.status.length || filters.owner || filters.minScore || filters.hasEmail || filters.hasPhone || filters.city || filters.sector || filters.tag || filters.source || filters.campaign)
 
   return (
     <div className="space-y-3">
@@ -64,6 +66,17 @@ export function FilterBar({ filters, assignees, canSeeOthers, onChange, searchRe
             {canSeeOthers && assignees.map((a) => <SelectItem key={a.id} value={a.id}>{personName(a)}</SelectItem>)}
           </SelectContent>
         </Select>
+        {(campaigns.length > 0 || filters.campaign) && (
+          <Select value={filters.campaign ?? ANY} onValueChange={(v) => onChange({ campaign: v === ANY ? undefined : v })}>
+            <SelectTrigger className="w-48" aria-label="Campagne"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ANY}>Toutes les campagnes</SelectItem>
+              <SelectItem value="none">Hors campagne</SelectItem>
+              {campaigns.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+              {filters.campaign && filters.campaign !== "none" && !campaigns.some((c) => c.id === filters.campaign) && <SelectItem value={filters.campaign}>Campagne archivée</SelectItem>}
+            </SelectContent>
+          </Select>
+        )}
         <Select value={String(filters.minScore ?? ANY)} onValueChange={(v) => onChange({ minScore: v === ANY ? undefined : v })}>
           <SelectTrigger className="w-36" aria-label="Score minimum"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -76,7 +89,7 @@ export function FilterBar({ filters, assignees, canSeeOthers, onChange, searchRe
           <SlidersHorizontal className="h-4 w-4" aria-hidden="true" /> Filtres
         </Button>
         {active && (
-          <Button variant="ghost" onClick={() => { setQ(""); onChange({ q: undefined, status: undefined, owner: undefined, minScore: undefined, hasEmail: undefined, hasPhone: undefined, city: undefined, sector: undefined, tag: undefined, source: undefined }) }}>
+          <Button variant="ghost" onClick={() => { setQ(""); onChange({ q: undefined, status: undefined, owner: undefined, minScore: undefined, hasEmail: undefined, hasPhone: undefined, city: undefined, sector: undefined, tag: undefined, source: undefined, campaign: undefined }) }}>
             <X className="h-4 w-4" aria-hidden="true" /> Effacer
           </Button>
         )}

@@ -12,6 +12,7 @@ Workspace ─┬─ User (workspaceId)  ·  Invitation  ·  AuditLog
            │                                        ├──< Task
            │                                        └──< Meeting
            ├─ ImportBatch ──< Lead
+           ├─ Campaign ──< Lead, ExtractionSearch          (E15, une fiche dans une campagne au plus)
            ├─ AvailabilityRule · AvailabilityException   (par hôte)
            ├─ Suppression · SavedView
 ```
@@ -50,6 +51,7 @@ Les tables d'envoi d'emails arrivent avec leur jalon : `Mailbox`, `EmailTemplate
 | `20261030000000_rename_billing_company` | `Company` devient `BillingCompany` (société d'émission des factures) pour libérer le nom | aucune donnée touchée ; factures et RIB conservés |
 | `20261030000100_crm_data_model` | tables CRM, espace par défaut `ws_default`, rattachement des comptes d'équipe, invitations et journal existants, contraintes CHECK | additive |
 | `20261030000400_task_activity_kind` | valeur `TASK` de `ActivityKind` : les tâches laissent une trace dans l'historique | additive, aucune donnée touchée |
+| `20261101120000_campaigns_and_hq` | table `Campaign` (E15), `Lead.campaignId`, `ExtractionSearch.campaignId`, `User.hqCharacter` (personnage de la vue 3D, E16) ; CHECK sur le nom, les objectifs et les dates | additive, aucune donnée touchée |
 
 Vérifié sur une base contenant des comptes d'équipe, un ancien client, une invitation, une ligne de journal, une société d'émission et une facture : tout est conservé, les comptes d'équipe reçoivent l'espace, l'ancien client n'en reçoit pas.
 

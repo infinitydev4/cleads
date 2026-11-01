@@ -7,6 +7,7 @@ import { can, scopeOf } from "@/lib/rbac"
 import { parseLeadFilters } from "@/features/leads/schemas"
 import { listAssignees, listLeads } from "@/features/leads/service"
 import { listViews } from "@/features/leads/views"
+import { campaignOptions } from "@/features/campaigns/service"
 import { LeadsView } from "./leads-view"
 
 export const metadata = { title: "Prospects" }
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic"
 export default async function LeadsPage(props: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { user } = await requirePagePermission("lead:read")
   const filters = parseLeadFilters(await props.searchParams)
-  const [list, assignees, views] = await Promise.all([listLeads(user, filters), listAssignees(user), listViews(user)])
+  const [list, assignees, views, campaigns] = await Promise.all([listLeads(user, filters), listAssignees(user), listViews(user), can(user.role, "campaign:read") ? campaignOptions(user) : []])
   const canWrite = can(user.role, "lead:write")
 
   return (
@@ -41,6 +42,7 @@ export default async function LeadsPage(props: { searchParams: Promise<Record<st
         list={list}
         filters={filters}
         assignees={assignees.map((a) => ({ ...a }))}
+        campaigns={campaigns.map((c) => ({ id: c.id, name: c.name }))}
         views={views}
         currentUserId={user.id}
         canWrite={canWrite}
@@ -48,6 +50,7 @@ export default async function LeadsPage(props: { searchParams: Promise<Record<st
         canShareViews={can(user.role, "team:read")}
         canImport={can(user.role, "lead:import")}
         canSequence={can(user.role, "sequence:manage") && can(user.role, "email:send")}
+        canCampaign={can(user.role, "campaign:manage")}
       />
     </>
   )

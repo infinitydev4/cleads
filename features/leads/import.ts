@@ -6,6 +6,8 @@ import type { CurrentUser } from "@/lib/auth/guard"
 import {
   companyDomain, emailDomain, inferEmailKind, nameKey, normalizeEmail, normalizePhone, normalizeSiret, normalizeTags,
 } from "@/lib/crm/normalize"
+import { can } from "@/lib/rbac"
+import { assertCampaign } from "@/features/campaigns/filing"
 import { LeadError } from "./errors"
 import { rescore } from "./service"
 import type { ImportRow as CsvRow } from "./mapping"
@@ -42,6 +44,8 @@ export interface ImportSummary {
   enriched: number
   skipped: number
   warnings: number
+  /** E15, when importing into a campaign: fiches filed in it, and existing ones left in another campaign. */
+  campaign?: { filed: number; keptElsewhere: number }
 }
 
 export interface ImportResult {
@@ -59,6 +63,8 @@ export interface ImportOptions {
   source: "CSV" | "EXTRACTOR"
   fileName?: string
   extractorJobId?: string
+  /** E15: new fiches, and existing ones outside every campaign, are filed in it; a fiche of another campaign stays there. */
+  campaignId?: string | null
   ip?: string | null
 }
 
@@ -144,6 +150,7 @@ interface Known {
   fields: Record<"website" | "phone" | "email" | "address" | "city" | "postalCode" | "sector" | "siret" | "domain" | "nameKey", string | null>
   hasContact: boolean
   tags: string[]
+  campaignId: string | null
   rating: number | null
   reviewCount: number | null
   completeness: number | null
@@ -157,6 +164,10 @@ export async function runImport(user: CurrentUser, raws: ImportRow[], options: I
   if (raws.length === 0) throw new LeadError("invalid", "Le fichier ne contient aucune ligne.")
   if (raws.length > MAX_IMPORT_ROWS) throw new LeadError("invalid", `Trop de lignes (${raws.length}) : ${MAX_IMPORT_ROWS} au maximum par import. Découpez le fichier.`)
   const ws = user.workspaceId
+  if (options.campaignId) {
+    if (!can(user.role, "campaign:manage")) throw new LeadError("forbidden", "Vous ne pouvez pas ranger de fiche dans une campagne.", 403)
+    await assertCampaign(prisma, ws, options.campaignId)
+  }
 
   const cleaned = raws.map((r, i) => clean(r, i + 2)) // line 1 of a CSV is the header
   const rows = cleaned.filter((c): c is Cleaned => !("skip" in c))
@@ -171,18 +182,19 @@ export async function runImport(user: CurrentUser, raws: ImportRow[], options: I
   }
   const emails = uniq(rows.map((r) => r.email))
   const companyById = new Map<string, Known>()
-  const toKnown = (c: Prisma.CompanyGetPayload<{ include: { leads: { select: { id: true; contactId: true; tags: true } } } }>): Known => ({
+  const toKnown = (c: Prisma.CompanyGetPayload<{ include: { leads: { select: { id: true; contactId: true; tags: true; campaignId: true } } } }>): Known => ({
     companyId: c.id,
     leadId: c.leads[0]?.id ?? null,
     name: c.name,
     fields: { website: c.website, phone: c.phone, email: c.email, address: c.address, city: c.city, postalCode: c.postalCode, sector: c.sector, siret: c.siret, domain: c.domain, nameKey: c.nameKey },
     hasContact: !!c.leads[0]?.contactId,
     tags: c.leads[0]?.tags ?? [],
+    campaignId: c.leads[0]?.campaignId ?? null,
     rating: c.rating,
     reviewCount: c.reviewCount,
     completeness: c.completeness,
   })
-  const include = { leads: { select: { id: true, contactId: true, tags: true }, take: 1 } } as const
+  const include = { leads: { select: { id: true, contactId: true, tags: true, campaignId: true }, take: 1 } } as const
   for (const [field, values] of Object.entries(keys)) {
     for (const part of chunk(values, 1000)) {
       for (const c of await prisma.company.findMany({ where: { workspaceId: ws, [field]: { in: part } }, include })) companyById.set(c.id, toKnown(c))
@@ -232,6 +244,9 @@ export async function runImport(user: CurrentUser, raws: ImportRow[], options: I
   const toRescore = new Set<string>()
   const contactForExisting: { leadId: string; contact: Prisma.ContactCreateManyInput }[] = []
   const newLeadForExisting: Prisma.LeadCreateManyInput[] = []
+  const fileExisting = new Set<string>()
+  const campaignId = options.campaignId ?? null
+  if (campaignId) summary.campaign = { filed: 0, keptElsewhere: 0 }
   const batchId = randomUUID()
   const now = new Date()
 
@@ -297,11 +312,20 @@ export async function runImport(user: CurrentUser, raws: ImportRow[], options: I
         if (!known.leadId) {
           const leadId = randomUUID()
           known.leadId = leadId
-          newLeadForExisting.push({ id: leadId, workspaceId: ws, companyId: known.companyId, source: options.source === "CSV" ? "CSV" : "EXTRACTOR", importBatchId: batchId, tags: c.tags })
+          newLeadForExisting.push({ id: leadId, workspaceId: ws, companyId: known.companyId, source: options.source === "CSV" ? "CSV" : "EXTRACTOR", importBatchId: batchId, tags: c.tags, campaignId })
+          if (campaignId) { known.campaignId = campaignId; summary.campaign!.filed++ }
           filled.push("fiche créée")
         }
       }
       summary.existing++
+      if (campaignId && known?.leadId && known.campaignId !== campaignId) {
+        if (known.campaignId) summary.campaign!.keptElsewhere++
+        else if (!fileExisting.has(known.leadId)) {
+          fileExisting.add(known.leadId)
+          known.campaignId = campaignId
+          summary.campaign!.filed++
+        }
+      }
       if (filled.length) {
         summary.enriched++
         const lead = known?.leadId
@@ -322,12 +346,13 @@ export async function runImport(user: CurrentUser, raws: ImportRow[], options: I
     newCompanies.push({ id: companyId, workspaceId: ws, name: c.name, domain: c.domain, website: c.website, phone: c.phone, email: c.email, address: c.address, city: c.city, postalCode: c.postalCode, country: c.country, sector: c.sector, siret: c.siret, nameKey: c.nameKey, source, externalId: c.externalId, externalSource: c.externalId ? options.source.toLowerCase() : null, rating: c.rating, reviewCount: c.reviewCount, completeness: c.completeness, ...(c.data ? { data: c.data } : {}) })
     if (contactId) newContacts.push({ id: contactId, workspaceId: ws, companyId, name: c.contactName, jobTitle: c.jobTitle, email: c.email, emailKind: c.emailKind, phone: c.phone, source, collectedFrom: options.fileName ?? options.source, collectedAt: now, legalBasis: c.email ? "legitimate_interest_b2b" : null, doNotContact: suppressed, doNotContactReason: suppressed ? "Adresse présente dans la liste d’exclusion" : null })
     const { score, reasons } = scoreLead({ email: c.email, emailKind: c.emailKind, phone: c.phone, website: c.website, domain: c.domain, contactName: c.contactName, address: c.address, city: c.city, rating: c.rating, reviewCount: c.reviewCount, completeness: c.completeness })
-    newLeads.push({ id: leadId, workspaceId: ws, companyId, contactId, source, status: suppressed ? "DO_NOT_CONTACT" : "NEW", score, scoreReasons: reasons as unknown as Prisma.InputJsonValue, tags: c.tags, importBatchId: batchId, createdAt: new Date(now.getTime() + i) })
+    newLeads.push({ id: leadId, workspaceId: ws, companyId, contactId, source, status: suppressed ? "DO_NOT_CONTACT" : "NEW", score, scoreReasons: reasons as unknown as Prisma.InputJsonValue, tags: c.tags, importBatchId: batchId, campaignId, createdAt: new Date(now.getTime() + i) })
+    if (campaignId) summary.campaign!.filed++
     newActivities.push({ id: randomUUID(), workspaceId: ws, leadId, actorId: user.id, actorKind: "USER", kind: "SYSTEM", body: `Importé (${options.fileName ?? options.source})`, occurredAt: now })
 
     addToIndex(companyId, { externalId: c.externalId, siret: c.siret, domain: c.domain, nameKey: c.nameKey, phone: c.phone })
     if (c.email) { index.email.set(c.email, companyId); existingContacts.set(c.email, companyId) }
-    companyById.set(companyId, { companyId, leadId, name: c.name, fields: { website: c.website, phone: c.phone, email: c.email, address: c.address, city: c.city, postalCode: c.postalCode, sector: c.sector, siret: c.siret, domain: c.domain, nameKey: c.nameKey }, hasContact: !!contactId, tags: c.tags, rating: c.rating, reviewCount: c.reviewCount, completeness: c.completeness })
+    companyById.set(companyId, { companyId, leadId, name: c.name, fields: { website: c.website, phone: c.phone, email: c.email, address: c.address, city: c.city, postalCode: c.postalCode, sector: c.sector, siret: c.siret, domain: c.domain, nameKey: c.nameKey }, hasContact: !!contactId, tags: c.tags, campaignId, rating: c.rating, reviewCount: c.reviewCount, completeness: c.completeness })
     summary.created++
     outcomes.push({ line: c.line, name: c.name, status: "created", warnings: c.warnings })
   })
@@ -348,7 +373,7 @@ export async function runImport(user: CurrentUser, raws: ImportRow[], options: I
       await tx.importBatch.create({
         data: {
           id: batchId, workspaceId: ws, source: options.source, status: "DONE", extractorJobId: options.extractorJobId, createdById: user.id,
-          params: { fileName: options.fileName ?? null }, total: summary.total, created: summary.created, existing: summary.existing, skipped: summary.skipped, finishedAt: now,
+          params: { fileName: options.fileName ?? null, campaignId }, total: summary.total, created: summary.created, existing: summary.existing, skipped: summary.skipped, finishedAt: now,
         },
       })
       for (const part of chunk(newCompanies, 1000)) await tx.company.createMany({ data: part })
@@ -361,6 +386,13 @@ export async function runImport(user: CurrentUser, raws: ImportRow[], options: I
       for (const { leadId, contact } of contactForExisting) {
         await tx.contact.create({ data: contact })
         await tx.lead.update({ where: { id: leadId }, data: { contactId: contact.id } })
+      }
+      if (fileExisting.size) {
+        const ids = [...fileExisting]
+        // Only fiches still outside every campaign: a person may have filed one elsewhere since the preview.
+        const free = await tx.lead.findMany({ where: { id: { in: ids }, campaignId: null }, select: { id: true } })
+        await tx.lead.updateMany({ where: { id: { in: free.map((l) => l.id) } }, data: { campaignId } })
+        await tx.activity.createMany({ data: free.map((l) => ({ id: randomUUID(), workspaceId: ws, leadId: l.id, actorId: user.id, actorKind: "USER" as const, kind: "SYSTEM" as const, body: `Rangée dans une campagne par l’import (${options.fileName ?? options.source})`, data: { event: "campaign", from: null, to: campaignId }, occurredAt: now })) })
       }
       for (const id of toRescore) await rescore(tx, id)
     },

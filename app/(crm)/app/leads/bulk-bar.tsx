@@ -15,7 +15,7 @@ import { personName, type Assignee } from "./filter-bar"
 const NONE = "__none__"
 
 /** Appears when rows are selected. Each action reports what it could not do instead of failing silently. */
-export function BulkBar({ ids, assignees, currentUserId, canAssignOthers, canSequence, onDone }: { ids: string[]; assignees: Assignee[]; currentUserId: string; canAssignOthers: boolean; canSequence: boolean; onDone: () => void }) {
+export function BulkBar({ ids, assignees, campaigns, currentUserId, canAssignOthers, canSequence, canCampaign, onDone }: { ids: string[]; assignees: Assignee[]; campaigns: { id: string; name: string }[]; currentUserId: string; canAssignOthers: boolean; canSequence: boolean; canCampaign: boolean; onDone: () => void }) {
   const router = useRouter()
   const [tag, setTag] = useState("")
   const [busy, setBusy] = useState(false)
@@ -52,6 +52,15 @@ export function BulkBar({ ids, assignees, currentUserId, canAssignOthers, canSeq
         <SelectTrigger className="h-9 w-40 border-sidebar-border bg-sidebar-accent text-sidebar-foreground" aria-label="Changer le statut"><SelectValue placeholder="Statut…" /></SelectTrigger>
         <SelectContent>{Object.entries(leadStatus).map(([k, m]) => <SelectItem key={k} value={k}>{m.label}</SelectItem>)}</SelectContent>
       </Select>
+      {canCampaign && campaigns.length > 0 && (
+        <Select disabled={busy} onValueChange={(v) => run({ type: "campaign", campaignId: v === NONE ? null : v }, v === NONE ? "Retrait de la campagne" : "Rangement dans la campagne")}>
+          <SelectTrigger className="h-9 w-48 border-sidebar-border bg-sidebar-accent text-sidebar-foreground" aria-label="Ranger dans une campagne"><SelectValue placeholder="Campagne…" /></SelectTrigger>
+          <SelectContent>
+            {campaigns.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+            <SelectItem value={NONE}>Retirer de sa campagne</SelectItem>
+          </SelectContent>
+        </Select>
+      )}
       <form className="flex items-center gap-1" onSubmit={(e) => { e.preventDefault(); if (tag.trim()) { run({ type: "tag", tag }, "Étiquette ajoutée"); setTag("") } }}>
         <Tag className="h-4 w-4 text-sidebar-muted" aria-hidden="true" />
         <Input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Étiquette" aria-label="Ajouter une étiquette" className="h-9 w-32 border-sidebar-border bg-sidebar-accent text-sidebar-foreground placeholder:text-sidebar-muted" />
