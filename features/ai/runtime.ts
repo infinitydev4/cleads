@@ -3,7 +3,7 @@ import { UNTRUSTED_RULE } from "@/lib/ai/untrusted"
 import { ensureAgentCatalog } from "./catalog"
 import { effectiveAgent, type EffectiveAgent } from "./definitions"
 import type { RunContext } from "./runs"
-import { loadAgentSkills, readSkillForAgent, type LoadedSkill } from "./skills/service"
+import { loadAgentSkills, loadSkillsByName, readSkillForAgent, type LoadedSkill } from "./skills/service"
 import { defineTool, type AnyToolDef } from "./tools"
 
 /**
@@ -82,4 +82,15 @@ export async function agentRuntime(run: Pick<RunContext, "workspaceId" | "agentI
     skills: skills.always.map((s) => ({ name: s.name, version: s.version })),
     tools: skills.onDemand.length ? [readSkillTool] : [],
   }
+}
+
+/**
+ * Instructions for one step of a coded workflow, which calls a model without tools: the skills always on, plus the
+ * ones the workflow picks for this step, all written in full (an agent without tools cannot read a catalogue).
+ */
+export async function workflowInstructions(run: Pick<RunContext, "workspaceId" | "agentId">, pick: readonly string[]): Promise<AgentRuntime> {
+  await ensureAgentCatalog(run.workspaceId)
+  const [agent, skills, picked] = await Promise.all([effectiveAgent(run.workspaceId, run.agentId), loadAgentSkills(run.workspaceId, run.agentId), loadSkillsByName(run.workspaceId, run.agentId, pick)])
+  const all = [...skills.always, ...picked.filter((p) => !skills.always.some((a) => a.name === p.name))]
+  return { agent, system: composeInstructions(agent, all, []), skills: all.map((s) => ({ name: s.name, version: s.version })), tools: [] }
 }

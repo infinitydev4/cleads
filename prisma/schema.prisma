@@ -596,6 +596,7 @@ model Workspace {
   skills                 Skill[]
   agentSkills            AgentSkill[]
   offers                 Offer[]
+  prospectAudits         ProspectAudit[]
 }
 
 enum LeadSource {
@@ -714,6 +715,7 @@ model Company {
 
   contacts Contact[]
   leads    Lead[]
+  audits   ProspectAudit[]
 
   @@unique([workspaceId, externalId])
   @@index([workspaceId, domain])
@@ -815,6 +817,7 @@ model Lead {
   emails              EmailMessage[]
   sequenceEnrollments SequenceEnrollment[]
   agentRuns           AgentRun[]
+  audits              ProspectAudit[]
 
   @@unique([workspaceId, companyId])
   @@index([workspaceId, status])
@@ -1518,6 +1521,7 @@ model AgentRun {
 
   steps     AgentStep[]
   approvals AgentApproval[]
+  audit     ProspectAudit?
 
   @@index([workspaceId, createdAt])
   @@index([workspaceId, status])
@@ -1759,4 +1763,62 @@ model Offer {
 
   @@unique([workspaceId, slug])
   @@index([workspaceId, status])
+}
+
+// E20: prospect audits (docs/crm-v1/AGENTS-IA.md §13).
+
+enum AuditStatus {
+  /// Everything that could be checked was checked (a missing website is a finding, not a gap).
+  COMPLETE
+  /// Something could not be checked (site unreachable, PageSpeed unavailable…): `report.notes` says what.
+  PARTIAL
+}
+
+/// The audit of a prospect's online presence: eight sub-scores with their evidence, findings and a summary for the closer.
+model ProspectAudit {
+  id          String                 @id @default(cuid())
+  workspaceId String
+  workspace   Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  leadId      String?
+  lead        Lead?                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  companyId   String?
+  company     Company?               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  runId       String?                @unique
+  run         AgentRun?              @relation(fields: [runId], references: [id], onDelete: SetNull)
+  /// Lower-case host without "www.": an audit is reused for 30 days by every fiche of this domain.
+  domain      String?
+  /// The page actually audited, after redirects.
+  url         String?
+  status      AuditStatus
+  /// { technique, vitesse, mobile, seoLocal, geo, conversion, presence, image }: 0-100, null when not measured.
+  scores      Json
+  /// Average of the measured sub-scores.
+  score       Int?
+  /// Three points for the closer.
+  summary     String[]
+  /// Findings, strengths, weaknesses, frictions, opportunities, signals, evidence, proposed contacts, notes
+  /// (features/prospect-audit/schemas.ts, auditReportSchema).
+  report      Json
+  costMicros  Int                    @default(0)
+  validUntil  DateTime
+  createdById String?
+  createdAt   DateTime               @default(now())
+  captures    ProspectAuditCapture[]
+
+  @@index([workspaceId, domain, createdAt])
+  @@index([leadId, createdAt])
+}
+
+/// Screenshots of the audited site (from PageSpeed Insights), deleted with their audit.
+model ProspectAuditCapture {
+  id        String        @id @default(cuid())
+  auditId   String
+  audit     ProspectAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  /// "mobile" or "desktop".
+  kind      String
+  mediaType String
+  data      Bytes
+  createdAt DateTime      @default(now())
+
+  @@unique([auditId, kind])
 }

@@ -114,6 +114,7 @@ La file est la **table `AgentRun`** elle-même :
 |---|---|
 | `DATABASE_URL` | base Railway du CRM (rôle dédié, TLS, pool de 5) |
 | `AI_GATEWAY_API_KEY` | passerelle IA ; sans elle, les appels de modèles échouent proprement |
+| `GOOGLE_PAGESPEED_API_KEY` | audits (E20) : scores PageSpeed et captures ; sans elle, l'audit est partiel (ni vitesse ni analyse des captures) |
 | `EXTRACTOR_API_KEY` | clé `crm` de l'Extractor, copiée sur le serveur |
 | `NEXT_PUBLIC_PUSHER_APP_ID`, `NEXT_PUBLIC_PUSHER_KEY`, `NEXT_PUBLIC_PUSHER_CLUSTER`, `PUSHER_SECRET` | temps réel ; facultatives (sinon les pages interrogent) |
 | `WORKER_CONCURRENCY` | exécutions simultanées, 3 par défaut |
@@ -121,5 +122,5 @@ La file est la **table `AgentRun`** elle-même :
 ## 7. Pas encore
 
 - **Déploiement** : il se fait par script depuis un poste. L'automatisation par GitHub Actions viendra avec E14.
-- **Playwright** : le navigateur des captures et des maquettes arrivera avec E20, son premier utilisateur. Il est inutile de l'embarquer avant.
+- **Playwright** : les audits (E20) n'en ont pas besoin, les captures viennent de PageSpeed Insights. Le navigateur arrivera avec le Studio (E23), pour rendre nos propres maquettes.
 - **Aucun agent métier branché** : ils arrivent avec E20 à E25. Le worker sait déjà exécuter les tests de skills (E19).

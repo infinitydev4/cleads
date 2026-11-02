@@ -546,7 +546,7 @@ Seconde vue du CRM, isométrique et interactive, à côté de la vue 2D qui rest
 - **Critères** : aucune régression de la vue 2D (tests et parcours dans le navigateur) ; aucun chiffre sans définition ; fluide sur un portable récent.
 
 ### Couche agentique IA (E17 à E27, décidée le 2 novembre 2026)
-Décisions D13 à D27 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17, E18 et E19 sont faits ; E20 à E27 restent à faire.
+Décisions D13 à D27 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17 à E20 sont faits ; E21 à E27 restent à faire.
 
 ### E17 — Socle IA · **M** *(absorbe E13)*
 > **Avancement (branche `feat/e17-socle-ia`)** — fait :
@@ -650,6 +650,42 @@ Réalise D10 pour les agents : un worker Node, en Docker à côté de l'Extracto
 - **Critères** : un agent ne recommande qu'une offre active ; un skill modifié crée une version et l'ancienne reste lisible.
 
 ### E20 — Audit et enrichissement des prospects · **L**
+> **Avancement (branche `feat/e20-audit-prospects`)** — fait :
+> - migration additive `20261105090000_prospect_audits` : audits et captures ;
+> - collecte sûre (`features/prospect-audit/net.ts`) :
+>   - adresses publiques seulement, contrôlées au moment de la connexion et à chaque redirection ;
+>   - ports 80 et 443 ;
+>   - 2 Mo et 10 s par page ;
+>   - `robots.txt` respecté ;
+>   - robot identifié et expliqué sur la page publique `/robot` ;
+> - lecture du site : 5 pages choisies, balises, données structurées, `sitemap.xml`, `llms.txt`, robots IA, CMS et version, balises de mesure et de publicité, outils de réservation ;
+> - PageSpeed Insights sur mobile et ordinateur, dont les **captures** servent à l'analyse visuelle : aucun navigateur sur le serveur ;
+> - annuaire des entreprises : SIREN, NAF, labels (RGE, Qualiopi…). Les dirigeants sont proposés seulement sans opposition à l'usage commercial ;
+> - règles mesurées, puis extraction (`fast`, sans outil) et analyse (rôle de l'agent, avec captures, skills d'audit et playbook du secteur) ;
+> - suppression de tout élément sans preuve ;
+> - 8 sous-scores, constats, forces, freins, opportunités, signaux d'offres, résumé en 3 points ;
+> - audit réutilisé 30 jours par domaine, « Refaire l'audit » ;
+> - ligne « Audit IA » dans le score de la fiche, sans changer ses règles ;
+> - carte « Audit IA » sur la fiche 2D et, compacte, dans le panneau de la vue 3D. Elle montre la progression en direct, les captures, chaque preuve avec son lien, et un bouton « Ajouter comme contact » qui renseigne la source et la base légale ;
+> - l'Auditeur est branché sur le worker, et la clé `GOOGLE_PAGESPEED_API_KEY` est ajoutée aux scripts de configuration.
+>
+> **Vérifié** :
+> - `tests/prospect-audit.test.ts` (25 tests, dont les accès réseau sur un serveur local : redirections, compression, limites, adresses privées refusées) ;
+> - `tests/prospect-audit.integration.test.ts` (5 tests, base jetable) : audit complet pris par le worker avec des modèles simulés, preuves toutes valides, reprise sans doublon, réutilisation par domaine, droits, captures, ajout d'un dirigeant, opposition respectée, site injoignable ;
+> - suite complète verte (736 tests), build, paquet du worker démarré en local ;
+> - collecte essayée sur un vrai site (cleads.fr) et sur l'annuaire réel ;
+> - parcours contrôlé par HTTP sur la base de prévisualisation.
+>
+> **Pas encore** :
+> - un audit réel de bout en bout : il faut la clé PageSpeed sur le worker, et un appel de modèle coûte ;
+> - l'affichage dans un navigateur ;
+> - l'action « Auditer » dans la palette ⌘K.
+>
+> **Écarts** :
+> - les captures viennent de PageSpeed et sont gardées en base (quelques dizaines de Ko chacune), pas sur S3 : pas de navigateur ni de secret S3 sur le worker ;
+> - la fiche Google se limite à ce que l'Extractor importe (note, avis, catégorie, téléphone) : horaires et photos demanderaient une API payante (D19) ;
+> - la raison « IA » du score s'affiche à côté des règles, sans points : les règles du score ne changent pas.
+
 L'Auditeur digital produit une fiche enrichie et sourcée, à la demande, depuis la fiche (2D et 3D).
 - Site (5 pages au plus, `robots.txt` respecté, adresses IP publiques seulement) : HTTPS, redirections, poids, balises, données structurées, `sitemap.xml`, `llms.txt`, mobile, signes d'un site daté, CMS, balises d'analyse et de publicité.
 - PageSpeed Insights (clé gratuite) sur mobile et ordinateur ; captures analysées par un modèle de vision (modernité, clarté, appels à l'action, freins).

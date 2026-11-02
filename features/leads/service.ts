@@ -17,6 +17,7 @@ import { stopForLead } from "@/features/outreach/stops"
 import { assertCampaign, setLeadCampaign } from "@/features/campaigns/filing"
 import type { BulkInput, CreateLeadInput, LeadFilters, LeadSort, UpdateLeadInput } from "./schemas"
 import type { LeadDetail, LeadList, LeadRow } from "./types"
+import { leadAiReason } from "@/features/prospect-audit/latest"
 
 const iso = (d: Date | null | undefined) => d?.toISOString() ?? null
 const OWNER_ROLES = ["OWNER", "MANAGER", "SDR", "CLOSER"] as const
@@ -232,7 +233,9 @@ export async function getLead(user: CurrentUser, id: string): Promise<LeadDetail
       meetAnywhere: user.role === "OWNER" || user.role === "MANAGER",
       email: can(user.role, "email:send") && mayEmailLead(user, lead),
       campaign: canAccessRecord(user, "lead:write", lead.ownerId) && can(user.role, "campaign:manage"),
+      audit: !!c && can(user.role, "ai:use") && canAccessRecord(user, "lead:write", lead.ownerId),
     },
+    aiReason: can(user.role, "ai:read") ? await leadAiReason(user.workspaceId, { id: lead.id, company: c && { domain: c.domain, website: c.website } }) : null,
   }
 }
 

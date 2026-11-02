@@ -26,6 +26,7 @@ import { EmailDialog } from "@/app/(crm)/app/leads/email-dialog"
 import { ZONE_ICONS } from "../zone-icons"
 import { clearSelection, useHq, useHqStore } from "../store"
 import { Glass } from "./parts"
+import { AuditCard } from "@/components/crm/ai/audit-card"
 
 // ---------------------------------------------------------------------------------------------------------------
 // Small building blocks
@@ -517,6 +518,7 @@ function LeadCard({ id, onClose, onBack, onChanged }: { id: string; onClose: () 
                 </div>
               ))}
             </dl>
+            {lead.company && <AuditCard leadId={lead.id} canRun={lead.can.audit} compact onChanged={done} onOpenFull={() => setDialog("full")} />}
             <Section title="Prochaine action">
               {nextMeeting ? (
                 <p className="rounded-xl bg-primary/20 px-3 py-2 text-sm"><span className="font-semibold">Rendez-vous</span> · {formatDateTime(nextMeeting.startsAt)}{nextMeeting.hostName ? ` avec ${nextMeeting.hostName}` : ""}</p>

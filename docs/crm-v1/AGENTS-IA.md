@@ -2,7 +2,7 @@
 
 > Architecture de référence décidée le 2 novembre 2026 (décisions D13 à D27 de [PLAN.md](PLAN.md)). Elle sert de spécification aux epics E17 à E27.
 >
-> **État** : le socle (E17), le worker (E18) et les agents, skills et catalogue d'offres (E19) sont implémentés : `lib/ai/`, `features/ai/`, `features/offers/`, `worker/`, Réglages › IA et Agents IA (`/app/agents`). Les sections 4 à 12 et le catalogue de la section 14 décrivent ce qui existe. Le reste (agents métier, Studio, copilote, QG) est la spécification des epics E20 à E27.
+> **État** : le socle (E17), le worker (E18), les agents, skills et catalogue d'offres (E19) et l'audit des prospects (E20) sont implémentés : `lib/ai/`, `features/ai/`, `features/offers/`, `features/prospect-audit/`, `worker/`, Réglages › IA, Agents IA (`/app/agents`) et la carte « Audit IA » des fiches. Les sections 4 à 13 et le catalogue de la section 14 décrivent ce qui existe. Le reste (offres argumentées, rédaction, Studio, copilote, QG) est la spécification des epics E21 à E27.
 
 ## 1. Objet
 
@@ -244,10 +244,10 @@ Un outil appelle un service existant ; il ne touche jamais la base directement.
 |---|---|
 | `fetch_page` | http(s) seulement, ports 80 et 443. La résolution DNS est vérifiée à chaque redirection (5 au plus) pour refuser les adresses privées, réservées ou locales (IPv4 et IPv6). 2 Mo et 10 s par page, 5 pages par audit, `robots.txt` respecté, agent identifié (`CleadsAuditBot`, avec une page d'explication). |
 | `pagespeed` | PageSpeed Insights (clé gratuite), sur mobile et ordinateur. |
-| `screenshot` | Playwright, 1440 et 390 px de large, sans cookie ni identifiant. |
+| `screenshot` | Pour l'audit, les captures viennent de PageSpeed Insights (mobile et ordinateur) : aucun navigateur ne tourne sur notre serveur. Playwright arrive avec le Studio (E23), pour nos propres maquettes. |
 | `detect_stack` | CMS et version, bibliothèques, balises GA4, GTM, pixel Meta et Google Ads. |
 | `find_socials` | Liens présents sur le site et réseaux connus de l'Extractor. L'existence est vérifiée par une simple requête, sans lire les profils. |
-| `dirigeants` | recherche-entreprises.api.gouv.fr, par SIREN (données publiques). |
+| `dirigeants` | recherche-entreprises.api.gouv.fr, par SIREN, sinon par nom dans le même code postal (jamais un choix au hasard entre deux). Aucun dirigeant n'est proposé quand l'entreprise s'oppose à l'usage commercial de ses données ou que sa fiche n'est pas entièrement publique. |
 
 ## 10. Exécution, validation, temps réel
 
@@ -334,6 +334,21 @@ Peut valider l'action d'un agent : la personne qui a lancé l'exécution, ou un 
 - le score (`features/leads/scoring.ts`) reçoit une raison « IA » avec sa confiance, sans que ses règles changent ;
 - un dirigeant trouvé devient un contact **proposé**, avec sa source et sa base légale renseignées dans `Contact` ; jamais une adresse devinée ;
 - un site injoignable donne un audit partiel, qui le dit.
+
+**Implémentation (E20, `features/prospect-audit/`)** : un workflow codé, exécuté par le worker, en cinq temps.
+1. **Collecte** sans modèle :
+   - le site, à travers `net.ts` (adresses publiques seulement à chaque redirection, ports 80 et 443, 2 Mo et 10 s par page, robot identifié par la page publique `/robot`) ;
+   - PageSpeed Insights sur mobile et ordinateur ;
+   - l'annuaire des entreprises ;
+   - la fiche Google telle que l'Extractor l'a importée : note, avis, catégorie, téléphone. Horaires et photos ne sont pas disponibles par une source gratuite.
+2. **Extraction** par le rôle `fast`, sans outil : le texte des pages, encadré comme contenu externe, devient un relevé borné qui ne cite les pages que par leur identifiant.
+3. **Mesure** par des règles (`rules.ts`) : constats mesurés, sous-scores, signaux d'offres. Chaque élément a sa preuve : P pour une page, M pour une mesure, C pour une capture, S pour une source.
+4. **Analyse** par le rôle de l'agent (Sonnet par défaut), avec les deux captures.
+   - Consignes : celles de l'agent, plus ses skills d'audit et le playbook du secteur, s'ils lui sont donnés.
+   - Ce qui ne cite aucune preuve existante est supprimé avant l'enregistrement.
+5. **Enregistrement** : `ProspectAudit`, plus `ProspectAuditCapture` pour les captures, gardées en base et supprimées avec l'audit.
+   - L'audit est réutilisé 30 jours pour toutes les fiches du même domaine, sauf « Refaire l'audit ».
+   - Le score de la fiche affiche une ligne « Audit IA » avec sa confiance, qui est la part des 8 volets réellement mesurés.
 
 ## 14. Offres et pitch (E21)
 
@@ -526,4 +541,4 @@ Cache-Control: private, no-store
 | DPA des fournisseurs, politique de confidentialité, registre des traitements | le propriétaire | ouverture à l'équipe |
 | Durée de streaming réellement permise par les fonctions Netlify | à mesurer | E24 |
 
-**Prochaine étape : E20 (audit et enrichissement des prospects).**
+**Prochaine étape : E21 (offres et pitch).**

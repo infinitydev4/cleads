@@ -79,7 +79,7 @@ export const AGENTS: Record<AgentId, Readonly<AgentDef>> = {
     modelRole: "writer",
     modelRoles: ["writer", "fast", "designer"],
     epic: "E20",
-    available: false,
+    available: true,
     tools: ["fetch_page", "pagespeed", "screenshot", "detect_stack", "find_socials", "dirigeants", "get_business", "save_audit", "read_skill"],
     skills: onDemand("audit-seo-local", "audit-geo-site", "audit-ux-conversion", "presence-sociale", "preparation-ads", ...PLAYBOOKS),
     output: "Audit sourcé : sous-scores, forces, faiblesses, opportunités, résumé en trois points",

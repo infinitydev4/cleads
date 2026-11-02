@@ -16,6 +16,7 @@ if [ ! -f worker.env ]; then
 # Secrets of the AI worker. Fill them from your computer with scripts/set-ai-worker-env.sh (values are never printed).
 DATABASE_URL=
 AI_GATEWAY_API_KEY=
+GOOGLE_PAGESPEED_API_KEY=
 EXTRACTOR_API_KEY=
 NEXT_PUBLIC_PUSHER_APP_ID=
 NEXT_PUBLIC_PUSHER_KEY=
