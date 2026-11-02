@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { LeadError } from "@/features/leads/errors"
 import { parseRoleModels, type RoleModels } from "./models"
+import { utc } from "./sql"
 import type { TokenUsage } from "./pricing"
 
 /**
@@ -74,7 +75,7 @@ export async function commitments(db: Db, workspaceId: string, userKey: string, 
 
 /** Creates the workspace's settings row with the defaults if it does not exist yet; safe when called concurrently. */
 export async function ensureAiSetting(db: Db, workspaceId: string): Promise<void> {
-  await db.$executeRaw`INSERT INTO "AiSetting" ("id", "workspaceId", "updatedAt") VALUES (${randomUUID()}, ${workspaceId}, NOW()) ON CONFLICT ("workspaceId") DO NOTHING`
+  await db.$executeRaw`INSERT INTO "AiSetting" ("id", "workspaceId", "updatedAt") VALUES (${randomUUID()}, ${workspaceId}, ${utc(new Date())}) ON CONFLICT ("workspaceId") DO NOTHING`
 }
 
 /**
@@ -119,7 +120,7 @@ export async function reserveBudget(tx: Prisma.TransactionClient, input: { works
 export async function chargeRun(db: Db, runId: string, micros: number): Promise<{ index: number; costMicros: number; capMicros: number }> {
   const [row] = await db.$queryRaw<{ stepCount: number; costMicros: number; capMicros: number }[]>`
     UPDATE "AgentRun"
-       SET "costMicros" = "costMicros" + ${micros}, "reservedMicros" = GREATEST("reservedMicros" - ${micros}, 0), "stepCount" = "stepCount" + 1, "updatedAt" = NOW()
+       SET "costMicros" = "costMicros" + ${micros}, "reservedMicros" = GREATEST("reservedMicros" - ${micros}, 0), "stepCount" = "stepCount" + 1, "updatedAt" = ${utc(new Date())}
      WHERE "id" = ${runId}
  RETURNING "stepCount", "costMicros", "capMicros"`
   if (!row) throw new LeadError("not_found", "Exécution introuvable", 404)
@@ -135,7 +136,7 @@ export async function addUsage(
   const u = input.usage
   await db.$executeRaw`
     INSERT INTO "AiUsage" ("id", "workspaceId", "day", "userKey", "agentId", "model", "calls", "inputTokens", "outputTokens", "cachedInputTokens", "costMicros")
-    VALUES (${randomUUID()}, ${input.workspaceId}, ${day}, ${input.userKey}, ${input.agentId}, ${input.model}, 1, ${u.inputTokens}, ${u.outputTokens}, ${u.cacheReadTokens}, ${input.micros})
+    VALUES (${randomUUID()}, ${input.workspaceId}, ${utc(day)}::date, ${input.userKey}, ${input.agentId}, ${input.model}, 1, ${u.inputTokens}, ${u.outputTokens}, ${u.cacheReadTokens}, ${input.micros})
     ON CONFLICT ("workspaceId", "day", "userKey", "agentId", "model") DO UPDATE SET
       "calls" = "AiUsage"."calls" + 1,
       "inputTokens" = "AiUsage"."inputTokens" + EXCLUDED."inputTokens",

@@ -18,7 +18,7 @@ export default async function AiSettingsPage() {
         description="Les modèles utilisés par les agents, les plafonds de dépense et la consommation du mois. Les agents qui auditent, conseillent, rédigent et créent les maquettes arrivent dans les prochaines étapes ; tout ce qu’ils feront hors du CRM attendra ici votre validation."
         breadcrumbs={[{ label: "CRM", href: "/app" }, { label: "Intelligence artificielle" }]}
       />
-      <AiSettings initial={view} approvals={approvals} runs={runs} />
+      <AiSettings userId={user.id} initial={view} approvals={approvals} runs={runs} />
     </>
   )
 }

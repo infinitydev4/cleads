@@ -49,6 +49,8 @@ export interface GenerateOptions<T> {
   /** Structured answer, validated by the SDK. */
   schema?: z.ZodType<T>
   maxOutputTokens?: number
+  /** The worker aborts it when the run is cancelled. */
+  abortSignal?: AbortSignal
 }
 
 export async function generateForRun<T = never>(
@@ -69,6 +71,7 @@ export async function generateForRun<T = never>(
     prompt: opts.prompt,
     maxOutputTokens: Math.min(opts.maxOutputTokens ?? 4096, room),
     providerOptions: gatewayOptions({ models: fallbacks, userKey: ctx.userKey, agentId: ctx.agentId }),
+    abortSignal: opts.abortSignal,
   }
   const started = Date.now()
   try {
@@ -104,7 +107,7 @@ export interface DecisionView {
 
 export async function decideForRun<Q extends Record<string, Experimental_DecisionQuestion>>(
   ctx: RunContext,
-  opts: { name: string; state: Experimental_DecisionState; questions: Q; thresholds?: Thresholds },
+  opts: { name: string; state: Experimental_DecisionState; questions: Q; thresholds?: Thresholds; abortSignal?: AbortSignal },
   deps: ModelDeps = {}
 ): Promise<{ answers: Record<keyof Q & string, DecisionView>; model: string; costMicros: number }> {
   if (!deps.decisionModel && !aiConfigured()) throw notConfigured()
@@ -124,6 +127,7 @@ export async function decideForRun<Q extends Record<string, Experimental_Decisio
       state: opts.state,
       questions: opts.questions,
       providerOptions: gatewayOptions({ models: decisionFallbacks(fallbacks, thresholds), userKey: ctx.userKey, agentId: ctx.agentId }),
+      abortSignal: opts.abortSignal,
     })
     const answers = {} as Record<keyof Q & string, DecisionView>
     for (const id of Object.keys(opts.questions) as (keyof Q & string)[]) {

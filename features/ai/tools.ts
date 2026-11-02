@@ -1,7 +1,9 @@
 import { tool, type Tool } from "ai"
 import type { Prisma } from "@prisma/client"
 import type { z } from "zod"
+import { prisma } from "@/lib/prisma"
 import { can, type Permission } from "@/lib/rbac"
+import { forLog } from "@/lib/ai/untrusted"
 import { LeadError } from "@/features/leads/errors"
 import { requestApproval } from "./approvals"
 import { recordStep, type RunContext } from "./runs"
@@ -54,31 +56,111 @@ export function defineTool<I, O>(def: ToolDef<I, O>): Readonly<ToolDef<I, O>> {
 
 export type ToolResult<O> = { status: "done"; output: O } | { status: "pending_approval"; approvalId: string }
 
-/**
- * Runs a tool for a run: validates the input, checks the requester's right, then either asks a person or executes;
- * the step is recorded either way, failures included.
- */
-export async function runTool<I, O>(def: ToolDef<I, O>, ctx: ToolContext, rawInput: unknown): Promise<ToolResult<O>> {
-  const input = def.input.parse(rawInput)
-  if (def.permission) {
-    const requester = ctx.run.requester
-    if (!requester || !can(requester.role, def.permission)) {
-      throw new LeadError("forbidden", `L'outil « ${def.name} » demande un droit que la personne pour qui l'IA travaille n'a pas.`, 403)
-    }
+const registry = new Map<string, AnyToolDef>()
+
+/** Makes a tool known to the worker, which executes approved calls by name. */
+export function registerTool(def: AnyToolDef): void {
+  const known = registry.get(def.name)
+  if (known && known !== def) throw new Error(`Outil « ${def.name} » déjà enregistré`)
+  registry.set(def.name, def)
+}
+
+export const getTool = (name: string) => registry.get(name)
+
+/** Tests only. */
+export function clearTools() {
+  registry.clear()
+}
+
+function checkRight(def: AnyToolDef, ctx: ToolContext) {
+  if (!def.permission) return
+  const requester = ctx.run.requester
+  if (!requester || !can(requester.role, def.permission)) {
+    throw new LeadError("forbidden", `L'outil « ${def.name} » demande un droit que la personne pour qui l'IA travaille n'a pas.`, 403)
   }
-  if (def.approval === "user") {
-    const approvalId = await requestApproval(ctx.run, { tool: def.name, permission: def.permission, payload: input as Prisma.InputJsonValue, summary: def.summarize!(input) })
-    return { status: "pending_approval", approvalId }
-  }
+}
+
+/** Executes a call and records it, failures included. The requester's right is checked again at this moment. */
+async function executeTool<I, O>(def: ToolDef<I, O>, ctx: ToolContext, input: I): Promise<O> {
+  checkRight(def, ctx)
   const started = Date.now()
   try {
     const output = await def.execute(ctx, input)
     await recordStep(ctx.run, { type: "TOOL", name: def.name, input, output, durationMs: Date.now() - started })
-    return { status: "done", output }
+    return output
   } catch (error) {
     await recordStep(ctx.run, { type: "TOOL", name: def.name, input, output: { error: error instanceof Error ? error.message : String(error) }, durationMs: Date.now() - started })
     throw error
   }
+}
+
+/** Runs a tool for a run: validates the input, checks the requester's right, then either asks a person or executes. */
+export async function runTool<I, O>(def: ToolDef<I, O>, ctx: ToolContext, rawInput: unknown): Promise<ToolResult<O>> {
+  const input = def.input.parse(rawInput)
+  checkRight(def, ctx)
+  if (def.approval === "user") {
+    const approvalId = await requestApproval(ctx.run, { tool: def.name, permission: def.permission, payload: input as Prisma.InputJsonValue, summary: def.summarize!(input) })
+    return { status: "pending_approval", approvalId }
+  }
+  return { status: "done", output: await executeTool(def, ctx, input) }
+}
+
+export interface ApprovedCall {
+  approvalId: string
+  tool: string
+  payload: unknown
+  output: unknown
+}
+
+export interface ApprovedCalls {
+  /** Executed, now or on an earlier try. */
+  done: ApprovedCall[]
+  /** Started on an earlier try that never finished: maybe done. Never executed again. */
+  uncertain: { approvalId: string; tool: string }[]
+  failed: { approvalId: string; tool: string; error: string }[]
+}
+
+const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error))
+
+/**
+ * Executes the approved calls of a run exactly as they were approved, each at most once: the call is marked started
+ * before it runs, so a worker that stops halfway leaves it "maybe done" instead of doing it twice.
+ */
+export async function executeApprovedCalls(ctx: ToolContext): Promise<ApprovedCalls> {
+  const approvals = await prisma.agentApproval.findMany({
+    where: { runId: ctx.run.id, status: "APPROVED" },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, tool: true, payload: true, executionStartedAt: true, executedAt: true, result: true },
+  })
+  const out: ApprovedCalls = { done: [], uncertain: [], failed: [] }
+  for (const a of approvals) {
+    const result = a.result as { output?: unknown; error?: string } | null
+    if (a.executedAt) {
+      if (result?.error) out.failed.push({ approvalId: a.id, tool: a.tool, error: result.error })
+      else out.done.push({ approvalId: a.id, tool: a.tool, payload: a.payload, output: result?.output ?? null })
+      continue
+    }
+    if (a.executionStartedAt) {
+      out.uncertain.push({ approvalId: a.id, tool: a.tool })
+      continue
+    }
+    const claimed = await prisma.agentApproval.updateMany({ where: { id: a.id, executionStartedAt: null }, data: { executionStartedAt: new Date() } })
+    if (claimed.count !== 1) {
+      out.uncertain.push({ approvalId: a.id, tool: a.tool })
+      continue
+    }
+    const def = getTool(a.tool)
+    try {
+      if (!def) throw new Error(`Outil « ${a.tool} » inconnu de ce worker`)
+      const output = await executeTool(def, ctx, def.input.parse(a.payload))
+      await prisma.agentApproval.update({ where: { id: a.id }, data: { executedAt: new Date(), result: { output: forLog(output) } } })
+      out.done.push({ approvalId: a.id, tool: a.tool, payload: a.payload, output })
+    } catch (error) {
+      await prisma.agentApproval.update({ where: { id: a.id }, data: { executedAt: new Date(), result: { error: errorText(error) } } })
+      out.failed.push({ approvalId: a.id, tool: a.tool, error: errorText(error) })
+    }
+  }
+  return out
 }
 
 /** The answer an agent receives when its call waits for a person: it must not assume the action happened. */

@@ -1494,6 +1494,17 @@ model AgentRun {
   costMicros     Int            @default(0)
   /// Number of steps, also the next step's index.
   stepCount      Int            @default(0)
+  // E18: the run is its own queue entry (features/ai/queue.ts).
+  /// Higher first, then oldest first.
+  priority       Int            @default(0)
+  /// Times a worker took it; a run is given up after three.
+  attempts       Int            @default(0)
+  /// Not before this time (a retry waits).
+  notBefore      DateTime?
+  /// The worker running it; null for work done during a CRM request.
+  lockedBy       String?
+  /// Refreshed by the worker while it runs: a stale lease means the worker stopped.
+  heartbeatAt    DateTime?
   startedAt      DateTime?
   finishedAt     DateTime?
   createdAt      DateTime       @default(now())
@@ -1506,6 +1517,7 @@ model AgentRun {
   @@index([workspaceId, status])
   @@index([leadId, createdAt])
   @@index([requestedById, createdAt])
+  @@index([status, priority, createdAt])
 }
 
 /// What a run did, in order: model calls, tools, decisions, approvals. Inputs and outputs are truncated.
@@ -1533,30 +1545,47 @@ model AgentStep {
 
 /// A tool call that leaves the CRM (email, search, shared link) waits here for a person.
 model AgentApproval {
-  id            String              @id @default(cuid())
-  workspaceId   String
-  workspace     Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  runId         String
-  run           AgentRun            @relation(fields: [runId], references: [id], onDelete: Cascade)
-  tool          String
+  id                 String              @id @default(cuid())
+  workspaceId        String
+  workspace          Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  runId              String
+  run                AgentRun            @relation(fields: [runId], references: [id], onDelete: Cascade)
+  tool               String
   /// The right the decider must hold to allow the call (lib/rbac.ts).
-  permission    String?
+  permission         String?
   /// The exact arguments, executed as they are once approved.
-  payload       Json
+  payload            Json
   /// What will happen, in one sentence, for the person who decides.
-  summary       String
-  status        AgentApprovalStatus @default(PENDING)
-  requestedById String?
-  requestedBy   User?               @relation("ApprovalRequester", fields: [requestedById], references: [id], onDelete: SetNull)
-  decidedById   String?
-  decidedBy     User?               @relation("ApprovalDecider", fields: [decidedById], references: [id], onDelete: SetNull)
-  decidedAt     DateTime?
+  summary            String
+  status             AgentApprovalStatus @default(PENDING)
+  requestedById      String?
+  requestedBy        User?               @relation("ApprovalRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  decidedById        String?
+  decidedBy          User?               @relation("ApprovalDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt          DateTime?
   /// Why it was rejected, kept in the run's history.
-  note          String?
-  expiresAt     DateTime
-  createdAt     DateTime            @default(now())
+  note               String?
+  expiresAt          DateTime
+  createdAt          DateTime            @default(now())
+  /// E18: an approved call runs at most once. Set before it runs; a start without an end means "maybe done".
+  executionStartedAt DateTime?
+  executedAt         DateTime?
+  /// What the call returned, or its error.
+  result             Json?
 
   @@index([workspaceId, status, createdAt])
   @@index([runId])
   @@index([requestedById, status])
+}
+
+/// E18: one row per AI worker process, refreshed every few seconds: Réglages › IA shows whether a worker is up.
+model AiWorker {
+  /// WORKER_ID, stable across restarts of the same container.
+  id        String   @id
+  version   String
+  host      String?
+  startedAt DateTime
+  beatAt    DateTime
+  /// Runs in progress on this worker.
+  running   Int      @default(0)
 }
