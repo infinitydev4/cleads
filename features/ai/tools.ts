@@ -1,4 +1,4 @@
-import { tool, type Tool } from "ai"
+import { tool, type Tool, type ToolApprovalStatus } from "ai"
 import type { Prisma } from "@prisma/client"
 import type { z } from "zod"
 import { prisma } from "@/lib/prisma"
@@ -45,8 +45,11 @@ export interface ToolDef<I, O> {
   approval: ApprovalPolicy
   costClass: CostClass
   input: z.ZodType<I>
-  /** For the person who approves: what will happen, in one sentence. Required when approval is "user". */
-  summarize?: (input: I) => string
+  /**
+   * For the person who approves: what will happen, in one sentence. Required when approval is "user". It may read the
+   * CRM (a fiche's name) and throw when the call cannot be made: the request is then refused before anyone is asked.
+   */
+  summarize?: (input: I, ctx: ToolContext) => string | Promise<string>
   execute: (ctx: ToolContext, input: I) => Promise<O>
 }
 
@@ -111,7 +114,7 @@ export async function runTool<I, O>(def: ToolDef<I, O>, ctx: ToolContext, rawInp
   const input = def.input.parse(rawInput)
   checkRight(def, ctx)
   if (def.approval === "user") {
-    const approvalId = await requestApproval(ctx.run, { tool: def.name, permission: def.permission, payload: input as Prisma.InputJsonValue, summary: def.summarize!(input) })
+    const approvalId = await requestApproval(ctx.run, { tool: def.name, permission: def.permission, payload: input as Prisma.InputJsonValue, summary: await def.summarize!(input, ctx) })
     return { status: "pending_approval", approvalId }
   }
   return { status: "done", output: await executeTool(def, ctx, input) }
@@ -193,4 +196,32 @@ export function sdkTools(defs: readonly AnyToolDef[], ctx: ToolContext): Record<
       }),
     ])
   )
+}
+
+/**
+ * The same tools for a conversation (the copilot, E24), where the person is present: a call that needs them waits for
+ * their answer in the conversation itself, with what will happen in words, and runs in the next request once approved,
+ * the requester's right checked again. A call that cannot be made (no right, a fiche they do not see) is refused before
+ * anyone is asked, and the model is told why.
+ */
+export function chatTools(defs: readonly AnyToolDef[], ctx: ToolContext): { tools: Record<string, Tool>; toolApproval: Record<string, (input: unknown) => Promise<ToolApprovalStatus>> } {
+  const tools: Record<string, Tool> = {}
+  const toolApproval: Record<string, (input: unknown) => Promise<ToolApprovalStatus>> = {}
+  for (const def of defs) {
+    tools[def.name] = tool({
+      description: def.description,
+      inputSchema: def.input,
+      execute: async (input: unknown) => executeTool(def, ctx, def.input.parse(input)),
+    })
+    if (def.approval !== "user") continue
+    toolApproval[def.name] = async (input) => {
+      try {
+        checkRight(def, ctx)
+        return { type: "user-approval", reason: (await def.summarize!(def.input.parse(input), ctx)).trim().slice(0, 500) }
+      } catch (error) {
+        return { type: "denied", reason: errorText(error).slice(0, 300) }
+      }
+    }
+  }
+  return { tools, toolApproval }
 }

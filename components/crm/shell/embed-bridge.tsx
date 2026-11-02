@@ -14,7 +14,7 @@ function post(message: WindowMessageBody) {
 /**
  * Runs in a CRM page shown in a window of the 3D view (lib/crm/hq-window.ts). Tells the view where the page is and what
  * it is called, so the window's title and address follow it, and asks the view to close the window on Échap or when a
- * link leads back to the 3D view (which would otherwise open inside its own window).
+ * link leads back to the 3D view (which would otherwise open inside its own window), or to open its copilot on ⌘J.
  */
 export function EmbedBridge() {
   const pathname = usePathname()
@@ -33,6 +33,11 @@ export function EmbedBridge() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !e.defaultPrevented && !document.querySelector(OPEN_LAYERS)) post({ type: "close" })
+      // ⌘J: the copilot lives in the view around the window (E24).
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "j") {
+        e.preventDefault()
+        post({ type: "copilot" })
+      }
     }
     const onClick = (e: MouseEvent) => {
       if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return

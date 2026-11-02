@@ -3,6 +3,7 @@ import { expireApprovals } from "./approvals"
 import { MAINTENANCE_LOCK, expireStaleQueued, recoverStaleRuns } from "./queue"
 import { sweepTriage } from "@/features/reply-triage/handler"
 import { purgeStudio } from "@/features/studio/purge"
+import { purgeConversations } from "@/features/copilot/forget"
 
 /**
  * Housekeeping of the AI queue, run by the worker every 30 seconds. An advisory lock keeps it to one worker at a time
@@ -18,6 +19,8 @@ export interface MaintenanceReport {
   triageQueued: number
   /** E23: Studio sites whose content was deleted after 90 days. */
   sitesPurged: number
+  /** E24: copilot conversations deleted 90 days after their last message. */
+  conversationsPurged: number
 }
 
 const FAILURE_WINDOW_MS = 15 * 60_000
@@ -64,7 +67,7 @@ export async function runMaintenance(now = new Date()): Promise<MaintenanceRepor
       const expiredQueued = await expireStaleQueued(tx, now)
       const expiredApprovals = await expireApprovals(now, tx)
       await tx.aiWorker.deleteMany({ where: { beatAt: { lt: new Date(now.getTime() - 7 * 24 * 3600_000) } } })
-      return { requeued: stale.requeued, failed: stale.failed, expiredQueued, expiredApprovals, alerts: 0, triageQueued: 0, sitesPurged: 0 }
+      return { requeued: stale.requeued, failed: stale.failed, expiredQueued, expiredApprovals, alerts: 0, triageQueued: 0, sitesPurged: 0, conversationsPurged: 0 }
     },
     { timeout: 20_000 }
   )
@@ -72,6 +75,7 @@ export async function runMaintenance(now = new Date()): Promise<MaintenanceRepor
     report.alerts = await failureAlerts(now)
     report.triageQueued = await sweepTriage(now)
     report.sitesPurged = (await purgeStudio(now)).purged
+    report.conversationsPurged = await purgeConversations(now)
   }
   return report
 }

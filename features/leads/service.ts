@@ -19,6 +19,7 @@ import type { BulkInput, CreateLeadInput, LeadFilters, LeadSort, UpdateLeadInput
 import type { LeadDetail, LeadList, LeadRow } from "./types"
 import { leadAiReason } from "@/features/prospect-audit/latest"
 import { latestPitchSummary } from "@/features/offer-pitch/latest"
+import { forgetLead } from "@/features/copilot/forget"
 
 const iso = (d: Date | null | undefined) => d?.toISOString() ?? null
 const OWNER_ROLES = ["OWNER", "MANAGER", "SDR", "CLOSER"] as const
@@ -576,6 +577,8 @@ export async function deleteLead(user: CurrentUser, id: string, ip?: string | nu
   const lead = await prisma.lead.findFirst({ where: { id, workspaceId: user.workspaceId }, select: { id: true, companyId: true, contactId: true, company: { select: { name: true } } } })
   if (!lead) throw new LeadError("not_found", "Fiche introuvable.", 404)
   await prisma.$transaction(async (tx) => {
+    // E24: the copilot's conversations that read the fiche go with it (the AI data of a fiche follows the fiche).
+    await forgetLead(tx, user.workspaceId, id)
     await tx.lead.delete({ where: { id } })
     if (lead.companyId) {
       const others = await tx.lead.count({ where: { companyId: lead.companyId } })

@@ -52,7 +52,8 @@ La file est la **table `AgentRun`** elle-même :
 - nettoyage des workers disparus ;
 - alerte aux propriétaires au-delà de 3 échecs en 15 minutes, une fois par heure au plus ;
 - rattrapage du classement des réponses (E22) : les réponses d'une personne restées sans classement ni suggestion depuis plus de 2 minutes, sur 7 jours, sont remises en file, 10 fiches au plus par passage. Une fiche qui vient d'avoir une exécution attend 30 minutes ;
-- Studio Web (E23) : les jetons PageSpeed de plus de 15 minutes sont effacés, et le contenu des maquettes arrivées à échéance (90 jours) est supprimé, 20 maquettes au plus par passage.
+- Studio Web (E23) : les jetons PageSpeed de plus de 15 minutes sont effacés, et le contenu des maquettes arrivées à échéance (90 jours) est supprimé, 20 maquettes au plus par passage ;
+- copilote (E24) : les conversations sans message depuis 90 jours sont supprimées. Les tours du copilote s'exécutent dans le CRM, pas dans le worker ; un tour interrompu sans le dire est marqué en échec au bout de 10 minutes, comme toute exécution faite pendant une requête.
 
 **Navigateur** (E23). Le Designer rend ses maquettes dans Chromium, le *headless shell* installé par Playwright dans l'image (`worker/browser.ts`) :
 - un navigateur par exécution, fermé à la fin ;

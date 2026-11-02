@@ -24,6 +24,7 @@ import { ThemeScope } from "./theme-scope"
 import { ViewSwitch } from "./view-switch"
 import { EmbedBridge } from "./embed-bridge"
 import { NavLink } from "./nav-list"
+import { CopilotButton, CopilotProvider, useCopilot } from "@/components/crm/copilot/copilot"
 import { cn } from "@/lib/utils"
 
 function Logo() {
@@ -106,6 +107,7 @@ export function AppShell({ user, embedded = false, children }: { user: ShellUser
   if (pathname === HQ_PATH) {
     const links = groups.flatMap((g) => g.items).filter((i) => IMMERSIVE_LINKS.includes(i.id))
     return (
+      <CopilotProvider user={user}>
       <div className="crm-shell light flex h-dvh flex-col overflow-hidden bg-background text-foreground">
         <ThemeScope />
         <a href="#contenu" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-primary-foreground">
@@ -118,6 +120,7 @@ export function AppShell({ user, embedded = false, children }: { user: ShellUser
           </nav>
           <div className="ml-auto flex items-center gap-1 sm:gap-2">
             <Suspense><ViewSwitch tone="dark" /></Suspense>
+            <CopilotButton tone="dark" />
             <button onClick={() => setPaletteOpen(true)} aria-label="Rechercher ou aller à… (⌘K)" className="grid h-9 w-9 place-items-center rounded-lg text-sidebar-foreground hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
               <Search className="h-[18px] w-[18px]" aria-hidden="true" />
             </button>
@@ -128,12 +131,14 @@ export function AppShell({ user, embedded = false, children }: { user: ShellUser
         <main id="contenu" tabIndex={-1} className="relative min-h-0 flex-1 outline-none">
           {children}
         </main>
-        <CommandPalette items={allNavItems(user.role)} open={paletteOpen} onOpenChange={setPaletteOpen} />
+        <ShellPalette role={user.role} open={paletteOpen} onOpenChange={setPaletteOpen} />
       </div>
+      </CopilotProvider>
     )
   }
 
   return (
+    <CopilotProvider user={user}>
     <div className="crm-shell light min-h-screen bg-background text-foreground">
       <ThemeScope />
       <a
@@ -184,6 +189,7 @@ export function AppShell({ user, embedded = false, children }: { user: ShellUser
 
           <div className="ml-auto flex items-center gap-1">
             <Suspense><ViewSwitch className="mr-1" /></Suspense>
+            <CopilotButton />
             <Notifications />
             <div className="lg:hidden">
               <UserMenu user={user} variant="topbar" />
@@ -196,7 +202,21 @@ export function AppShell({ user, embedded = false, children }: { user: ShellUser
         </main>
       </div>
 
-      <CommandPalette items={allNavItems(user.role)} open={paletteOpen} onOpenChange={setPaletteOpen} />
+      <ShellPalette role={user.role} open={paletteOpen} onOpenChange={setPaletteOpen} />
     </div>
+    </CopilotProvider>
+  )
+}
+
+/** The palette, which can also open the copilot or ask it what was typed (E24). */
+function ShellPalette({ role, open, onOpenChange }: { role: ShellUser["role"]; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const copilot = useCopilot()
+  return (
+    <CommandPalette
+      items={allNavItems(role)}
+      open={open}
+      onOpenChange={onOpenChange}
+      copilot={copilot.available ? { open: () => copilot.toggle(true), ask: copilot.ask } : undefined}
+    />
   )
 }
