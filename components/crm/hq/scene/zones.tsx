@@ -1,21 +1,22 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useFrame, type ThreeEvent } from "@react-three/fiber"
+import { useFrame } from "@react-three/fiber"
 import * as THREE from "three"
 import { characterFor, type CharacterId } from "@/features/hq/characters"
 import { ZONES, type ZoneId } from "@/features/hq/zones"
 import type { HqMember, HqOverview } from "@/features/hq/types"
 import { useHq, useHqStore, selectZone } from "../store"
 import { Character, SeatChair } from "./characters"
-import { Block, Desk, GlassWall, Plant, Screen, ServerRack, Tile, cylinder, rounded } from "./kit"
-import { HQ_HALF, PLOT_HALF, PLOT_HEIGHT, FLOOR_Y, PLOT_Y, SEATS, towardsCentre, zoneCenter, type Seat } from "./layout"
+import { Block, GlassWall, Screen, ServerRack, Tile, clickHandler, cylinder, rounded, useCanvasTexture } from "./kit"
+import { Atelier, ControlRoom, LabFloor, Totem } from "./agency"
+import { HQ_HALF, PLOT_HALF, PLOT_HEIGHT, FLOOR_Y, PLOT_Y, SEATS, doorOf, isWing, zoneCenter, type Seat } from "./layout"
 import { materials } from "./materials"
-import { Prop } from "./props"
+import { DeskProp, PlantProp, Prop } from "./props"
 import { calendarTexture, campaignTexture, chartTexture, donutTexture, iconTexture, kanbanTexture, logoTexture, scoreTexture, type IconKind } from "./textures"
 
-/** The character standing for a space when nobody of the team sits there: its "operator". */
-const OPERATOR: Record<ZoneId, CharacterId> = {
+/** The character standing for a space when nobody of the team sits there: its "operator" (the AI wing has its agents). */
+const OPERATOR: Record<Exclude<ZoneId, "agents" | "studio">, CharacterId> = {
   sources: "dev",
   qualification: "closer",
   coordination: "manager",
@@ -26,34 +27,9 @@ const OPERATOR: Record<ZoneId, CharacterId> = {
   campaigns: "community",
 }
 
-/** The Meshy models face +z; these turns put each one the right way round in the scene. */
-const DESK_YAW = Math.PI
+/** The Meshy models face +z: this turn puts the reception counter towards the visitors. */
 const TOWARDS_CAMERA = Math.PI / 4
 
-/** A texture rebuilt only when its data key changes, and freed when replaced. */
-function useCanvasTexture(make: () => THREE.Texture, key: string) {
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` is the data the picture depends on
-  const texture = useMemo(() => make(), [key])
-  useEffect(() => () => texture.dispose(), [texture])
-  return texture
-}
-
-function clickHandler(onClick: () => void) {
-  return (e: ThreeEvent<MouseEvent>) => {
-    if (e.delta > 4) return
-    e.stopPropagation()
-    onClick()
-  }
-}
-
-/** Meshy desk (screen and keyboard on it), sized 1.5 m wide; the person sits on its -z side. */
-function DeskProp({ position }: { position: [number, number, number] }) {
-  return <Prop name="desk" fit={{ width: 1.5 }} position={position} rotation={DESK_YAW} fallback={<Desk />} />
-}
-
-function PlantProp({ position, height = 1.05 }: { position: [number, number, number]; height?: number }) {
-  return <Prop name="plant" fit={{ height }} position={position} rotation={position[0] * 1.7} fallback={<Plant scale={height} />} />
-}
 
 /** The raised ivory floor of a space: clicking anything on it opens the space. */
 function Plot({ id, children }: { id: ZoneId; children: React.ReactNode }) {
@@ -69,14 +45,18 @@ function Plot({ id, children }: { id: ZoneId; children: React.ReactNode }) {
       onPointerOut={() => { if (store.get().hovered === id) store.set({ hovered: null }); document.body.style.cursor = "" }}
     >
       <mesh geometry={rounded(PLOT_HALF * 2, PLOT_HEIGHT, PLOT_HALF * 2, 0.12)} material={m.ceramic} position={[0, FLOOR_Y + PLOT_HEIGHT / 2, 0]} receiveShadow castShadow />
-      <mesh geometry={rounded(PLOT_HALF * 2 - 0.5, 0.012, PLOT_HALF * 2 - 0.5, 0.2)} material={selected ? m.selected : m.ivory} position={[0, PLOT_Y + 0.006, 0]} receiveShadow />
+      {isWing(id) ? (
+        <LabFloor zone={id === "agents" ? "agents" : "studio"} selected={selected} />
+      ) : (
+        <mesh geometry={rounded(PLOT_HALF * 2 - 0.5, 0.012, PLOT_HALF * 2 - 0.5, 0.2)} material={selected ? m.selected : m.ivory} position={[0, PLOT_Y + 0.006, 0]} receiveShadow />
+      )}
       {children}
     </group>
   )
 }
 
 /** People at their desks: members first, then the operator on the first seat if the space is empty. */
-function People({ zone, desks = true }: { zone: ZoneId | "hq"; desks?: boolean }) {
+function People({ zone, desks = true }: { zone: keyof typeof OPERATOR | "hq"; desks?: boolean }) {
   const store = useHqStore()
   const members = useHq((s) => s.overview.members)
   const selection = useHq((s) => s.selection)
@@ -404,6 +384,8 @@ export function Zones() {
   const hot = useMemo(() => (recent.length ? recent.reduce((n, l) => n + l.score, 0) / recent.length : 0), [recent])
 
   const props: Record<ZoneId, React.ReactNode> = {
+    agents: <ControlRoom />,
+    studio: <Atelier />,
     sources: <SourcesProps s={signals} />,
     qualification: <QualificationProps hot={hot} />,
     coordination: <CoordinationProps weekly={weeklyMeetings} />,
@@ -418,20 +400,22 @@ export function Zones() {
       {ZONES.map((z) => (
         <Plot key={z.id} id={z.id}>
           {props[z.id]}
-          <People zone={z.id} desks={z.id !== "coordination"} />
+          {z.id !== "agents" && z.id !== "studio" && <People zone={z.id} desks={z.id !== "coordination"} />}
           <DoorMarker id={z.id} />
         </Plot>
       ))}
       <Headquarters />
+      <Totem />
     </>
   )
 }
 
-/** A small neon light on the side of each space that faces the circuit. */
+/** A small neon light on the side of each space that faces the circuit, just inside its door. */
 function DoorMarker({ id }: { id: ZoneId }) {
-  const [dx, dz] = towardsCentre(id)
   const m = materials()
-  const corner = Math.abs(dx) > 0.2 && Math.abs(dz) > 0.2
-  const d = corner ? PLOT_HALF * Math.SQRT2 - 0.5 : PLOT_HALF - 0.25
-  return <mesh geometry={cylinder(0.16, 0.16, 0.03, 32)} material={m.neon} position={[dx * d, PLOT_Y + 0.02, dz * d]} />
+  const [cx, cz] = zoneCenter(id)
+  const [x, z] = doorOf(id).door
+  const len = Math.hypot(x - cx, z - cz) || 1
+  const inset = (len - (Math.abs(x - cx) > 0.2 && Math.abs(z - cz) > 0.2 ? 0.5 : 0.25)) / len
+  return <mesh geometry={cylinder(0.16, 0.16, 0.03, 32)} material={m.neon} position={[(x - cx) * inset, PLOT_Y + 0.02, (z - cz) * inset]} />
 }

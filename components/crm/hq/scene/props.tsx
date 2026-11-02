@@ -4,6 +4,7 @@ import { Component, Suspense, useLayoutEffect, useMemo, useRef, type ReactNode }
 import { useGLTF } from "@react-three/drei"
 import * as THREE from "three"
 import measures from "./props.json"
+import { Desk, Plant } from "./kit"
 import { neonUniform } from "./materials"
 
 /**
@@ -35,14 +36,16 @@ export function preloadProps() {
   for (const name of Object.keys(PROPS) as PropName[]) if (hasProp(name)) useGLTF.preload(file(name), false, true)
 }
 
-const NEON_CHUNK = /* glsl */ `
+/** GLSL: the lime parts of the texture emit `emission`, an expression of `neonTexel` and `limeness`. */
+export const neonChunk = (emission: string) => /* glsl */ `
 #include <emissivemap_fragment>
 #ifdef USE_MAP
   vec4 neonTexel = texture2D( map, vMapUv );
   float limeness = smoothstep( 0.28, 0.55, neonTexel.g - neonTexel.b ) * smoothstep( -0.05, 0.12, neonTexel.g - neonTexel.r );
-  totalEmissiveRadiance += neonTexel.rgb * limeness * uNeon;
+  totalEmissiveRadiance += ${emission};
 #endif
 `
+const NEON_CHUNK = neonChunk("neonTexel.rgb * limeness * uNeon")
 
 /** Once per material: shadows, a touch more studio reflection, and the neon for the furniture that has some. */
 function prepare(root: THREE.Object3D, neon: boolean) {
@@ -174,4 +177,16 @@ export function PropInstances({ name, items, fallback = null }: { name: PropName
       </Suspense>
     </PropBoundary>
   )
+}
+
+/** The Meshy models face +z; this turn puts the desk with its screen away from the person, who sits on its -z side. */
+const DESK_YAW = Math.PI
+
+/** Meshy desk (screen and keyboard on it), sized 1.5 m wide; the person sits on its -z side. */
+export function DeskProp({ position }: { position: [number, number, number] }) {
+  return <Prop name="desk" fit={{ width: 1.5 }} position={position} rotation={DESK_YAW} fallback={<Desk />} />
+}
+
+export function PlantProp({ position, height = 1.05 }: { position: [number, number, number]; height?: number }) {
+  return <Prop name="plant" fit={{ height }} position={position} rotation={position[0] * 1.7} fallback={<Plant scale={height} />} />
 }

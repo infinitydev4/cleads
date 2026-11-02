@@ -3,11 +3,10 @@
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
-import { ArrowLeft, ArrowRight, Building2, CalendarDays, ExternalLink, Globe, Lock, Mail, MapPin, Phone, Shirt, Star, UserRound, X } from "lucide-react"
+import { ArrowRight, Building2, CalendarDays, ExternalLink, Globe, Lock, Mail, MapPin, Phone, Shirt, Star, UserRound } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { StatusBadge } from "@/components/crm/status-badge"
-import { Definition } from "@/components/crm/definition"
 import { FunnelBars } from "@/components/crm/funnel-bars"
 import { campaignStatus, dealStage, leadStatus, meetingStatus, searchStatus } from "@/lib/crm/status"
 import { ROLE_LABELS } from "@/lib/crm/roles"
@@ -17,6 +16,7 @@ import { cn } from "@/lib/utils"
 import { CAMPAIGN_INDICATORS, INDICATORS, formatCount, formatRate } from "@/features/metrics/definitions"
 import { CHARACTERS, CHARACTER_IDS, type CharacterId } from "@/features/hq/characters"
 import { zoneById, type ZoneId } from "@/features/hq/zones"
+import { isAgentId } from "@/features/ai/agents"
 import type { HqMember, LeadMini, MeetingMini, ZoneDetail } from "@/features/hq/types"
 import type { LeadDetail } from "@/features/leads/types"
 import { api } from "@/app/(crm)/app/leads/api"
@@ -26,6 +26,8 @@ import { EmailDialog } from "@/app/(crm)/app/leads/email-dialog"
 import { ZONE_ICONS } from "../zone-icons"
 import { clearSelection, useHq, useHqStore } from "../store"
 import { Glass } from "./parts"
+import { Empty, OpenModule, PanelHeader, Section, Stat, useZoneDetail } from "./panel-kit"
+import { AgentPanel, AgentsZoneBody, StudioZoneBody } from "./agency-panel"
 import { AuditCard } from "@/components/crm/ai/audit-card"
 import { rememberAiTab } from "@/components/crm/ai/lead-ai-card"
 import { OffersCard } from "@/components/crm/ai/offers-card"
@@ -33,45 +35,6 @@ import { OffersCard } from "@/components/crm/ai/offers-card"
 // ---------------------------------------------------------------------------------------------------------------
 // Small building blocks
 // ---------------------------------------------------------------------------------------------------------------
-
-function PanelHeader({ icon, kicker, title, subtitle, onClose, onBack }: { icon: React.ReactNode; kicker: string; title: string; subtitle?: React.ReactNode; onClose: () => void; onBack?: () => void }) {
-  return (
-    <header className="flex items-start gap-3 border-b px-4 pb-3 pt-4">
-      {onBack && (
-        <button type="button" onClick={onBack} aria-label="Retour" className="-ml-1 mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-md hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-        </button>
-      )}
-      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-muted text-sidebar">{icon}</span>
-      <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{kicker}</p>
-        <h2 className="truncate text-lg font-extrabold tracking-[-0.03em]">{title}</h2>
-        {subtitle && <div className="mt-0.5 text-xs text-muted-foreground">{subtitle}</div>}
-      </div>
-      <button type="button" onClick={onClose} aria-label="Fermer le panneau (Échap)" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <X className="h-4 w-4" aria-hidden="true" />
-      </button>
-    </header>
-  )
-}
-
-function Stat({ label, value, definition, tone }: { label: string; value: string; definition?: string; tone?: "attention" }) {
-  return (
-    <div className={cn("rounded-xl bg-muted/70 px-3 py-2", tone === "attention" && "bg-warning-subtle")}>
-      <p className="text-[11px] font-medium text-muted-foreground">{definition ? <Definition label={label} definition={definition} className="no-underline" /> : label}</p>
-      <p className={cn("text-lg font-extrabold tabular-nums tracking-[-0.03em]", tone === "attention" && "text-warning")}>{value}</p>
-    </div>
-  )
-}
-
-function Section({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
-  return (
-    <section className="space-y-2">
-      <h3 className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground">{title}{action}</h3>
-      {children}
-    </section>
-  )
-}
 
 function LeadRowButton({ lead, onOpen, extra }: { lead: Pick<LeadMini, "id" | "name" | "city" | "status"> & { score?: number }; onOpen: (id: string) => void; extra?: React.ReactNode }) {
   return (
@@ -103,26 +66,11 @@ function MeetingRow({ m, onOpen }: { m: MeetingMini; onOpen: (id: string) => voi
   )
 }
 
-/**
- * The panels link to the CRM pages: in the 3D view a click opens the page in a window over the scene
- * (hud/module-window.tsx), a middle click still gives the 2D page in a new tab. No prefetch: the window loads it.
- */
-function OpenModule({ zone }: { zone: ZoneId }) {
-  const def = zoneById(zone)!
-  return (
-    <Button asChild className="w-full">
-      <Link href={def.href} prefetch={false}>{def.hrefLabel} <ArrowRight className="h-4 w-4" aria-hidden="true" /></Link>
-    </Button>
-  )
-}
-
-const Empty = ({ children }: { children: React.ReactNode }) => <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground">{children}</p>
-
 // ---------------------------------------------------------------------------------------------------------------
 // A space
 // ---------------------------------------------------------------------------------------------------------------
 
-function ZoneBody({ data, openLead }: { data: ZoneDetail; openLead: (id: string) => void }) {
+function ZoneBody({ data, openLead, onChanged }: { data: ZoneDetail; openLead: (id: string) => void; onChanged: () => void }) {
   if ("locked" in data) {
     return (
       <div className="flex items-start gap-3 rounded-xl bg-muted p-3 text-sm">
@@ -375,23 +323,18 @@ function ZoneBody({ data, openLead }: { data: ZoneDetail; openLead: (id: string)
           </div>
         </>
       )
+    case "agents":
+      return <AgentsZoneBody data={data} onChanged={onChanged} />
+    case "studio":
+      return <StudioZoneBody data={data} />
   }
 }
 
-function ZonePanel({ zone, openLead, onClose }: { zone: ZoneId; openLead: (id: string) => void; onClose: () => void }) {
-  const days = useHq((s) => s.days)
+function ZonePanel({ zone, openLead, onClose, onChanged }: { zone: ZoneId; openLead: (id: string) => void; onClose: () => void; onChanged: () => void }) {
   const summary = useHq((s) => s.overview.zones[zone])
-  const generatedAt = useHq((s) => s.overview.generatedAt)
-  const [state, setState] = useState<{ key: string; data?: ZoneDetail; error?: string } | null>(null)
-  const key = `${zone}:${days}:${generatedAt}`
-  useEffect(() => {
-    let cancelled = false
-    api<ZoneDetail>(`/api/hq/zones/${zone}?days=${days}`).then((data) => !cancelled && setState({ key, data })).catch((e) => !cancelled && setState({ key, error: e.message }))
-    return () => { cancelled = true }
-  }, [zone, days, key])
+  const current = useZoneDetail(zone)
   const def = zoneById(zone)!
   const Icon = ZONE_ICONS[zone]
-  const current = state?.key === key || state?.data?.zone === zone ? state : null
   return (
     <>
       <PanelHeader icon={<Icon className="h-5 w-5" aria-hidden="true" />} kicker={`Espace · touche ${def.key}`} title={def.label} subtitle={def.description} onClose={onClose} />
@@ -399,7 +342,7 @@ function ZonePanel({ zone, openLead, onClose }: { zone: ZoneId; openLead: (id: s
         {summary.badge && <p className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-bold", summary.tone === "attention" ? "bg-warning-subtle text-warning" : "bg-primary/30 text-sidebar")}>{summary.badge}</p>}
         {current?.error && <p role="alert" className="rounded-lg bg-destructive-subtle p-3 text-sm text-destructive-text">{current.error}</p>}
         {!current?.data && !current?.error && <div className="space-y-2"><Skeleton className="h-16 w-full" /><Skeleton className="h-24 w-full" /><Skeleton className="h-10 w-full" /></div>}
-        {current?.data && <ZoneBody data={current.data} openLead={openLead} />}
+        {current?.data && <ZoneBody data={current.data} openLead={openLead} onChanged={onChanged} />}
       </div>
     </>
   )
@@ -585,7 +528,7 @@ function Idle({ openLead }: { openLead: (id: string) => void }) {
       <h2 className="flex items-center justify-between text-sm font-bold">Derniers prospects <Link href="/app/leads?sort=created" prefetch={false} className="text-xs font-semibold text-muted-foreground hover:text-foreground">Voir tout</Link></h2>
       {recent.length === 0 ? <Empty>Aucun prospect pour l’instant : lancez une recherche dans l’espace Scraping / Sources.</Empty> : <ul className="space-y-0.5">{recent.map((l) => <LeadRowButton key={l.id} lead={l} onOpen={openLead} extra={l.ownerName ?? "non attribué"} />)}</ul>}
       <p className="rounded-xl bg-muted/70 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-        Cliquez un espace ou un membre de l’équipe. Clavier : <kbd className="font-semibold">1</kbd>–<kbd className="font-semibold">8</kbd> pour les espaces, <kbd className="font-semibold">← →</kbd> pour passer de l’un à l’autre, <kbd className="font-semibold">Échap</kbd> pour revenir. Glisser pour se déplacer, clic droit pour tourner.
+        Cliquez un espace, un membre de l’équipe ou un agent IA. Clavier : <kbd className="font-semibold">1</kbd>–<kbd className="font-semibold">9</kbd> et <kbd className="font-semibold">0</kbd> pour les espaces, <kbd className="font-semibold">← →</kbd> pour passer de l’un à l’autre, <kbd className="font-semibold">Échap</kbd> pour revenir, puis pour la vue d’ensemble. Glisser pour se déplacer, clic droit pour tourner.
       </p>
     </div>
   )
@@ -606,7 +549,8 @@ export function DetailPanel({ onChanged }: { onChanged: () => void }) {
   const back = origin ? () => { store.set({ selection: origin }); setOrigin(null) } : undefined
   let body: React.ReactNode
   if (!selection) body = <Idle openLead={openLead} />
-  else if (selection.kind === "zone") body = <ZonePanel key={selection.id} zone={selection.id} openLead={openLead} onClose={close} />
+  else if (selection.kind === "zone") body = <ZonePanel key={selection.id} zone={selection.id} openLead={openLead} onClose={close} onChanged={onChanged} />
+  else if (selection.kind === "agent" && isAgentId(selection.id)) body = <AgentPanel key={selection.id} id={selection.id} openLead={openLead} onClose={close} onChanged={onChanged} />
   else if (selection.kind === "hq") body = <HqPanel onClose={close} openLead={openLead} />
   else if (selection.kind === "member") {
     const member = members.find((m) => m.id === selection.id)

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import type { AgentRunStatus } from "@prisma/client"
 import { ACTIVE_STATUSES } from "@/features/ai/labels"
 import type { RunStatusView } from "@/features/ai/runs"
+import { listenToRuns } from "@/components/crm/ai/run-events"
 
 /**
  * Where a run the copilot handed to a specialist stands (E24). The worker announces each change on the person's private
@@ -40,19 +41,14 @@ export function useRunStatus(runId: string | null, userId: string | null): RunSt
     }
 
     void load()
-    const key = process.env.NEXT_PUBLIC_PUSHER_KEY
-    const cluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER
-    if (key && cluster && userId) {
-      void import("pusher-js").then(({ default: Pusher }) => {
-        if (cancelled) return
-        const pusher = new Pusher(key, { cluster, channelAuthorization: { endpoint: "/api/pusher/auth", transport: "ajax" } })
-        const channel = pusher.subscribe(`private-user-${userId}`)
-        channel.bind("pusher:subscription_succeeded", () => (connected = true))
-        channel.bind("ai-run", (e: { id?: string }) => {
+    if (userId) {
+      disconnect = listenToRuns(
+        userId,
+        (e) => {
           if (e?.id === runId) void load()
-        })
-        disconnect = () => pusher.disconnect()
-      })
+        },
+        () => (connected = true)
+      )
     }
     return () => {
       cancelled = true

@@ -1,10 +1,10 @@
-# Vue 3D isométrique « QG » (E16)
+# Vue 3D isométrique « QG » (E16, E26)
 
 Page : `/app/3d`, ouverte par le sélecteur **2D / 3D** de la barre du haut (ou la palette ⌘K : « Vue 3D du CRM »). « 2D » ramène à la dernière page 2D de l'onglet. La vue 2D n'a pas changé : la 3D est une seconde façon de regarder le même CRM, avec les mêmes chiffres et les mêmes droits.
 
 ## Ce qu'on y voit
 
-Une plateforme isométrique ivoire : le bâtiment Cleads au centre, huit espaces autour, un par module, reliés par des circuits néon lime où courent des impulsions de lumière.
+Une plateforme isométrique ivoire : le bâtiment Cleads au centre, huit espaces autour, un par module, reliés par des circuits néon lime où courent des impulsions de lumière. Sur sa face gauche, l'aile « Agence IA » (E26) ajoute deux espaces sur un plancher de verre marine : la salle de contrôle des agents et l'atelier du Studio Web.
 
 | Touche | Espace | Ce qu'il montre (chiffres réels) | Module 2D |
 |---|---|---|---|
@@ -16,8 +16,10 @@ Une plateforme isométrique ivoire : le bâtiment Cleads au centre, huit espaces
 | 6 | Analytics | parcours d'acquisition sur la période et la précédente, conversion, prospects par semaine, campagnes | `/app/campaigns` |
 | 7 | RDV & Planning | rendez-vous du jour, de la semaine, résultats à saisir | `/app/meetings` |
 | 8 | Campagnes | campagnes et leurs résultats | `/app/campaigns` |
+| 9 | Agents IA | les agents à leur poste et ce qu'ils font, la file « À valider », les dernières exécutions, la dépense du mois | `/app/agents` |
+| 0 | Studio Web | les dernières maquettes (leur vraie capture), celles en cours, les briefs à relire, les visites | `/app/studio` |
 
-Certains objets de la scène sont dessinés à partir des données : le tableau kanban compte les opportunités par étape, le planning allume un créneau par rendez-vous des 7 jours, les écrans d'analyse tracent les prospects par semaine, les baies serveurs clignotent pendant une recherche, le cadran de qualification donne le score moyen des derniers prospects, les points lumineux sur le chemin sont plus nombreux quand la semaine a vu plus d'emails, les tuiles de canaux s'allument quand le canal est actif.
+Certains objets de la scène sont dessinés à partir des données : le tableau kanban compte les opportunités par étape, le planning allume un créneau par rendez-vous des 7 jours, les écrans d'analyse tracent les prospects par semaine, les baies serveurs clignotent pendant une recherche, le cadran de qualification donne le score moyen des derniers prospects, les points lumineux sur le chemin sont plus nombreux quand la semaine a vu plus d'emails, les tuiles de canaux s'allument quand le canal est actif. Dans l'aile IA, chaque androïde prend la lumière de son état, le noyau du copilote tourne plus vite quand des agents travaillent, des paquets de données vont des postes au travail vers le noyau, les avenues du circuit s'éclairent avec eux, et le mur du Studio montre les dernières maquettes.
 
 **HUD** (identique à la maquette) : quatre indicateurs (prospects générés, RDV pris, taux de conversion, campagnes actives) avec leur tendance, le parcours d'acquisition, les performances des campagnes, les derniers prospects, la période (7, 30 ou 90 jours), l'heure, l'ambiance.
 
@@ -26,10 +28,11 @@ Certains objets de la scène sont dessinés à partir des données : le tableau 
 - **Cliquer un espace** (ou son étiquette, ou une étape du parcours) : la caméra s'en approche, des crochets lime l'entourent, une barre « Qualification 2/8 · ← → · Échap Quitter » apparaît, le panneau de droite montre ses chiffres et ses listes.
 - **Cliquer une fiche** dans une liste : carte du prospect (statut, score, coordonnées, prochaine action) avec **Planifier le RDV**, **Contacter**, **Fiche complète** (le panneau latéral habituel : qualifier, appeler, tâches…) et **Ouvrir en 2D**. Ce sont les dialogues du CRM, avec les mêmes contrôles côté serveur.
 - **Tout se fait dans la 3D** : chaque action qui mène à une page du CRM l'ouvre dans une **fenêtre** au-dessus de la scène, sans quitter la vue (voir « Fenêtres » plus bas). C'est le cas de **Nouvelle recherche**, **Importer un CSV**, **Nouvelle campagne** (le formulaire s'ouvre directement), des recherches passées, des campagnes, de « Ouvrir le pipeline / l'agenda / les emails / les fiches à qualifier / Aujourd'hui », des **Séquences**, de « Voir tout » et « Voir ses fiches ». C'est aussi le cas des liens de la barre du haut, du logo, de la palette ⌘K et de « Ouvrir en pleine page » dans une fiche. Seuls **2D** et **Ouvrir en 2D** quittent la vue.
+- **Cliquer un agent** (E26) : son panneau donne sa mission, son modèle, ce qu'il fait et sur quelle fiche, ses chiffres du jour et ses dernières exécutions (avec leurs étapes). Au survol, son nom et son état s'affichent au-dessus de lui. Le **noyau** au centre de la salle de contrôle est le copilote : un clic l'ouvre. Un **cadre de la galerie** du Studio ouvre sa maquette dans une fenêtre.
 - **Cliquer une personne** : membre de l'équipe (rôle, statut « en rendez-vous » ou « connecté aujourd'hui », charge de travail pour les managers). Chacun **choisit son personnage** dans son propre panneau ; sans choix, un personnage est attribué à partir du rôle, toujours le même pour la même personne. Les personnages sans membre (un par espace vide) représentent le module : les cliquer ouvre l'espace.
 - **Caméra** : glisser pour se déplacer, clic droit ou deux doigts pour tourner, molette ou pincement pour zoomer ; boutons + − ⟲ ⟳ et « vue d'ensemble ».
 - **Visite guidée** : un espace toutes les 7 secondes, jusqu'à Échap ou un clic.
-- **Clavier** : 1 à 8, ← →, Échap (revient d'une fiche à l'espace, puis à la vue d'ensemble), + −, 0. Les étiquettes des espaces sont de vrais boutons (Tab, Entrée) ; un message vocal annonce l'espace cadré.
+- **Clavier** : 1 à 9 puis 0, ← →, Échap (revient d'une fiche ou d'un agent à l'espace, puis à la vue d'ensemble, puis au cadrage de départ), Début (vue d'ensemble), + −. Avant E26, 0 ramenait à la vue d'ensemble ; c'est désormais le Studio Web. Les étiquettes des espaces sont de vrais boutons (Tab, Entrée) ; un message vocal annonce l'espace cadré.
 
 ## Fenêtres
 
@@ -47,22 +50,25 @@ Mode **Auto** par défaut : l'éclairage suit l'heure de l'appareil, avec aube e
 
 ## Droits
 
-La vue suit la matrice (`lib/rbac.ts`) : chaque chiffre est calculé sur les fiches que la personne voit (`lead:read`), les emails selon la règle du journal d'envoi, les rendez-vous selon `meeting:read`. Un espace dont le module est fermé au rôle reste visible mais **verrouillé** : son panneau dit pourquoi (par exemple Scraping / Sources pour un closer ou un lecteur). La charge de travail des collègues n'est montrée qu'à ceux qui voient toute l'équipe.
+La vue suit la matrice (`lib/rbac.ts`) : chaque chiffre est calculé sur les fiches que la personne voit (`lead:read`), les emails selon la règle du journal d'envoi, les rendez-vous selon `meeting:read`. Un espace dont le module est fermé au rôle reste visible mais **verrouillé** : son panneau dit pourquoi (par exemple Scraping / Sources pour un closer ou un lecteur). La charge de travail des collègues n'est montrée qu'à ceux qui voient toute l'équipe. L'aile IA suit les règles de ses pages 2D : Agents IA demande `ai:use`, et ses exécutions et validations sont celles de toute l'équipe pour le propriétaire et les managers, les siennes pour les autres ; le Studio Web demande `studio:generate` et ne montre que les maquettes des fiches visibles.
 
 ## Architecture
 
 ```
-features/hq/            zones.ts (les 8 espaces : une liste), characters.ts, ambience.ts, service.ts (chiffres), types.ts
+features/hq/            zones.ts (les 10 espaces : une liste), characters.ts, ambience.ts, service.ts (chiffres), types.ts,
+                        agency.ts (postes et états des agents, badges), agency-service.ts (pouls de l'agence, détail des espaces IA)
 features/metrics/       definitions.ts (chaque indicateur et sa définition), service.ts (calculs, portée par rôle)
-app/api/hq/             GET /api/hq?days=30 · GET /api/hq/zones/:zone · PUT /api/hq/character
+app/api/hq/             GET /api/hq?days=30 · GET /api/hq/zones/:zone · PUT /api/hq/character · GET /api/hq/agency
 app/(crm)/app/3d/       la page (données rendues côté serveur au premier affichage)
 components/crm/hq/
   hq-view.tsx           magasin d'état, rafraîchissement (60 s, onglet visible), raccourcis, visite, chargement différé
   store.ts              état partagé scène / HUD (useSyncExternalStore, sans bibliothèque)
-  hud/                  indicateurs, parcours, campagnes, panneau de détail, contrôles, étiquettes DOM, fenêtres
+  hud/                  indicateurs, parcours, campagnes, panneau de détail, contrôles, étiquettes DOM, fenêtres,
+                        agency-panel.tsx (panneaux de l'aile IA, pastille), panel-kit.tsx (pièces communes des panneaux)
   scene/                React Three Fiber : layout.ts, materials.ts, kit.tsx, textures.ts, zones.tsx, world.tsx,
-                        characters.tsx, props.tsx, circuits.tsx, effects.tsx, labels.tsx, camera-rig.tsx, hq-canvas.tsx
-public/3d/characters/   4 personnages GLB (≈ 550 Ko chacun)
+                        characters.tsx, props.tsx, circuits.tsx, effects.tsx, labels.tsx, camera-rig.tsx, hq-canvas.tsx,
+                        agency.tsx (salle de contrôle, atelier, totem, plancher), android.tsx (les agents)
+public/3d/characters/   4 personnages GLB (≈ 550 Ko chacun) et l'androïde des agents (≈ 670 Ko)
 public/3d/props/        9 objets Meshy GLB (105 à 175 Ko chacun) ; leurs mesures dans scene/props.json
 scripts/                build-characters.mjs, build-props.mjs
 ```
@@ -70,7 +76,8 @@ scripts/                build-characters.mjs, build-props.mjs
 - **Bibliothèques** : `three` 0.186.1, `@react-three/fiber` 9.8.2, `@react-three/drei` 10.7.9, `@react-three/postprocessing` 3.2.2 et `postprocessing` 6.39.5 (versions figées). GSAP n'est pas utilisé ici : les transitions de caméra viennent de camera-controls (via drei). Hyperframes sert aux films de la landing, pas à une interface interactive.
 - **Chargement** : le code 3D est un morceau séparé (`next/dynamic`, sans rendu serveur) ; la vue 2D ne le télécharge jamais. Le HUD s'affiche tout de suite avec les données du serveur ; la scène arrive ensuite.
 - **Sans WebGL** (ou si la scène plante) : le HUD reste utilisable et un message propose la vue 2D.
-- **Ajouter un espace** (« Agents IA » et « Studio Web » prévus en E26, voir [AGENTS-IA.md](AGENTS-IA.md)) : une entrée dans `features/hq/zones.ts`, une composition dans `scene/zones.tsx`, un cas dans `getZone`. Rien d'autre à toucher.
+- **Ajouter un espace** : une entrée dans `features/hq/zones.ts`, une composition dans `scene/zones.tsx`, un cas dans `getZone`. Un espace hors de la grille (comme l'aile IA) déclare aussi sa porte dans `doorOf` (`scene/layout.ts`), d'où part son avenue du circuit.
+- **En direct (aile IA)** : le pouls de l'agence (`GET /api/hq/agency`) est relu à chaque événement `ai-run` du canal privé de la personne (`components/crm/ai/run-events.ts`, commun à Agents IA et au copilote), et toutes les 8 s tant qu'un agent travaille, que quelque chose attend ou qu'un espace IA est ouvert, onglet visible. Les badges des deux espaces en découlent sans attendre le rafraîchissement de la minute.
 
 ## Rendu
 
@@ -78,6 +85,10 @@ scripts/                build-characters.mjs, build-props.mjs
 - **Matériaux** : ivoire chaud plutôt que blanc pur (#fbf8f1, avec une légère granulation de rugosité), céramique laquée pour le mobilier en code, verre, marine, et le néon lime de la marque (#9dff2a) poussé au-dessus de 1 pour que le bloom le fasse rayonner. Sur les objets Meshy, quelques lignes ajoutées au shader lisent la couleur de la texture et rendent lumineuses les parties peintes en lime (bandeaux, anneaux, voyants), davantage la nuit.
 - **Circuits** (`scene/circuits.tsx`) : une seule géométrie et un seul shader pour tous les tracés : un sillon ivoire, un cœur néon net, un halo qui s'estompe, des impulsions qui courent vers les espaces et, de temps en temps, un paquet plus brillant. Le néon est mélangé au sol plutôt qu'additionné : sur un sol ivoire, une lumière additionnée deviendrait blanche et invisible de jour. La sélection (contour animé et crochets) utilise le même shader.
 - **Post-traitement** : occlusion ambiante (N8AO, demi-résolution, qualité « performance »), bloom seulement sur ce qui dépasse 1 (les néons), tone mapping Khronos PBR Neutral (les couleurs de la marque restent fidèles, là où AgX délavait l'ivoire), SMAA, léger vignettage.
+- **Aile IA (E26)** :
+  - **Plancher** : verre marine laqué ; une trame lime d'un mètre, en traits fins qui s'effacent quand ils deviennent plus denses que les pixels (vue de loin, une grille fine teinterait toute la surface) ; une flaque de lumière au centre ; un anneau qui part du centre tant que l'espace travaille.
+  - **Lumières** : pas de lumière réelle de plus. Chaque lumière se paie sur chaque pixel éclairé de la scène : le lampadaire du coin de l'aile est celui de l'ancien coin, déplacé. Le noyau brille par le bloom.
+  - **Holographie** : panneaux, toile, faisceau en matériaux sans éclairage.
 - **Deux pièges rencontrés** (image entièrement noire) : une géométrie sans normales sous un matériau éclairé produit des NaN que le bloom étale à toute l'image (les bandes au sol ont donc des normales) ; `smoothstep` avec des bornes inversées n'est pas défini en GLSL (les shaders n'utilisent que des bornes croissantes).
 
 ## Performance
@@ -86,7 +97,18 @@ Géométries mises en cache par taille, matériaux partagés, arbres instanciés
 
 **Rendu léger** (sans ombres, sans occlusion, résolution 1) : un garde mesure la fluidité seulement quand tous les modèles sont arrivés, puis après 5 secondes de calme, par fenêtres de 4 secondes ; deux fenêtres de suite sous 30 images par seconde le déclenchent, une seule fois. Les pauses (onglet masqué, image de plus de 0,5 s) et le temps passé sous une fenêtre ne comptent pas. Le bouton jauge permet de le forcer ou de l'enlever, et le choix fait à la main n'est plus contredit. Les shaders sont compilés dès l'arrivée des modèles (`compileAsync`, en parallèle quand le navigateur le permet), au lieu de saccader les premières images qui les montrent : c'est cette saccade qui, mesurée trop tôt, déclenchait le rendu léger à tort.
 
-Mesuré dans le navigateur de développement (Apple M4, rendu complet, 1636 × 1069 px puis 2160 × 1266 px) : **60 images par seconde de jour comme de nuit**, pire image 18 à 21 ms. Ce qui coûtait : l'occlusion ambiante en qualité « medium » à une résolution de 1,75 faisait tomber l'image à 26 images par seconde ; en qualité « performance » avec une résolution plafonnée à 1,5, elle ne coûte plus que quelques millisecondes. Build de production : three.js, React Three Fiber et Drei tiennent dans un morceau chargé seulement par `/app/3d` (aucune page 2D ne le référence) ; personnages (2,2 Mo) et objets (1,3 Mo) ne se téléchargent qu'en 3D. Non mesuré : un portable d'entrée de gamme, une tablette.
+Mesuré dans le navigateur de développement (Apple M4, rendu complet, 1636 × 1069 px puis 2160 × 1266 px) : **60 images par seconde de jour comme de nuit**, pire image 18 à 21 ms.
+
+**Après l'aile IA (E26)**, la mesure a comparé `main` et la branche dans les mêmes conditions : Chrome piloté (fenêtre réelle, Apple M4, ANGLE Metal), serveur de développement, rendu complet, 1600 × 960 px.
+
+| | Image médiane | Images/s en moyenne |
+|---|---|---|
+| `main` | 16,7 ms | 47 à 49 |
+| E26 | 16,7 ms | 45 à 46 |
+
+- Les deux versions sautent la même part d'images dans ce harnais : la 3D n'a pas régressé.
+- La vue d'ensemble passe de 369 à 508 appels de dessin, et de 1,5 à 1,9 million de triangles par image, ombres et post-traitement compris.
+- Les 60 images/s n'ont pas été remesurées dans le navigateur de l'application. Ce qui coûtait : l'occlusion ambiante en qualité « medium » à une résolution de 1,75 faisait tomber l'image à 26 images par seconde ; en qualité « performance » avec une résolution plafonnée à 1,5, elle ne coûte plus que quelques millisecondes. Build de production : three.js, React Three Fiber et Drei tiennent dans un morceau chargé seulement par `/app/3d` (aucune page 2D ne le référence) ; personnages (2,2 Mo) et objets (1,3 Mo) ne se téléchargent qu'en 3D. Non mesuré : un portable d'entrée de gamme, une tablette.
 
 ## Personnages (Meshy)
 
@@ -121,7 +143,35 @@ Arbres et plantes stylisés (d'après les deux images fournies : un arbre dans u
 | lamp | 01a198b9-989c-74b5-b624-b96c8813e836 | 01a198bc-c78f-709b-9c6d-ffc0413427ec |
 | table | 01a198b9-9ca9-74f6-8de3-34b687fcf58b | 01a198bc-cbe5-728a-98bb-ceb2e9867b7a |
 
-Tripo n'a pas été nécessaire (Meshy était déjà connecté). Total Meshy du projet : 188 + 183 = **371 crédits**.
+Tripo n'a pas été nécessaire (Meshy était déjà connecté). Total Meshy du projet : 188 + 183 = **371 crédits** avant E26.
+
+## Les agents (Meshy, E26)
+
+Un androïde unique, réutilisé pour les sept agents qui ont un poste. Son apparence :
+- coque céramique ivoire ;
+- visière marine ;
+- yeux et liserés lime, comme le mobilier.
+
+**Chaîne**
+1. Image de référence en T-pose (`nano-banana-2`), à partir de l'image du personnage « dev », pour garder les proportions et le style des humains.
+2. Modèle Meshy 7.1 texturé, remaillé à 12 400 triangles.
+3. Squelette.
+4. Trois animations de la bibliothèque : *Chair Sit Idle* (repos), *Sitting Answering Questions* (travail) et *Sit Thumbs Up Right* (réussite). La marche est offerte avec le squelette.
+
+**50 crédits**, pour un accord donné à 70 au plus. Total Meshy du projet : **421 crédits**.
+
+**Construction**
+- `scripts/build-characters.mjs` donne aux clips des noms stables : `sit`, `sit_talk`, `sit_done`, `walk`.
+- Meshy peint les liserés d'un lime trop pâle, presque l'ivoire de la coque : le script les repeint dans le vert néon de la scène.
+- Le shader des objets peut ainsi les allumer. Chaque androïde a son propre réglage : vif et battant au travail, lent en file, ambre quand une personne doit décider, éteint quand l'agent est désactivé.
+- Un androïde en formes simples le remplace pendant le chargement, ou si le fichier manque.
+
+| Étape | Tâche Meshy |
+|---|---|
+| image-to-image | 01a19e66-8249-7793-9744-dcf921c0ee4c |
+| image-to-3d | 01a19e67-1bf7-7616-bf7b-85536f5c5a37 |
+| rig | 01a19e68-9755-72f2-8e8d-36f3a8cefcce |
+| animate (actions 33, 307, 357) | 01a19e6b-b487-72a1-8c10-91029d909823 |
 
 ## Vérifié
 
@@ -137,6 +187,17 @@ Tripo n'a pas été nécessaire (Meshy était déjà connecté). Total Meshy du 
   - « Ouvrir en pleine page » depuis la fiche de la vue 3D (le panneau se ferme d'abord) ;
   - Précédent, un rechargement avec `?w=`, et « Ouvrir en 2D », qui quitte vers la page 2D.
 - La vue 2D reste inchangée.
+- **Aile IA (E26)** :
+  - `tests/hq.test.ts` : dix espaces et leurs touches, plateaux et portes dans la plateforme agrandie, avenues entre les plateaux, postes face au noyau et jamais entre lui et la caméra, états et badges des agents ;
+  - `tests/hq.integration.test.ts` : portée par rôle (un SDR ne voit que ses exécutions), validations, agent désactivé, worker hors ligne, maquettes des seules fiches visibles, une génération échouée qui ne compte pas en cours, espaces verrouillés pour un lecteur ;
+  - dans Chrome sur la base de démonstration :
+    - survol et clic du noyau (le copilote s'ouvre) et d'un androïde ;
+    - approbation depuis le panneau ;
+    - cadre de la galerie ouvert en fenêtre ;
+    - Échap jusqu'au cadrage de départ, Début, 9 et 0 ;
+    - pastille « Agence IA » ;
+    - téléphone (390 px), mouvement réduit, jour et nuit ;
+    - aucune erreur dans la console.
 - **Pas encore vérifié** : un vrai téléphone (le HUD passe en panneau bas sous 640 px), un lecteur d'écran réel, un poste peu puissant.
 
 ## Écarts assumés
@@ -144,4 +205,5 @@ Tripo n'a pas été nécessaire (Meshy était déjà connecté). Total Meshy du 
 - Pas de redirection automatique vers la 3D au démarrage : le sélecteur mémorise la dernière page 2D, pas une préférence globale (une redirection renverrait en 3D quelqu'un qui clique « Aujourd'hui »).
 - Personnages des espaces vides : ils représentent le module, pas une personne (aucun nom, le clic ouvre l'espace).
 - Aucune marche animée en V1 : le clip existe dans les fichiers, prêt pour des déplacements entre espaces.
-- Pas d'agent IA dans cette version : les espaces « Agents IA » et « Studio Web » arrivent avec E26 ([AGENTS-IA.md](AGENTS-IA.md)).
+- Un seul modèle d'androïde pour tous les agents : chacun se distingue par son poste, son pictogramme et la lumière de son état. Le copilote n'a pas d'androïde : il est le noyau.
+- Agents IA demande `ai:use` (le droit de sa page 2D), et non `ai:read` comme le disait la spécification ([AGENTS-IA.md](AGENTS-IA.md)).

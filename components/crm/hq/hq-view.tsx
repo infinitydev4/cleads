@@ -4,13 +4,17 @@ import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState,
 import dynamic from "next/dynamic"
 import Link from "next/link"
 import { Loader2 } from "lucide-react"
+import { AGENTS } from "@/features/ai/agents"
+import { AGENT_STATE_LABELS, agencySummaries } from "@/features/hq/agency"
 import { ambienceAt } from "@/features/hq/ambience"
 import { ZONES, zoneById } from "@/features/hq/zones"
-import type { HqOverview } from "@/features/hq/types"
+import type { AgencyPulse, HqOverview } from "@/features/hq/types"
 import type { PeriodDays } from "@/features/metrics/definitions"
 import { api } from "@/app/(crm)/app/leads/api"
+import { listenToRuns } from "@/components/crm/ai/run-events"
 import { clearSelection, createHqStore, HqStoreContext, selectZone, useHq, type HqStore } from "./store"
 import { AmbienceControl, FocusBar, PeriodControl, SceneControls, readAmbience } from "./hud/controls"
+import { AgencyChip } from "./hud/agency-panel"
 import { DetailPanel } from "./hud/detail-panel"
 import { ModuleWindow, useWindowLinks } from "./hud/module-window"
 import { CampaignsCard, Journey, KpiStrip } from "./hud/parts"
@@ -28,6 +32,8 @@ const HqCanvas = dynamic(() => import("./scene/hq-canvas"), {
 
 const REFRESH_MS = 60_000
 const TOUR_MS = 7_000
+/** While agents work (or an AI space is open), their pulse is read this often, between two full refreshes. */
+const PULSE_MS = 8_000
 
 function hasWebGL() {
   try {
@@ -64,7 +70,7 @@ function NoScene({ reason }: { reason: string }) {
   )
 }
 
-/** Keyboard: 1-8 spaces, ← → next / previous, Échap back, + − zoom, 0 whole site. */
+/** Keyboard: 1-9 then 0 spaces, ← → next / previous, Échap back (then the whole site), Début whole site, + − zoom. */
 function useShortcuts(store: HqStore) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -83,26 +89,83 @@ function useShortcuts(store: HqStore) {
         selectZone(store, index === -1 && e.key === "ArrowLeft" ? ZONES[ZONES.length - 1].id : next.id)
         e.preventDefault()
       } else if (e.key === "Escape") {
-        if (s.selection?.kind === "lead" || s.selection?.kind === "member") store.set({ selection: s.focus && s.focus !== "hq" ? { kind: "zone", id: s.focus } : null })
-        else clearSelection(store)
-      } else if (e.key === "+" || e.key === "=") store.set({ command: { kind: "zoomIn", at: Date.now() } })
-      else if (e.key === "-") store.set({ command: { kind: "zoomOut", at: Date.now() } })
-      else if (e.key === "0") {
+        if (s.selection?.kind === "lead" || s.selection?.kind === "member" || s.selection?.kind === "agent") store.set({ selection: s.focus && s.focus !== "hq" ? { kind: "zone", id: s.focus } : null })
+        else if (s.selection || s.focus) clearSelection(store)
+        // Nothing left to leave: back to the whole site, as the camera first showed it.
+        else store.set({ command: { kind: "reset", at: Date.now() } })
+      } else if (e.key === "Home") {
         clearSelection(store)
         store.set({ command: { kind: "reset", at: Date.now() } })
-      }
+      } else if (e.key === "+" || e.key === "=") store.set({ command: { kind: "zoomIn", at: Date.now() } })
+      else if (e.key === "-") store.set({ command: { kind: "zoomOut", at: Date.now() } })
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [store])
 }
 
-/** Says what the camera now frames, for screen readers. */
+/** Says what the camera now frames, or which agent is shown, for screen readers. */
 function Announcer() {
   const focus = useHq((s) => s.focus)
   const zones = useHq((s) => s.overview.zones)
-  const text = !focus ? "Vue d’ensemble du QG." : focus === "hq" ? "Bâtiment central : l’équipe et les derniers prospects." : `${zoneById(focus)!.label}${zones[focus].badge ? ` : ${zones[focus].badge}` : ""}.`
+  const agent = useHq((s) => (s.selection?.kind === "agent" ? s.selection.id : null))
+  const state = useHq((s) => (agent ? s.overview.agency?.agents.find((a) => a.id === agent)?.state : undefined))
+  const text = agent
+    ? `${AGENTS[agent].label} : ${AGENT_STATE_LABELS[state ?? "idle"].toLowerCase()}.`
+    : !focus
+      ? "Vue d’ensemble du QG."
+      : focus === "hq"
+        ? "Bâtiment central : l’équipe et les derniers prospects."
+        : `${zoneById(focus)!.label}${zones[focus].badge ? ` : ${zones[focus].badge}` : ""}.`
   return <p className="sr-only" aria-live="polite">{text}</p>
+}
+
+/** The overview with a fresh pulse of the agency, and the badges of the AI spaces that follow from it. */
+function withAgency(overview: HqOverview, agency: AgencyPulse | null): HqOverview {
+  return { ...overview, agency, zones: { ...overview.zones, ...agencySummaries(agency, { agents: overview.zones.agents.locked, studio: overview.zones.studio.locked }) } }
+}
+
+/**
+ * The agency live (E26): its pulse is read again at once when the worker announces a run of the person's (their private
+ * channel), and every few seconds while something moves or an AI space is open, the tab visible. Nothing otherwise:
+ * the full refresh every minute is enough for a resting agency.
+ */
+function useAgencyLive(store: HqStore, userId: string) {
+  useEffect(() => {
+    if (!store.get().overview.agency) return
+    let loading = false
+    let soon: ReturnType<typeof setTimeout> | null = null
+    const load = async () => {
+      if (loading || document.visibilityState !== "visible") return
+      loading = true
+      try {
+        const agency = await api<AgencyPulse | null>("/api/hq/agency")
+        store.set((s) => ({ overview: withAgency(s.overview, agency) }))
+      } catch {
+        // The next tick tries again.
+      } finally {
+        loading = false
+      }
+    }
+    const moving = () => {
+      const s = store.get()
+      const a = s.overview.agency
+      return !!a && (s.focus === "agents" || s.focus === "studio" || a.approvals > 0 || !!a.studio?.building || a.agents.some((x) => x.running || x.queued || x.waiting))
+    }
+    const poll = setInterval(() => moving() && void load(), PULSE_MS)
+    const stop = listenToRuns(userId, () => {
+      if (soon) return
+      soon = setTimeout(() => {
+        soon = null
+        void load()
+      }, 400)
+    })
+    return () => {
+      clearInterval(poll)
+      if (soon) clearTimeout(soon)
+      stop()
+    }
+  }, [store, userId])
 }
 
 /** The scene and its HUD, out of reach (focus, screen readers) while a window covers them. */
@@ -218,6 +281,7 @@ export function HqView({ initial }: { initial: HqOverview }) {
   }, [store])
 
   useShortcuts(store)
+  useAgencyLive(store, initial.viewer.id)
   useWindowLinks()
   const onWindowClosed = useCallback(() => void refresh(), [refresh])
 
@@ -234,6 +298,7 @@ export function HqView({ initial }: { initial: HqOverview }) {
             <div className="flex items-start gap-3">
               <div className="min-w-0 flex-1"><KpiStrip /></div>
               <div className="hidden shrink-0 flex-col items-end gap-2 md:flex">
+                <AgencyChip />
                 <AmbienceControl />
                 <PeriodControl onChange={(d) => { store.set({ days: d }); void refresh(d) }} />
               </div>

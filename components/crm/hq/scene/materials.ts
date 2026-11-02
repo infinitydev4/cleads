@@ -76,6 +76,9 @@ function build() {
     selected: matte("#f3ffd9", 0.6),
     /** The brand lime as a paint (small objects), never as light. */
     lime: new THREE.MeshStandardMaterial({ color: PALETTE.lime, roughness: 0.5, emissive: new THREE.Color(PALETTE.lime), emissiveIntensity: 0.25 }),
+    /** The AI wing's floor (E26): glossy navy glass under its grid of light; a shade lighter when the space is selected. */
+    lab: new THREE.MeshPhysicalMaterial({ color: "#0d1a2c", roughness: 0.22, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.12, envMapIntensity: 1.1 }),
+    labSelected: new THREE.MeshPhysicalMaterial({ color: "#16294a", roughness: 0.22, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.12, envMapIntensity: 1.1 }),
   }
 }
 

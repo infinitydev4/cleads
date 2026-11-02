@@ -2,11 +2,13 @@
 
 import { useCallback } from "react"
 import { Lock } from "lucide-react"
+import { AGENTS } from "@/features/ai/agents"
+import { AGENT_STATE_LABELS } from "@/features/hq/agency"
 import { ZONES } from "@/features/hq/zones"
 import { ROLE_LABELS } from "@/lib/crm/roles"
 import { cn } from "@/lib/utils"
 import { ZONE_ICONS } from "../zone-icons"
-import { selectZone, useHq, useHqStore } from "../store"
+import { selectZone, shownAgent, useHq, useHqStore } from "../store"
 
 /** Registers an element for the scene to place (components/crm/hq/scene/labels.tsx, LabelProjector). */
 function useAnchor(key: string) {
@@ -79,12 +81,36 @@ function MemberLabel() {
   )
 }
 
+/** The agent under the pointer or selected (E26): its name, what it does, and the fiche it works on. */
+function AgentLabel() {
+  const ref = useAnchor("agent")
+  const id = useHq(shownAgent)
+  const pulse = useHq((s) => (id ? (s.overview.agency?.agents.find((a) => a.id === id) ?? null) : null))
+  const state = pulse?.state ?? "idle"
+  const lead = state !== "idle" && state !== "off" ? pulse?.current?.lead?.name : null
+  return (
+    <div ref={ref} style={{ visibility: "hidden" }} className="pointer-events-none absolute left-0 top-0 will-change-transform" aria-hidden="true">
+      {id && (
+        <div className="flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-sidebar px-2.5 py-1 text-xs font-semibold text-sidebar-foreground shadow-pop ring-1 ring-primary/40">
+          <span className={cn("h-1.5 w-1.5 rounded-full", state === "waiting" ? "bg-[#f0b44a]" : state === "working" ? "bg-primary" : "bg-sidebar-muted")} />
+          {AGENTS[id].label}
+          <span className="font-normal text-sidebar-muted">
+            · {id === "copilot" && state === "idle" ? "Cliquez pour lui parler (⌘J)" : AGENT_STATE_LABELS[state]}
+            {lead ? ` · ${lead}` : ""}
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Labels of the spaces, as real buttons over the scene (Tab, Enter): the scene works without a mouse. */
 export function SceneLabels() {
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden" role="group" aria-label="Espaces du QG">
       {ZONES.map((z) => <ZoneLabel key={z.id} id={z.id} />)}
       <MemberLabel />
+      <AgentLabel />
     </div>
   )
 }

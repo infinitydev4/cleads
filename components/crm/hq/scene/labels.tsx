@@ -5,17 +5,21 @@ import { useFrame, useThree } from "@react-three/fiber"
 import * as THREE from "three"
 import { ZONES, type ZoneId } from "@/features/hq/zones"
 import type { HqState } from "../store"
-import { useHq, useHqStore } from "../store"
-import { HQ_HALF, PLOT_HALF, PLOT_Y, SEATS, zoneCenter } from "./layout"
+import { shownAgent, useHq, useHqStore } from "../store"
+import { HQ_HALF, PLOT_HALF, PLOT_Y, SEATS, agentAnchor, zoneCenter } from "./layout"
 import { materials } from "./materials"
 import { useFlow, useNeonFlowMaterial } from "./circuits"
 
-/** Where each DOM label hangs in the scene: above a space, or above the head of the person shown. */
+/** Where each DOM label hangs in the scene: above a space, or above the head of the person or agent shown. */
 export function anchorOf(key: string, s: HqState): [number, number, number] | null {
   if (key.startsWith("zone:")) {
     const zone = ZONES.find((z) => z.id === key.slice(5))
     if (!zone) return null
     return [zone.position[0] - 1.3, PLOT_Y + 3.3, zone.position[1] - 1.3]
+  }
+  if (key === "agent") {
+    const id = shownAgent(s)
+    return id ? agentAnchor(id) : null
   }
   if (key === "member") {
     const id = s.selection?.kind === "member" ? s.selection.id : s.hovered

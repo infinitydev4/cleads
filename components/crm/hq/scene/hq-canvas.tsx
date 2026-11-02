@@ -9,18 +9,27 @@ import { CameraRig } from "./camera-rig"
 import { preloadCharacters } from "./characters"
 import { Look } from "./effects"
 import { LabelProjector, SelectionBrackets, ViewOffset } from "./labels"
-import { CAMERA_FOV, OVERVIEW } from "./layout"
+import { CAMERA_FOV, OVERVIEW, PLATFORM_CENTER } from "./layout"
 import { applyNight } from "./materials"
 import { preloadProps } from "./props"
 import { World } from "./world"
 import { Zones } from "./zones"
+
+/** Where the sun aims: the middle of the platform, so its shadows cover the AI wing as well (E26). */
+const SUN_TARGET = new THREE.Vector3(PLATFORM_CENTER[0], 0, PLATFORM_CENTER[1])
 
 /** Sun (or moon), sky light and glow, from the ambience computed by the view (features/hq/ambience.ts). */
 function Lights() {
   const light = useHq((s) => s.light)
   const lowPower = useHq((s) => s.lowPower)
   const invalidate = useThree((s) => s.invalidate)
-  const direction = useMemo(() => new THREE.Vector3(...light.lightDirection).normalize().multiplyScalar(60), [light.lightDirection])
+  const direction = useMemo(() => new THREE.Vector3(...light.lightDirection).normalize().multiplyScalar(60).add(SUN_TARGET), [light.lightDirection])
+  // The light's target must be in the scene for its matrix to follow.
+  const target = useMemo(() => {
+    const o = new THREE.Object3D()
+    o.position.copy(SUN_TARGET)
+    return o
+  }, [])
   useEffect(() => {
     applyNight(light.night)
     invalidate()
@@ -28,7 +37,9 @@ function Lights() {
   return (
     <>
       <hemisphereLight args={[light.skyColor, light.groundColor, light.hemiIntensity * 0.42]} />
+      <primitive object={target} />
       <directionalLight
+        target={target}
         position={direction}
         color={light.lightColor}
         intensity={light.lightIntensity}
@@ -36,10 +47,10 @@ function Lights() {
         shadow-mapSize={[lowPower ? 1024 : 2048, lowPower ? 1024 : 2048]}
         shadow-bias={-0.0003}
         shadow-normalBias={0.025}
-        shadow-camera-left={-34}
-        shadow-camera-right={34}
-        shadow-camera-top={34}
-        shadow-camera-bottom={-34}
+        shadow-camera-left={-36}
+        shadow-camera-right={36}
+        shadow-camera-top={36}
+        shadow-camera-bottom={-36}
         shadow-camera-near={1}
         shadow-camera-far={160}
       />

@@ -2,6 +2,12 @@ import type { CampaignStatus, DealStage, LeadStatus, MeetingStatus, SearchStatus
 import type { CrmRole } from "@/lib/crm/roles"
 import type { PeriodDays } from "@/features/metrics/definitions"
 import type { CampaignView } from "@/features/campaigns/service"
+import type { AgentId } from "@/features/ai/agents"
+import type { ApprovalView } from "@/features/ai/approvals"
+import type { WorkerStatus } from "@/features/ai/queue"
+import type { RunView } from "@/features/ai/runs"
+import type { SiteSummary } from "@/features/studio/labels"
+import type { AgentState } from "./agency"
 import type { CharacterId } from "./characters"
 import type { ZoneId } from "./zones"
 
@@ -84,6 +90,45 @@ export interface HqOverview {
     weekly: { weekEnding: string; leads: number; meetings: number }[]
     mailboxesActive: number
   }
+  /** The AI agency (E26); null for a role that cannot use the AI. Refreshed on its own while agents work. */
+  agency: AgencyPulse | null
+}
+
+/** One agent as the scene shows it, from the runs the person may see (all for owners and managers, their own otherwise). */
+export interface AgentPulse {
+  id: AgentId
+  state: AgentState
+  running: number
+  queued: number
+  waiting: number
+  /** The run shown at the agent's post: the newest running one, else the newest waiting, else the newest queued. */
+  current: { runId: string; lead: { id: string; name: string } | null } | null
+  /** The newest run that ended a moment ago (features/hq/agency.ts JUST_DONE_MS). */
+  lastDone: { runId: string; ok: boolean; finishedAt: string } | null
+  today: { runs: number; costEur: number }
+}
+
+export interface StudioPulse {
+  /** The latest mock-ups with a picture, for the gallery wall (four at most). */
+  latest: { id: string; name: string; thumb: string; version: number }[]
+  /** Sites whose brief or page is being made now. */
+  building: number
+  /** Briefs waiting for a person. */
+  briefs: number
+  /** Sites with at least one published version. */
+  ready: number
+}
+
+export interface AgencyPulse {
+  generatedAt: string
+  agents: AgentPulse[]
+  /** Approvals waiting for the person (theirs, or the team's for owners and managers). */
+  approvals: number
+  worker: { online: boolean; queued: number }
+  /** The AI gateway key is set on this server. */
+  configured: boolean
+  /** Null without the Studio right. */
+  studio: StudioPulse | null
 }
 
 export interface MeetingMini {
@@ -153,5 +198,19 @@ export type ZoneDetail =
       zone: "campaigns"
       campaigns: CampaignView[]
       canManage: boolean
+    }
+  | {
+      zone: "agents"
+      agents: { id: AgentId; label: string; mission: string; output: string; approval: string; model: string; enabled: boolean }[]
+      approvals: ApprovalView[]
+      runs: RunView[]
+      month: { spentEur: number; capEur: number }
+      worker: WorkerStatus
+      configured: boolean
+    }
+  | {
+      zone: "studio"
+      sites: SiteSummary[]
+      counts: { ready: number; building: number; briefs: number; visits: number }
     }
   | { zone: ZoneId; locked: true; reason: string }

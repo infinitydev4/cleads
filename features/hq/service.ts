@@ -17,6 +17,8 @@ import { deltaPct, deltaPts, formatCount, formatRate, rate, type PeriodDays } fr
 import { characterFor, isCharacterId, type CharacterId } from "./characters"
 import { JOURNEY, ZONES, assignStations, type ZoneId } from "./zones"
 import type { CampaignPerf, HqMember, HqOverview, LeadMini, MeetingMini, ZoneDetail, ZoneSummary } from "./types"
+import { agencySummaries } from "./agency"
+import { agencyPulse, agentsZone, studioZone } from "./agency-service"
 import { LeadError } from "@/features/leads/errors"
 
 const plural = (n: number, one: string, many: string) => `${formatCount(n)} ${n > 1 ? many : one}`
@@ -58,7 +60,7 @@ export async function getOverview(user: CurrentUser, days: PeriodDays = 30, now 
   const team = canSeeTeam(user)
   const week = new Date(now.getTime() - 7 * 86_400_000)
 
-  const [cur, prev, campaignRows, campaignsCreated, members, recent, replied, overdueMine, tasksToday, emailsToday, emails7d, searchesRunning, deals, meetingsToday, toClose, meetingsNext7, weekly, mailboxes] = await Promise.all([
+  const [cur, prev, campaignRows, campaignsCreated, members, recent, replied, overdueMine, tasksToday, emailsToday, emails7d, searchesRunning, deals, meetingsToday, toClose, meetingsNext7, weekly, mailboxes, agency] = await Promise.all([
     periodCounts(user, current),
     periodCounts(user, previous),
     prisma.campaign.findMany({ where: { workspaceId: user.workspaceId, archivedAt: null }, select: { id: true, name: true, status: true } }),
@@ -77,6 +79,7 @@ export async function getOverview(user: CurrentUser, days: PeriodDays = 30, now 
     can(user.role, "meeting:read") ? prisma.meeting.count({ where: { workspaceId: user.workspaceId, status: { in: ["SCHEDULED", "CONFIRMED"] }, startsAt: { gte: now, lt: new Date(now.getTime() + 7 * 86_400_000) }, ...(scopeOf(user.role, "meeting:read") === "own" ? { hostId: user.id } : {}) } }) : Promise.resolve(0),
     weeklySeries(user, 8, now),
     can(user.role, "email:send") ? usableMailboxes(user) : Promise.resolve([]),
+    agencyPulse(user, now),
   ])
 
   const stats = await campaignCohorts(user, campaignRows.map((c) => c.id))
@@ -141,11 +144,13 @@ export async function getOverview(user: CurrentUser, days: PeriodDays = 30, now 
       analytics: summary("analytics", `Conversion ${formatRate(conversion)}`),
       meetings: summary("meetings", toClose.length ? `${formatCount(toClose.length)} à clôturer` : plural(todayCount, "RDV aujourd’hui", "RDV aujourd’hui"), toClose.length ? "attention" : todayCount ? "active" : "neutral"),
       campaigns: summary("campaigns", plural(active.length, "active", "actives"), active.length ? "active" : "neutral"),
+      ...agencySummaries(agency, { agents: lockedFor("agents"), studio: lockedFor("studio") }),
     },
     campaigns: perf.slice(0, 5),
     members: seated,
     recentLeads: recent.map(toMini),
     signals: { searchesRunning, emails7d, dealsByStage, meetingsNext7, weekly, mailboxesActive: mailboxes.length - errorBoxes },
+    agency,
   }
 }
 
@@ -309,6 +314,10 @@ export async function getZone(user: CurrentUser, zone: ZoneId, days: PeriodDays 
     }
     case "campaigns":
       return { zone, campaigns: await listCampaigns(user), canManage: can(user.role, "campaign:manage") }
+    case "agents":
+      return agentsZone(user, now)
+    case "studio":
+      return studioZone(user)
   }
 }
 

@@ -2,10 +2,10 @@ import type { Permission } from "@/lib/rbac"
 
 /**
  * The spaces of the 3D view, one per CRM module. This list is the only place a space is declared: the scene, the HUD,
- * the API and the tests read it. A new space (for instance "Agents IA" with E13) is one entry here plus its
- * composition in components/crm/hq/scene/zones.tsx.
+ * the API and the tests read it. A new space is one entry here, its composition in components/crm/hq/scene/zones.tsx
+ * and its case in getZone (features/hq/service.ts), as "Agents IA" and "Studio Web" were added with E26.
  */
-export const ZONE_IDS = ["sources", "qualification", "coordination", "outreach", "pipeline", "analytics", "meetings", "campaigns"] as const
+export const ZONE_IDS = ["sources", "qualification", "coordination", "outreach", "pipeline", "analytics", "meetings", "campaigns", "agents", "studio"] as const
 export type ZoneId = (typeof ZONE_IDS)[number]
 
 export interface ZoneDef {
@@ -19,15 +19,16 @@ export interface ZoneDef {
   permission: Permission | null
   /** Centre of the plot on the platform (metres, y up). See components/crm/hq/scene/layout.ts for the camera. */
   position: [x: number, z: number]
-  /** Keyboard shortcut in the 3D view (1-8). */
+  /** Keyboard shortcut in the 3D view: 1 to 9, then 0. */
   key: string
-  /** Desks for members (the rest work in the central building). */
+  /** Desks for members (the rest work in the central building); none in the AI wing, where the agents work. */
   seats: number
 }
 
 /**
- * Placement follows the reference composition: a square platform seen at 45°, the Cleads building in the middle and
- * the eight spaces around it. On screen: x+ goes down-right, z+ goes down-left.
+ * Placement follows the reference composition: a platform seen at 45°, the Cleads building in the middle and the eight
+ * module spaces around it, 12 m apart. The AI wing (E26) widens the platform on its far-left side, its two spaces on
+ * the streets between the plots (z = ±6). On screen: x+ goes down-right, z+ goes down-left.
  */
 export const ZONES: readonly ZoneDef[] = [
   {
@@ -117,6 +118,28 @@ export const ZONES: readonly ZoneDef[] = [
     position: [-12, 12],
     key: "8",
     seats: 2,
+  },
+  {
+    id: "agents",
+    label: "Agents IA",
+    description: "L’agence IA au travail : chaque agent à son poste, ce qu’il fait en ce moment et ce qui attend votre validation.",
+    href: "/app/agents",
+    hrefLabel: "Ouvrir Agents IA",
+    permission: "ai:use",
+    position: [-24, -6],
+    key: "9",
+    seats: 0,
+  },
+  {
+    id: "studio",
+    label: "Studio Web",
+    description: "L’atelier du Designer : les landings de démonstration construites à partir du site et de l’audit de chaque prospect.",
+    href: "/app/studio",
+    hrefLabel: "Ouvrir le Studio",
+    permission: "studio:generate",
+    position: [-24, 6],
+    key: "0",
+    seats: 0,
   },
 ]
 
