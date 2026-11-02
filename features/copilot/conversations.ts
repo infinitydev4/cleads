@@ -16,7 +16,6 @@ import { titleOf, type CopilotMessage, type CopilotMetadata, type QuestionContex
 export { KEEP_DAYS } from "./forget"
 /** A turn holds the conversation at most this long: past it, a request that died without saying so frees it. */
 export const TURN_LOCK_MS = 3 * 60_000
-const MAX_LEAD_IDS = 500
 
 type Db = Prisma.TransactionClient | typeof prisma
 
@@ -164,13 +163,13 @@ export async function saveMessage(conversationId: string, message: CopilotMessag
 
 const LEAD_ID = /^[a-z0-9]{8,40}$/i
 
-/** The conversation now follows these fiches: it is erased with any of them. */
+/** The conversation now follows these fiches: it is erased with any of them. None is ever dropped from the list. */
 export async function followLeads(conversationId: string, leadIds: readonly string[]): Promise<void> {
   const ids = [...new Set(leadIds)].filter((id) => LEAD_ID.test(id))
   if (!ids.length) return
   await prisma.$executeRaw`
     UPDATE "AiConversation"
-       SET "leadIds" = (SELECT COALESCE(array_agg(DISTINCT x), ARRAY[]::text[]) FROM (SELECT unnest(COALESCE("leadIds", ARRAY[]::text[]) || ${ids}::text[]) AS x LIMIT ${MAX_LEAD_IDS}) s)
+       SET "leadIds" = (SELECT COALESCE(array_agg(DISTINCT x), ARRAY[]::text[]) FROM unnest(COALESCE("leadIds", ARRAY[]::text[]) || ${ids}::text[]) AS x)
      WHERE "id" = ${conversationId}`
 }
 
