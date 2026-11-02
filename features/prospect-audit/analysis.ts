@@ -16,6 +16,12 @@ import { analysisSchema, siteContentSchema, type Analysis, type Point, type Site
  */
 const PAGE_CHARS = 6_000
 const TOTAL_CHARS = 24_000
+/**
+ * Room for each answer. The models reason before they write, and their reasoning counts against these limits: the first
+ * real analysis (2 November 2026) used 2 859 tokens of the 3 000 it had, one step away from an answer cut off and lost.
+ */
+export const EXTRACTION_OUTPUT_TOKENS = 4_000
+export const ANALYSIS_OUTPUT_TOKENS = 6_000
 
 export async function extractContent(ctx: RunContext, site: SiteFacts, deps: ModelDeps = {}, signal?: AbortSignal): Promise<{ content: SiteContent | null; model: string | null }> {
   if (!site.pages.length) return { content: null, model: null }
@@ -37,7 +43,7 @@ export async function extractContent(ctx: RunContext, site: SiteFacts, deps: Mod
       ].join("\n\n"),
       prompt: `Pages du site :\n\n${blocks.join("\n\n")}`,
       schema: siteContentSchema,
-      maxOutputTokens: 2_000,
+      maxOutputTokens: EXTRACTION_OUTPUT_TOKENS,
       abortSignal: signal,
     },
     deps
@@ -95,7 +101,7 @@ export async function analyze(
   })
   const { output, model } = await generateForRun(
     ctx,
-    { role, name: "analyze_audit", system: runtime.system, prompt: analysisPrompt(facts, measured, content), schema: analysisSchema, images, maxOutputTokens: 3_000, abortSignal: signal },
+    { role, name: "analyze_audit", system: runtime.system, prompt: analysisPrompt(facts, measured, content), schema: analysisSchema, images, maxOutputTokens: ANALYSIS_OUTPUT_TOKENS, abortSignal: signal },
     deps
   )
   return { analysis: output ?? null, model }

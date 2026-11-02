@@ -26,7 +26,7 @@ const day = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", ye
 const INSTRUCTIONS = [
   "Prépare le pitch du closer :",
   "- headline : une phrase qui dit pourquoi ce prospect a besoin de nous, avec le fait le plus fort de l'audit ;",
-  "- recommendations : une à cinq offres candidates, de la plus utile à la moins utile. Une seule « main », l'offre principale ; au plus deux « complement » pour un pack réaliste, à la mesure de la taille et du budget probable de l'entreprise ; au plus une « entry », une première étape moins chère si le pack est trop lourd ; « later » pour une seconde étape. Pour chacune : fit de 0 à 100, why en deux phrases avec les faits de l'audit, gain (ce que le prospect y gagne, sans chiffre inventé), evidence, et l'objection la plus probable avec sa réponse ;",
+  "- recommendations : une à quatre offres candidates, de la plus utile à la moins utile. Une seule « main », l'offre principale ; au plus deux « complement » pour un pack réaliste, à la mesure de la taille et du budget probable de l'entreprise ; au plus une « entry », une première étape moins chère si le pack est trop lourd ; « later » pour une seconde étape. Pour chacune : fit de 0 à 100, why en deux phrases avec les faits de l'audit, gain (ce que le prospect y gagne, sans chiffre inventé), evidence, et l'objection la plus probable avec sa réponse ;",
   "- script : l'appel de 15 minutes, selon le skill script-appel-15min s'il t'est donné : opening, hook (un constat précis posé comme une question, avec sa preuve), questions (trois au plus, adaptées au métier), proposal (l'offre principale reliée au besoin, puis l'offre d'entrée s'il y en a une), close (une prochaine étape datée : rendez-vous, maquette à montrer ou proposition écrite) ;",
   "- objections : les deux ou trois objections les plus probables pendant l'appel, avec leur réponse ;",
   "- email : l'angle du premier email, un objet de moins de 50 caractères et deux phrases, appuyés sur une preuve.",
@@ -77,6 +77,12 @@ export function pitchPrompt(facts: PitchFacts, candidates: readonly Candidate[])
   ].join("\n\n")
 }
 
+/**
+ * Room for the answer. Sonnet 5.5 reasons before it writes, and its reasoning counts against this limit: on 2 November
+ * 2026 a real pitch took about 1 000 tokens of reasoning and 3 500 of text. At 3 000, it was cut and could not be read.
+ */
+export const PITCH_OUTPUT_TOKENS = 6_000
+
 export async function composePitch(
   ctx: RunContext,
   runtime: Pick<AgentRuntime, "agent" | "system">,
@@ -89,7 +95,7 @@ export async function composePitch(
   const slugs = candidates.map((c) => c.offer.slug) as [string, ...string[]]
   const { output, model } = await generateForRun(
     ctx,
-    { role, name: "compose_pitch", system: runtime.system, prompt: pitchPrompt(facts, candidates), schema: pitchOutputSchema(slugs), maxOutputTokens: 3_000, abortSignal: signal },
+    { role, name: "compose_pitch", system: runtime.system, prompt: pitchPrompt(facts, candidates), schema: pitchOutputSchema(slugs), maxOutputTokens: PITCH_OUTPUT_TOKENS, abortSignal: signal },
     deps
   )
   return { output: output ?? null, model }

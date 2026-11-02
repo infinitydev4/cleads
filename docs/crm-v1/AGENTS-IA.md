@@ -122,7 +122,14 @@ Les seuils partent prudents (0,85 et 0,60), puis sont calibrés sur le jeu d'év
 - **Plafond par exécution** : audit ≤ 0,30 €, maquette ≤ 2 €, brouillon ≤ 0,05 €. Une exécution qui l'atteint s'arrête proprement.
 - **Réservation verrouillée** : avant de démarrer, une exécution réserve son plafond, sous un verrou de ligne comme les plafonds d'envoi d'E9. Le coût réel remplace la réservation à la fin. Des exécutions simultanées ne peuvent donc pas dépasser le plafond.
 - **Appels bornés** : avant chaque appel, la sortie maximale est calculée pour que le pire cas tienne dans ce qu'il reste à l'exécution. Ce pire cas se calcule au prix le plus cher parmi le modèle et ses secours, entrée estimée comprise. Si même une réponse courte ne tient pas, l'exécution s'arrête (`BUDGET_EXCEEDED`) sans appeler le modèle.
-- **Coût réel** : il est calculé à partir de l'usage renvoyé par chaque appel et des prix lus sur la passerelle (liste publique relue toutes les 12 heures, instantané intégré en secours). Il est converti en micro-euros au taux réglé dans `AiSetting` au moment de l'appel. Chaque étape garde l'identifiant de génération de la passerelle, pour rapprocher plus tard ce coût estimé du coût facturé.
+- **Longueur des réponses** : la sortie maximale d'une étape compte aussi le raisonnement du modèle, car Sonnet 5.5 raisonne avant d'écrire (environ 1 000 jetons mesurés le 2 novembre 2026). Chaque étape garde donc une marge :
+  - extraction de l'audit : 4 000 jetons ;
+  - analyse de l'audit : 6 000 jetons ;
+  - pitch : 6 000 jetons ;
+  - test d'un skill : 3 000 jetons.
+
+  Une réponse coupée à cette limite arrête l'exécution sans nouvel essai, car elle serait coupée de la même façon, et le message le dit.
+- **Coût réel** : il est calculé à partir de l'usage renvoyé par chaque appel, y compris une réponse coupée ou illisible (la passerelle la facture aussi), et des prix lus sur la passerelle (liste publique relue toutes les 12 heures, instantané intégré en secours). Il est converti en micro-euros au taux réglé dans `AiSetting` au moment de l'appel. Chaque étape garde l'identifiant de génération de la passerelle, pour rapprocher plus tard ce coût estimé du coût facturé.
 - **Économies** :
   - audit réutilisé 30 jours par domaine ;
   - cache des prompts ;

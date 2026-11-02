@@ -166,6 +166,24 @@ suite("AI foundation (database)", () => {
       expect(JSON.stringify(step.output)).toContain("provider down")
     })
 
+    it("bills an answer cut off at its length limit, and does not retry it", async () => {
+      const ctx = await runs.startRun(u.sdr, { agentId: "writer", status: "RUNNING" })
+      const cut = new MockLanguageModelV4({
+        doGenerate: async () => ({
+          content: [{ type: "text", text: '{"subject":"Votre si' }],
+          finishReason: { unified: "length", raw: "max_tokens" },
+          usage: { inputTokens: { total: 4000, noCache: 4000, cacheRead: undefined, cacheWrite: undefined }, outputTokens: { total: 900, text: 400, reasoning: 500 } },
+          warnings: [],
+        }),
+      })
+      await expect(calls.generateForRun(ctx, { role: "writer", name: "subject", prompt: "Objet ?", schema: z.object({ subject: z.string() }) }, { languageModel: () => cut, prices: PRICES })).rejects.toMatchObject({ code: "invalid", status: 400 })
+      const step = await prisma.agentStep.findFirstOrThrow({ where: { runId: ctx.id } })
+      expect(step).toMatchObject({ type: "MODEL", model: "anthropic/claude-sonnet-5.5", inputTokens: 4000, outputTokens: 900, output: { finishReason: "length" } })
+      expect(step.costMicros).toBeGreaterThan(0)
+      expect((await prisma.agentRun.findUniqueOrThrow({ where: { id: ctx.id } })).costMicros).toBe(step.costMicros)
+      expect((await prisma.aiUsage.aggregate({ where: { workspaceId: ws }, _sum: { costMicros: true } }))._sum.costMicros).toBe(step.costMicros)
+    })
+
     it("decides with probabilities, records the decision and its tiny cost", async () => {
       const ctx = await runs.startRun(u.sdr, { agentId: "replies", status: "RUNNING" })
       const model = new Experimental_DecisionMockModelV4({

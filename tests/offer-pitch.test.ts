@@ -164,6 +164,10 @@ describe("what is kept of the advisor's answer", () => {
     expect(schema.safeParse({ ...OUTPUT, recommendations: [{ ...OUTPUT.recommendations[0], offer: "geo" }] }).success).toBe(false)
     expect(schema.safeParse({ ...OUTPUT, recommendations: [{ ...OUTPUT.recommendations[0], evidence: [] }] }).success).toBe(false)
     expect(schema.safeParse({ ...OUTPUT, recommendations: [] }).success).toBe(false)
+    // Four offers at most: a pack, an entry offer or an idea for later, without running past the answer's length.
+    const four = pitchOutputSchema(["refonte-site", "seo-local", "google-ads", "cleads-growth"])
+    expect(four.safeParse({ ...OUTPUT, recommendations: OUTPUT.recommendations.slice(0, 4) }).success).toBe(true)
+    expect(four.safeParse(OUTPUT).success).toBe(false)
   })
 })
 

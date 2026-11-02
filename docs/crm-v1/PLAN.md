@@ -712,7 +712,17 @@ L'Auditeur digital produit une fiche enrichie et sourcée, à la demande, depuis
 > - suite complète verte (762 tests), build, paquet du worker ;
 > - parcours dans le navigateur sur la base de prévisualisation, avec un pitch produit par le vrai handler et un modèle simulé : onglets, candidates, pitch, retenir et écarter, file d'attente, statistiques d'Agents IA, carte de la vue 3D.
 >
-> **Pas encore** : un pitch réel de bout en bout (un appel Sonnet, environ 3 à 5 centimes) ; il demande des offres actives en production et le redéploiement du worker.
+> **Premier pitch réel (2 novembre 2026)** :
+> - **Échec** : la réponse a été coupée trois fois à 3 000 jetons, car le raisonnement de Sonnet (environ 1 000 jetons) compte dans cette limite. L'erreur était classée « service indisponible » et les trois essais n'étaient pas facturés à l'exécution (environ 0,17 € non comptés).
+> - **Correction** (`fix/ai-output-length`) :
+>   - 6 000 jetons pour le pitch et l'analyse de l'audit, 4 000 pour l'extraction ;
+>   - quatre offres au plus ;
+>   - une réponse coupée arrête l'exécution sans nouvel essai, avec un message clair ;
+>   - une réponse illisible est retentée ;
+>   - les deux sont facturées.
+> - **Coût mesuré** : environ 15 300 jetons en entrée avec les 13 offres actives, soit environ 0,07 € par pitch, sous le plafond de 0,10 €.
+>
+> **Pas encore** : un pitch réel abouti, après le déploiement du correctif.
 >
 > **Écarts** :
 > - le script d'appel, les objections et l'angle d'email appartiennent au pitch (`OfferPitch`), une fois pour le pack, et non à chaque `OfferRecommendation` ;

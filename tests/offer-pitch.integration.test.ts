@@ -78,8 +78,10 @@ suite("Offers and pitch (database)", () => {
   let leadId = ""
   let bareLeadId = ""
   let companyId = ""
-  let calls: { system: string; prompt: string }[] = []
+  let calls: { system: string; prompt: string; maxOutputTokens?: number }[] = []
   let answer: unknown = PITCH
+  // A raw answer and how it ended, to play an answer cut at its length limit.
+  let raw: { text: string; finish: "stop" | "length" } | null = null
   let duringCall: (() => Promise<void>) | null = null
 
   beforeAll(async () => {
@@ -123,6 +125,7 @@ suite("Offers and pitch (database)", () => {
     handlers.clearAgentHandlers()
     calls = []
     answer = PITCH
+    raw = null
     duringCall = null
     for (const [key, role] of [["owner", "OWNER"], ["manager", "MANAGER"], ["sdr", "SDR"], ["sdr2", "SDR"], ["viewer", "VIEWER"]] as const) {
       const x = await prisma.user.create({ data: { email: `${key}@pitch.test`, name: key, role, workspaceId: ws } })
@@ -143,11 +146,11 @@ suite("Offers and pitch (database)", () => {
     doGenerate: async (options) => {
       const messages = options.prompt as { role: string; content: string | { type: string; text?: string }[] }[]
       const text = (role: string) => messages.filter((m) => m.role === role).map((m) => (typeof m.content === "string" ? m.content : m.content.map((p) => p.text ?? "").join(""))).join("\n")
-      calls.push({ system: text("system"), prompt: text("user") })
+      calls.push({ system: text("system"), prompt: text("user"), maxOutputTokens: options.maxOutputTokens })
       await duringCall?.()
       return {
-        content: [{ type: "text", text: JSON.stringify(answer) }],
-        finishReason: { unified: "stop", raw: undefined },
+        content: [{ type: "text", text: raw ? raw.text : JSON.stringify(answer) }],
+        finishReason: { unified: raw?.finish ?? "stop", raw: undefined },
         usage: { inputTokens: { total: 4000, noCache: 4000, cacheRead: undefined, cacheWrite: undefined }, outputTokens: { total: 900, text: 900, reasoning: undefined } },
         warnings: [],
       }
@@ -178,8 +181,10 @@ suite("Offers and pitch (database)", () => {
     const steps = await prisma.agentStep.findMany({ where: { runId }, orderBy: { index: "asc" }, select: { name: true } })
     expect(steps.map((s) => s.name)).toEqual(["get_audit", "list_offers", "compose_pitch", "save_recommendations"])
 
-    // What the advisor was given: its expert role, the active catalogue, the call script and the plumbers' playbook.
+    // What the advisor was given: its expert role, the active catalogue, the call script and the plumbers' playbook,
+    // and room enough to reason, then write the whole pitch.
     expect(calls).toHaveLength(1)
+    expect(calls[0].maxOutputTokens).toBe(6_000)
     expect(calls[0].system).toContain("directeur conseil")
     expect(calls[0].system).toContain("# Offres Cleads")
     expect(calls[0].system).toContain("Script d'appel de 15 minutes")
@@ -288,6 +293,18 @@ suite("Offers and pitch (database)", () => {
     expect(run).toMatchObject({ status: "FAILED", reservedMicros: 0 })
     expect(run.error).toMatch(/retirées du catalogue/)
     expect(await prisma.offerPitch.count()).toBe(1)
+    expect((await service.getLeadPitch(u.sdr, leadId)).lastFailure).toMatchObject({ runId, error: run.error })
+  })
+
+  it("stops at once, bills it and says why, when the answer is cut off at its length limit", async () => {
+    raw = { text: JSON.stringify(PITCH).slice(0, 900), finish: "length" }
+    const runId = await pitchThroughWorker()
+    const run = await prisma.agentRun.findUniqueOrThrow({ where: { id: runId } })
+    // No second try: it would be cut the same way. What the model wrote is billed all the same.
+    expect(run).toMatchObject({ status: "FAILED", attempts: 1, reservedMicros: 0 })
+    expect(run.costMicros).toBeGreaterThan(0)
+    expect(run.error).toMatch(/coupée avant la fin/)
+    expect(await prisma.offerPitch.count()).toBe(0)
     expect((await service.getLeadPitch(u.sdr, leadId)).lastFailure).toMatchObject({ runId, error: run.error })
   })
 

@@ -1,6 +1,6 @@
 // E17 AI foundation: pure rules, no database and no real model call.
 import { beforeEach, describe, expect, it } from "vitest"
-import { experimental_decide } from "ai"
+import { experimental_decide, NoObjectGeneratedError } from "ai"
 import { Experimental_DecisionMockModelV4 } from "ai/test"
 import { AI_ROLES, MODEL_LABELS, ROLES, parseRoleModels, resolveRole, roleModelsSchema } from "@/lib/ai/models"
 import {
@@ -18,7 +18,7 @@ import {
 } from "@/lib/ai/pricing"
 import { DEFAULT_THRESHOLDS, confidenceOf, decisionFallbacks, outcomeOf, validThresholds, valueOf } from "@/lib/ai/decide"
 import { UNTRUSTED_RULE, forLog, untrusted } from "@/lib/ai/untrusted"
-import { modelCallError } from "@/features/ai/calls"
+import { modelCallError, usageOf } from "@/features/ai/calls"
 import { gatewayOptions } from "@/lib/ai/gateway"
 import { dayStart, monthKey, monthStart } from "@/lib/ai/budget"
 import { AGENTS, AGENT_IDS, agentCapMicros, defineAgent } from "@/features/ai/agents"
@@ -256,6 +256,22 @@ describe("model call errors", () => {
     expect(modelCallError(gateway("invalid_request_error", 400, "image too large"), "anthropic/claude-sonnet-5.5", "writer")).toMatchObject({ code: "invalid", message: expect.stringMatching(/image too large/) })
     // Behind the SDK's retry wrapper too.
     expect(modelCallError({ errors: [new Error("x"), gateway("forbidden", 403, "Free tier users do not have access")] }, "anthropic/claude-opus-5.5", "designer").message).toMatch(/crédits/)
+  })
+
+  it("do not retry an answer cut off at its length limit, but do retry an unreadable one, and bill both", () => {
+    const answer = (finishReason: "length" | "stop") =>
+      new NoObjectGeneratedError({
+        message: "No object generated: could not parse the response.",
+        text: '{"headline":"Le site',
+        response: { id: "gen_1", timestamp: new Date(), modelId: "anthropic/claude-sonnet-5.5" },
+        usage: { inputTokens: 15_340, inputTokenDetails: { noCacheTokens: 15_340, cacheReadTokens: undefined, cacheWriteTokens: undefined }, outputTokens: 3_000, outputTokenDetails: { textTokens: 1_771, reasoningTokens: 1_229 }, totalTokens: 18_340 },
+        finishReason,
+      })
+    expect(modelCallError(answer("length"), "anthropic/claude-sonnet-5.5", "writer")).toMatchObject({ code: "invalid", status: 400, message: expect.stringMatching(/coupée avant la fin/) })
+    expect(modelCallError(answer("stop"), "anthropic/claude-sonnet-5.5", "writer")).toMatchObject({ code: "unavailable", status: 503, message: expect.stringMatching(/illisible/) })
+    // The model did write: what it wrote is billed.
+    expect(usageOf(answer("length"))).toEqual({ inputTokens: 15_340, outputTokens: 3_000, cacheReadTokens: 0, cacheWriteTokens: 0 })
+    expect(usageOf(new Error("provider down"))).toEqual({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
   })
 
   it("are tried again later when they pass", () => {
