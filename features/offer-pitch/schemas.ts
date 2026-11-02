@@ -46,7 +46,7 @@ export function pitchOutputSchema(slugs: readonly [string, ...string[]]) {
         })
       )
       .min(1)
-      .max(5),
+      .max(4),
     script: z.object({
       opening: text(400).describe("Ouverture : se présenter, rappeler le contexte, demander si c'est un bon moment"),
       hook: z.object({ text: text(500).describe("Un constat précis de l'audit, posé comme une question"), evidence: cited }),

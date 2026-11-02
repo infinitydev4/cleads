@@ -108,7 +108,7 @@ export async function runSkillTest(job: HandlerContext, deps: ModelDeps = {}): P
     .join("\n\n")
   const result = await generateForRun(
     ctx,
-    { role: agent.modelRole === "decision" ? "writer" : agent.modelRole, name: `skill_test:${version.skill.name}`, system, prompt, maxOutputTokens: 1_500, abortSignal: job.signal },
+    { role: agent.modelRole === "decision" ? "writer" : agent.modelRole, name: `skill_test:${version.skill.name}`, system, prompt, maxOutputTokens: 3_000, abortSignal: job.signal },
     deps
   )
   return { output: { kind: SKILL_TEST, skill: { id: version.skill.id, name: version.skill.name, version: input.version }, agentId: ctx.agentId, model: result.model, text: result.text } }

@@ -49,7 +49,7 @@ suite("Prospect audits (database)", () => {
   const ws = "ws_default"
   let leadId = ""
   let twinLeadId = ""
-  let seen: { step: string; files: number }[] = []
+  let seen: { step: string; files: number; max?: number }[] = []
   let opposition = false
   let siteDown = false
 
@@ -103,7 +103,7 @@ suite("Prospect audits (database)", () => {
       const system = messages.filter((m) => m.role === "system").map((m) => (typeof m.content === "string" ? m.content : "")).join("\n")
       const files = messages.flatMap((m) => (typeof m.content === "string" ? [] : m.content.filter((p) => p.type === "file"))).length
       const extraction = system.includes("Tu lis les pages du site")
-      seen.push({ step: extraction ? "extract" : "analyze", files })
+      seen.push({ step: extraction ? "extract" : "analyze", files, max: options.maxOutputTokens })
       const text = extraction
         ? JSON.stringify({ activity: "Plombier à Lyon", services: ["Dépannage"], area: "Lyon", audience: null, headline: "Plombier à Lyon", ctas: [{ label: "Appeler", kind: "phone", page: "P2" }, { label: "Inventé", kind: "form", page: "P9" }], proofs: [], faq: false, entityClear: true, outdatedSigns: [], frictions: [] })
         : JSON.stringify({
@@ -160,10 +160,10 @@ suite("Prospect audits (database)", () => {
     expect(Buffer.from(row.captures[0].data).toString()).toBe("capture-jpeg")
     expect(row.validUntil.getTime() - row.createdAt.getTime()).toBeGreaterThan(29 * 86_400_000)
     expect(psiCalls).toBe(2)
-    // The analysis saw both screenshots; the extraction saw none.
+    // The analysis saw both screenshots; the extraction saw none. Both had room to reason, then write in full.
     expect(seen).toEqual([
-      { step: "extract", files: 0 },
-      { step: "analyze", files: 2 },
+      { step: "extract", files: 0, max: 4_000 },
+      { step: "analyze", files: 2, max: 6_000 },
     ])
     const steps = await prisma.agentStep.findMany({ where: { runId }, orderBy: { index: "asc" }, select: { type: true, name: true } })
     expect(steps.map((s) => s.name)).toEqual(["fetch_page", "detect_stack", "pagespeed", "dirigeants", "extract_site", "analyze_audit", "save_audit"])
@@ -272,6 +272,6 @@ suite("Prospect audits (database)", () => {
     expect(a.report.notes.join(" ")).toMatch(/partiel/)
     expect(a.captures).toEqual([])
     // Without a readable site there is no page to extract: the model reads the measured facts only.
-    expect(seen).toEqual([{ step: "analyze", files: 0 }])
+    expect(seen).toEqual([{ step: "analyze", files: 0, max: 6_000 }])
   })
 })

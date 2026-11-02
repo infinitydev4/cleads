@@ -1,4 +1,4 @@
-import { experimental_decide, generateText, Output, type Experimental_DecisionModel, type Experimental_DecisionQuestion, type Experimental_DecisionState, type LanguageModel } from "ai"
+import { experimental_decide, generateText, NoObjectGeneratedError, Output, type Experimental_DecisionModel, type Experimental_DecisionQuestion, type Experimental_DecisionState, type LanguageModel } from "ai"
 import type { z } from "zod"
 import { LeadError } from "@/features/leads/errors"
 import { getAiSettings } from "@/lib/ai/budget"
@@ -29,6 +29,14 @@ const NO_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens:
 const notConfigured = () => new LeadError("unavailable", "L'IA n'est pas configurée sur ce serveur : la clé AI_GATEWAY_API_KEY manque.", 503)
 const unavailable = () => new LeadError("unavailable", "Le service IA n'a pas répondu, modèles de secours compris. Réessayez dans quelques minutes.", 503)
 
+/**
+ * What a failed call still consumed. An answer that came back cut off or unreadable was generated, and the Gateway bills
+ * it: it is charged to the run like any other, so the run's cap and the month's budget see it.
+ */
+export function usageOf(error: unknown): TokenUsage {
+  return NoObjectGeneratedError.isInstance(error) && error.usage ? tokenUsage(error.usage) : NO_USAGE
+}
+
 /** The error behind a failed call: the SDK wraps repeated failures in a RetryError. */
 function rootError(error: unknown): { type?: string; statusCode?: number; message?: string } | null {
   const e = error as { lastError?: unknown; errors?: unknown[] } | null
@@ -41,6 +49,14 @@ function rootError(error: unknown): { type?: string; statusCode?: number; messag
  * later; a setting a person must change (credits, key, model) ends the run at once, with what to do.
  */
 export function modelCallError(error: unknown, model: string, role: AiRole): LeadError {
+  // The model did answer, but not with the expected structure.
+  if (NoObjectGeneratedError.isInstance(error)) {
+    // Cut at the output limit (reasoning counts against it): the same call would be cut the same way, so no retry.
+    if (error.finishReason === "length") {
+      return new LeadError("invalid", "La réponse de l’IA a été coupée avant la fin (longueur maximale atteinte) : rien n’est enregistré, et l’exécution n’est pas relancée, car elle serait coupée de la même façon.", 400)
+    }
+    return new LeadError("unavailable", "L’IA a rendu une réponse illisible : l’exécution sera relancée.", 503)
+  }
   const e = rootError(error)
   const text = e?.message ?? ""
   const label = modelLabel(model)
@@ -126,7 +142,16 @@ export async function generateForRun<T = never>(
     })
     return { text: result.text, output, model: served, costMicros: step.costMicros }
   } catch (error) {
-    await recordModelStep(ctx, { type: "MODEL", name: opts.name, model, usage: NO_USAGE, durationMs: Date.now() - started, output: { error: error instanceof Error ? error.message : String(error) }, prices })
+    const answered = NoObjectGeneratedError.isInstance(error) ? error : null
+    await recordModelStep(ctx, {
+      type: "MODEL",
+      name: opts.name,
+      model: answered ? servedModel(answered.response?.modelId, candidates) : model,
+      usage: usageOf(error),
+      durationMs: Date.now() - started,
+      output: { error: error instanceof Error ? error.message : String(error), ...(answered?.finishReason ? { finishReason: answered.finishReason } : {}) },
+      prices,
+    })
     console.error("[AI_GENERATE]", ctx.agentId, error)
     throw modelCallError(error, model, opts.role)
   }
