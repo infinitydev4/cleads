@@ -140,5 +140,9 @@ export async function recordVisit(token: string, userAgent: string | null, now =
   return gif()
 }
 
-/** No preview is meant to be indexed. */
-export const robotsTxt = () => new Response("User-agent: *\nDisallow: /\n", { status: 200, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "public, max-age=86400" } })
+/**
+ * Crawling is allowed: a shared page keeps itself out of search engines with noindex (header and tag), which a robot
+ * only reads if it may fetch the page. A `Disallow: /` here would not deindex anything; it only made PageSpeed's SEO
+ * score of the mock-up drop to 66, as if the page itself could not be indexed (seen on the first real mock-up).
+ */
+export const robotsTxt = () => new Response("User-agent: *\nAllow: /\n", { status: 200, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "public, max-age=3600" } })
