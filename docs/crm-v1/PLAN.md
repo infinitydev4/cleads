@@ -2,12 +2,13 @@
 
 > Document de cadrage. Rien n'a été supprimé ni modifié dans le code : ce plan attend vos arbitrages (section 1).
 > Sources : lecture du code de `cleads-main` (≈ 48 000 lignes TS/TSX), de `audit.md` (5 août 2026, partiellement périmé : le projet est passé à Next 16 / React 19), de la home-v2, et de l'API Cleads Extractor déjà en production.
+> **Mise à jour du 2 novembre 2026** : couche agentique IA décidée (D13 à D27 en section 1, section 10 réécrite), epics E17 à E27 et jalons M6 à M10 (section 12). Architecture de référence : [AGENTS-IA.md](AGENTS-IA.md).
 
 ---
 
 ## 0. En une page
 
-**Cap.** Un CRM de prospection → qualification → conversion, utilisé par une petite équipe (propriétaire, manager, SDR, closers), alimenté par Cleads Extractor, qui envoie de la prospection à froid avec prudence et dont chaque action est déjà pilotable par une API, donc par des agents IA plus tard.
+**Cap.** Un CRM de prospection → qualification → conversion, utilisé par une petite équipe (propriétaire, manager, SDR, closers), alimenté par Cleads Extractor, qui envoie de la prospection à froid avec prudence. Chaque action passe par les mêmes services, ce qui permet de l'assister par une agence d'agents IA : audit des prospects, offres à proposer, rédaction, Studio Web (jalons M6 à M10, section 10).
 
 **Constats clés de l'audit**
 1. **Environ 25 000 lignes sur 48 000 n'ont plus de raison d'être** : pages publiques historiques (5 300), anciens composants d'accueil (4 800), blog IA + thèmes + générateurs d'images + RSS (12 800). Facturation (3 900) et portail client (2 500) sont à mettre de côté pour la V1.
@@ -22,6 +23,7 @@
 - Une file « Aujourd'hui » par SDR : qui contacter, avec quel message, quelles relances sont dues.
 - Une qualification en quelques clics, un pipeline visuel, des rendez-vous attribués aux closers.
 - Un tableau de bord par rôle avec l'entonnoir réel : importés → contactés → réponses → qualifiés → rendez-vous → gagnés.
+- *(M6 à M10)* Des agents IA qui auditent chaque prospect, suggèrent les offres à lui proposer avec leurs preuves, rédigent des emails à relire et génèrent une landing de démonstration à montrer en rendez-vous.
 
 ---
 
@@ -41,6 +43,28 @@
 | D10 | Tâches de fond (envois, relances, lecture des réponses) | **Petit worker Node avec file dans PostgreSQL (`pg-boss`)**, hébergé sur le VPS OVH | Netlify ne tient ni IMAP ni les tâches longues. Le VPS existe déjà. |
 | D11 | Version anglaise de la landing | **Garder le sélecteur, indexer le français seulement** | L'anglais est choisi via `localStorage` : aucune URL propre, invisible pour les moteurs et les IA (section 9). |
 | D12 | Thème du CRM | **Clair par défaut**, thème sombre en V1.1 | La home-v2 est claire ; le sombre double le travail de recette. |
+
+### Décisions IA (2 novembre 2026, validées)
+
+Détails et conséquences techniques : [AGENTS-IA.md](AGENTS-IA.md).
+
+| # | Question | Décision | Pourquoi |
+|---|---|---|---|
+| D13 | Socle de la couche agentique | **AI SDK 7 + Vercel AI Gateway** | TypeScript natif (Next, zod), agents avec validation humaine intégrée, client MCP, Jev via `experimental_decide` ; une clé pour tous les fournisseurs, bascules automatiques, suivi des coûts. LangChain / LangGraph : lourd, pensé Python d'abord ; Mastra : une couche de plus alors que nos services doivent rester au centre. |
+| D14 | Exécution des tâches longues des agents | **Worker Node + `pg-boss` sur le VPS OVH** (réalise D10) | Un audit (1 à 3 min) ou une maquette ne tient pas dans une fonction Netlify ; le VPS héberge déjà l'Extractor (MCP en réseau local). |
+| D15 | Modèles | **Mix par rôle**, interchangeable dans les réglages : Jev (décider), Claude Haiku 5.5 (volume), Sonnet 5.5 (rédiger, analyser), Opus 5.5 (Studio, audit approfondi) | Le meilleur rapport qualité / coût par tâche ; aucun code métier ne nomme un modèle. |
+| D16 | Données envoyées aux fournisseurs IA | **Fournisseurs hors UE autorisés avec garanties** : DPA, pas d'entraînement sur nos données, minimisation | Les meilleurs modèles sont américains ; le RGPD le permet avec des garanties et l'information des personnes. |
+| D17 | Ordre | **Socle, puis audit + offres + email**, puis Studio, copilote et sourcing | Valeur immédiate pour SDR et closers ; l'audit nourrit tout le reste. |
+| D18 | Autonomie des agents | **Les agents suggèrent, l'humain valide** tout ce qui sort du CRM | Email, recherche Extractor, lien envoyé au prospect : un clic de validation. Lectures, audits, brouillons, notes et enrichissement en autonomie. |
+| D19 | Génération des landing pages | **Code libre généré par l'IA** (HTML + CSS statiques, sans JavaScript), avec boucle de qualité | Créativité maximale ; la boucle rendu → capture → critique → correction tient la qualité, l'absence de script tient la sécurité. |
+| D20 | Partage des maquettes | **Lien privé expirant sur `apercu.cleads.fr`** (30 jours, non indexé) | L'en-tête `Content-Security-Policy: sandbox` donne à la page une origine opaque : ni cookie ni script, même sur un sous-domaine. |
+| D21 | Catalogue d'offres | **V1 rédigée par Claude, validée par le propriétaire** dans un écran d'admin | La landing ne présente que des formules ; les agents ne recommandent que des offres actives. |
+| D22 | Budget IA | **Moins de 100 € par mois**, plafond dur, alertes à 50 % et 80 % | Audits et maquettes à la demande ; pas de traitement en masse par défaut. |
+| D23 | Sources des audits | **Gratuites et officielles** : site du prospect, PageSpeed Insights, annuaire des entreprises, données de l'Extractor | Aucun abonnement ; l'audit GEO porte sur ce que le site expose, sans interroger les moteurs IA. |
+| D24 | Accès à l'IA | **Tous les rôles, avec un quota quotidien par personne** ; `VIEWER` en lecture | L'assistance sert d'abord aux SDR et aux closers. |
+| D25 | Suivi des maquettes | **Visite du lien enregistrée** (date, nombre ; ni cookie ni pixel dans l'email), closer notifié | Rappeler au bon moment ; à mentionner dans la politique de confidentialité. |
+| D26 | IA dans le QG 3D | **Deux nouveaux espaces** : « Agents IA » et « Studio Web » | La 3D reste fonctionnelle : agents à leur poste, validations, maquettes. |
+| D27 | Extractor et agents | **MCP en lecture** pour les agents ; les écritures passent par le service CRM | Aucun job lancé pour un agent n'échappe au CRM, aux campagnes ni au journal. |
 
 ---
 
@@ -102,7 +126,7 @@ Facturation (devis, factures, PDF : 3 900 lignes) et portail client (2 500 ligne
 11. **SEO / GEO** de la landing.
 
 ### 3.2 Dehors (V1.1 et après)
-Facturation / devis, portail client, séquences multicanales (LinkedIn, téléphone automatisé), synchronisation bidirectionnelle Google Agenda, thème sombre, 2FA, application mobile, multi-espace commercial, agents IA autonomes.
+Facturation / devis, portail client, séquences multicanales (LinkedIn, téléphone automatisé), synchronisation bidirectionnelle Google Agenda, thème sombre, 2FA, application mobile, multi-espace commercial, agents IA autonomes (l'assistance IA validée par un humain arrive avec les jalons M6 à M10, section 10).
 
 ### 3.3 Mesure de succès (pour ne pas piloter à l'aveugle)
 Entonnoir par semaine : prospects importés → contactés → réponses → qualifiés → rendez-vous tenus → gagnés. Délai moyen « import → premier contact ». Taux de rebond et de plainte. **Aucun objectif de taux de réponse n'est promis avant d'avoir mesuré sur un premier lot.**
@@ -118,7 +142,7 @@ Entonnoir par semaine : prospects importés → contactés → réponses → qua
 | `SDR` | Prospection et qualification | Ses prospects et le pool non attribué |
 | `CLOSER` | Conversion | Ses rendez-vous et ses opportunités ; lecture des fiches liées |
 | `VIEWER` | Associé, client en lecture | Lecture seule d'un périmètre choisi |
-| `AGENT` *(V2, prévu dès le schéma)* | Compte de service pour un agent IA | Droits explicitement délégués, journalisés, jamais d'envoi sans validation |
+| `AGENT` *(E17)* | Compte de service des exécutions IA planifiées, sans personne derrière | Droits explicitement délégués, journalisés, jamais d'envoi sans validation. Une exécution lancée par quelqu'un agit avec **ses** droits (délégation) |
 
 | Action | OWNER | MANAGER | SDR | CLOSER | VIEWER |
 |---|:-:|:-:|:-:|:-:|:-:|
@@ -135,8 +159,11 @@ Entonnoir par semaine : prospects importés → contactés → réponses → qua
 | Inviter / désactiver un membre | ✓ | — | — | — | — |
 | Exporter les données, supprimer définitivement | ✓ | export seul | — | — | — |
 | Lire le journal d'audit | ✓ | ✓ | — | — | — |
+| Utiliser l'IA : audit, offres, brouillon, maquette, dans son quota *(E17)* | ✓ | ✓ | ✓ | ✓ | lecture des audits |
+| Régler l'IA : modèles par rôle, plafonds *(E17)* | ✓ | — | — | — | — |
+| Gérer les skills et le catalogue d'offres *(E19)* | ✓ | ✓ | — | — | — |
 
-**Règles d'implémentation.** Un module unique `lib/rbac` définit la matrice ; chaque route et chaque action serveur passe par `requirePermission(user, "lead:update", resource)`. Jamais de contrôle uniquement côté interface. Les filtres de portée (« siens ») sont appliqués dans la requête, pas après coup. Le middleware actuel ne protège que le préfixe d'URL : il devient une première barrière, pas la seule.
+**Règles d'implémentation.** Un module unique `lib/rbac` définit la matrice ; chaque route et chaque action serveur passe par `requirePermission(user, "lead:update", resource)`. Jamais de contrôle uniquement côté interface. Les filtres de portée (« siens ») sont appliqués dans la requête, pas après coup. Le middleware actuel ne protège que le préfixe d'URL : il devient une première barrière, pas la seule. Les outils des agents IA passent par les mêmes contrôles, avec les droits de la personne qui a lancé l'exécution (section 10).
 
 ---
 
@@ -167,7 +194,7 @@ Workspace ─┬─ Membership(user, role, active)            ← rôles, invita
 - Dates stockées en UTC, avec le fuseau de l'hôte du rendez-vous.
 - **Dédoublonnage** à l'import : identifiant Extractor stable, puis domaine, puis nom + téléphone. La logique de blocage existe déjà côté Extractor ; le CRM n'a qu'à ne pas créer de second prospect pour la même clé.
 - Un contact `doNotContact` ou présent dans `Suppression` ne peut **pas** être inscrit dans une séquence : refus côté serveur, pas seulement masqué.
-- `Activity.actor` accepte déjà `agent` pour la V2.
+- `Activity.actorKind` accepte déjà `AGENT` : les actions des agents IA sont tracées comme telles. Les tables de la couche agentique (exécutions, validations, audits, offres, maquettes, skills, consommation) sont décrites dans [AGENTS-IA.md](AGENTS-IA.md).
 
 **Migration de l'existant.** Exporter la base (dump) avant toute chose. Les `Appointment` deviennent des `Meeting` (+ `Contact` et `Lead` créés par email), les `User` de rôle `USER` deviennent des `Contact`, les `ADMIN` des membres `OWNER`. Les tables blog, thèmes, commentaires, planifications, réglages IA, partage de documents sont supprimées après export. Je n'ai pas accès à la base de production : le volume de données à migrer est inconnu.
 
@@ -269,12 +296,14 @@ Navigateur ─► CRM (Next, côté serveur uniquement) ─► https://<domaine 
 
 ---
 
-## 10. Intelligence artificielle : System One (Jev), Claude, OpenAI
+## 10. Intelligence artificielle : une agence d'agents, plusieurs modèles
 
-### 10.1 Ce qu'est Jev (d'après la page de présentation de TypeSafe AI)
-Un modèle « System One » **en accès anticipé (liste d'attente)** qui ne génère pas de texte libre : il renvoie **des valeurs typées avec des probabilités calibrées**, parmi un schéma de sortie défini à l'avance (jusqu'à 255 choix). Latence annoncée de 70 à 500 ms, entrée à environ 0,042 $ le million de jetons, sortie gratuite. Contexte, langues (dont le français), compatibilité OpenAI et appel d'outils : **non précisés**. Les comparaisons de vitesse et de coût viennent des propres évaluations de l'éditeur, sans benchmark public. Le prix peut être subventionné. Source : [présentation de TypeSafe](https://typesafe.ai/blog/introducing-system-one-models-and-jev).
+> Mise à jour du 2 novembre 2026 : décisions D13 à D27 (section 1), epics E17 à E27 (section 12). Architecture détaillée : [AGENTS-IA.md](AGENTS-IA.md).
 
-### 10.2 Où ce type de modèle est idéal pour le CRM
+### 10.1 Jev (TypeSafe AI) : désormais disponible
+Jev est un modèle « System One » : il ne génère pas de texte libre, il renvoie **des valeurs typées avec des probabilités calibrées** (choix, score, oui / non) pour des questions posées sur un état partagé. D'abord en liste d'attente, il est **disponible publiquement depuis septembre 2026 via la Vercel AI Gateway** (`typesafe-ai/jev`, versions 1.13 et 1.14) : contexte de 32 000 jetons, 0,042 $ le million de jetons en entrée, sortie gratuite, latence annoncée de 70 à 500 ms, état en texte ou en JSON. L'AI SDK 7 l'appelle par `experimental_decide` (API encore expérimentale), et la passerelle sait **relancer une décision incertaine sur un autre modèle** (bascule conditionnelle). Les chiffres de vitesse et de qualité restent ceux de l'éditeur : notre jeu d'évaluation tranchera (E27). Source : [présentation de TypeSafe](https://typesafe.ai/blog/introducing-system-one-models-and-jev).
+
+### 10.2 Où Jev est idéal dans le CRM
 Tout ce qui est « choisir parmi N possibilités avec une confiance », en grand volume et en temps réel :
 | Usage | Sortie typée |
 |---|---|
@@ -285,17 +314,30 @@ Tout ce qui est « choisir parmi N possibilités avec une confiance », en grand
 | Prochaine meilleure action sur une fiche | choix parmi une liste d'actions |
 | Router un lead entrant vers SDR ou closer | catégorie |
 
-La probabilité calibrée permet un **seuil de décision** : en dessous de la confiance requise, la fiche va à un humain.
+La probabilité calibrée permet un **seuil de décision** : au-dessus, la suggestion s'applique (à l'intérieur du CRM seulement) ; dans la zone d'incertitude, un modèle génératif reprend la question ; en dessous, la fiche va à un humain.
 
 ### 10.3 Où il ne sert pas
-Rédiger un email, résumer un appel, répondre à un prospect, expliquer un score : il faut un modèle génératif (Claude ou GPT). Jev ne les remplace pas, il les complète.
+Rédiger un email, résumer, auditer un site, générer une page : il faut un modèle génératif. Jev complète les autres modèles, il ne les remplace pas.
 
-### 10.4 Ma recommandation
-1. **Ne pas dépendre de Jev en V1.** Accès anticipé, maturité inconnue, français non confirmé. S'inscrire sur la liste d'attente dès maintenant.
-2. **Construire une interface `Classifier` et une interface `Generator`** (un port, plusieurs adaptateurs). En V1 : score par règles + éventuellement un petit modèle Claude / OpenAI pour la classification des réponses, derrière l'interface. Changer de fournisseur ne touche pas le reste du code.
-3. **Constituer un jeu d'évaluation maison** (200 à 500 fiches et réponses étiquetées par vos SDR) : c'est l'actif qui permettra de comparer honnêtement Jev, un modèle Claude Haiku 5.5 / un modèle OpenAI léger, et les règles : précision, calibration, latence, coût, français.
-4. **Génération** (accroches personnalisées, brouillons de réponse, résumés d'appels) avec Claude (Sonnet 5.5 pour la qualité, Haiku 5.5 pour le volume) ou GPT, **toujours validée par un humain en V1**. Le premier message de prospection ne part jamais sans relecture.
-5. **Sécurité des agents** : le contenu des sites et des avis est une entrée non fiable (injection de consignes). Les agents n'ont accès qu'aux outils délégués, jamais à un envoi libre.
+### 10.4 Modèles par rôle (D15)
+| Rôle | Par défaut | Secours | Exemples |
+|---|---|---|---|
+| `decision` | Jev | Claude Haiku 5.5, puis un humain | pertinence d'un import, classement d'une réponse, prochaine action |
+| `fast` | Claude Haiku 5.5 (0,10 $ / 0,50 $ par million de jetons) | GPT-6 Luna, Mistral Small | extraction du contenu d'un site, résumés |
+| `writer` | Claude Sonnet 5.5 (2 $ / 10 $) | GPT-6.1 Sol, Mistral Large 4 | emails, pitch, analyse d'audit et des captures |
+| `designer` | Claude Opus 5.5 (4 $ / 20 $) | Gemini 4 Argon, GPT-6 Astra | Studio Web, audit approfondi à la demande |
+
+Prix relevés sur la passerelle le 2 novembre 2026. Le propriétaire change le modèle d'un rôle dans **Réglages › IA**, sans toucher au code : aucun code métier ne nomme un modèle. Tout changement passe d'abord par le jeu d'évaluation (E27).
+
+### 10.5 Budget (D22)
+Plafond dur de l'espace (moins de 100 € par mois, alertes à 50 % et 80 %), quota quotidien par personne, plafond par exécution (audit ≤ 0,30 €, maquette ≤ 2 €), devis avant tout traitement de plusieurs fiches. Ordre de grandeur, à mesurer : 200 audits (≈ 30 €) + 35 maquettes (≈ 42 €) + 500 brouillons (≈ 10 €) ≈ 82 € par mois.
+
+### 10.6 Règles de sécurité et de conformité
+1. **Délégation** : un agent agit avec les droits de la personne qui l'a lancé, par les mêmes services ; chaque action est journalisée avec `actorKind = AGENT`.
+2. **Validation humaine** de tout ce qui sort du CRM (D18). Le premier message de prospection ne part jamais sans relecture ; le pied de page légal et la désinscription restent du code.
+3. **Contenu non fiable** : le contenu des sites et des avis peut cacher des consignes (injection). Il est extrait par une étape sans outils, en sortie structurée ; les outils à effet externe exigent une validation.
+4. **Faits sourcés** : chaque affirmation sur un prospect cite sa preuve (URL, mesure, capture). Aucun faux avis dans les maquettes.
+5. **RGPD** (D16) : DPA avec les fournisseurs, pas d'entraînement sur nos données, minimisation (pas de nom ni d'email quand c'est inutile), mention dans la politique de confidentialité et dans le registre des traitements (E14).
 
 ---
 
@@ -306,18 +348,22 @@ Rédiger un email, résumer un appel, répondre à un prospect, expliquer un sco
 app/
   (public)/            page.tsx (landing), mentions-legales, politique-de-confidentialite, cgv, cookies, rdv/[closer]
   (auth)/auth/         login, invitation, reset
-  (crm)/app/           layout (shell), today, leads, companies, deals, meetings, mailbox, sequences, reports, settings/*
+  (crm)/app/           layout (shell), today, leads, companies, deals, meetings, mailbox, sequences, reports, agents, studio, settings/* (dont settings/ai)
+  (apercu)/            maquettes du Studio Web, servies sur apercu.cleads.fr (routage par hôte dans proxy.ts, E23)
   api/v1/              REST du CRM (clé de service pour agents, plus tard)
+  api/ai/chat          copilote en streaming (E24)
   robots.ts · sitemap.ts · llms.txt/route.ts
 components/
   ui/                  primitives shadcn ré-habillées (jetons)
   crm/                 shell, data-table, kanban, timeline, filters, empty-state, command-palette, page-header…
 features/<domaine>/    components/ · actions.ts (serveur) · service.ts (règles métier) · schemas.ts (zod) · queries.ts
-lib/                   rbac · audit · extractor-client · mail · ai (Classifier/Generator) · time
-worker/                Node + pg-boss (envois, relances, lecture des réponses, rappels)
+features/ai/           agents · outils · skills · exécutions · validations (E17, E19) ; features/audit · offers · studio (E20, E21, E23)
+lib/                   rbac · audit · extractor-client · mail · ai (passerelle, modèles par rôle, coûts, budgets, décisions Jev) · time
+worker/                Node + pg-boss sur le VPS : agents IA d'abord (E18), puis envois, relances, lecture des réponses, rappels
+evals/                 jeux d'évaluation des agents (E27)
 styles/tokens.css      jetons partagés landing + CRM
 ```
-**Règle d'or** : toute modification métier passe par `features/*/service.ts`. L'interface (actions serveur), l'API REST et plus tard un serveur MCP appellent les **mêmes** services, avec les mêmes contrôles de droits et le même journal. C'est ce qui rend le CRM « prêt pour les agents » sans rien construire de plus aujourd'hui.
+**Règle d'or** : toute modification métier passe par `features/*/service.ts`. L'interface (actions serveur), l'API REST et plus tard un serveur MCP appellent les **mêmes** services, avec les mêmes contrôles de droits et le même journal. C'est ce qui rend le CRM « prêt pour les agents » : les outils des agents IA (E17 à E25) appellent ces mêmes services, avec les droits de la personne qui lance l'exécution.
 
 ### 11.2 Jetons de design (issus de la home-v2)
 | Jeton | Valeur | Usage CRM |
@@ -341,6 +387,9 @@ styles/tokens.css      jetons partagés landing + CRM
 | Palette de commandes ⌘K | `cmdk` | — |
 | État dans l'URL (filtres, vues) | `nuqs` | état local perdu au rechargement |
 | Planification / files | `pg-boss` | cron Netlify |
+| IA multi-modèles | AI SDK 7 (`ai`) + Vercel AI Gateway | LangChain / LangGraph, Mastra (D13) |
+| Client MCP (Extractor) | `@ai-sdk/mcp` | un appel REST écrit à la main par outil |
+| Captures et rendu des maquettes | Playwright, dans le worker | service de capture externe |
 | Tests | Vitest + Testing Library, Playwright pour 5 parcours critiques | aucun test aujourd'hui |
 | Erreurs | Sentry | `console.log` |
 
@@ -463,7 +512,8 @@ Le formulaire d'audit de la landing crée un prospect (source `INBOUND`), avec c
 Section 9 : redirections, `robots.ts`, `sitemap.ts`, `llms.txt`, JSON-LD, métadonnées, `noindex` des zones privées, rendu serveur vérifié.
 - **Critères** : sitemap ne contient que des URL en 200 ; données structurées valides dans l'outil de test de Google ; aucune ancienne URL en 404.
 
-### E13 — Fondations « agents » · **M**
+### E13 — Fondations « agents » · **M** · *absorbée par E17, E18 et E27 (2 novembre 2026)*
+> Remplacée par la couche agentique : rôle `AGENT`, `actorKind`, file de validation et jeu d'évaluation sont repris par E17, E18 et E27. `api/v1` et un serveur MCP du CRM restent possibles plus tard ; ils appelleront les mêmes services.
 `api/v1` avec clés de service à portée limitée, rôle `AGENT` dans le schéma, `actor` dans les activités et le journal, interfaces `Classifier` / `Generator`, jeu d'évaluation, file de validation humaine (structure). **Aucun agent autonome en V1.**
 - **Critères** : une action réalisée par clé de service est tracée comme telle ; un envoi par un agent exige une validation.
 
@@ -492,8 +542,87 @@ Seconde vue du CRM, isométrique et interactive, à côté de la vue 2D qui rest
 - **Personnages** générés avec Meshy depuis l'illustration d'équipe de cleads.fr (squelette, animations), compressés ; personnages construits en code en secours.
 - **Performance** : géométries et matériaux partagés, instanciation, ombres limitées, résolution adaptative, rendu à la demande quand le mouvement est réduit, arrêt quand l'onglet est caché.
 - **Accessibilité** : ce que montre la scène est aussi dans le HUD (DOM), espaces au clavier (1 à 8, ← →, Échap), annonces vocales, `prefers-reduced-motion`, repli vers la 2D sans WebGL.
-- **Évolutif** : les espaces sont une liste (`features/hq/zones.ts`) ; un futur espace « Agents IA » (E13) = une entrée et une composition, sans toucher au reste. Aucun agent IA en V1.
+- **Évolutif** : les espaces sont une liste (`features/hq/zones.ts`) ; un espace de plus = une entrée et une composition, sans toucher au reste ; « Agents IA » et « Studio Web » arrivent ainsi en E26. Aucun agent IA dans cette version.
 - **Critères** : aucune régression de la vue 2D (tests et parcours dans le navigateur) ; aucun chiffre sans définition ; fluide sur un portable récent.
+
+### Couche agentique IA (E17 à E27, décidée le 2 novembre 2026)
+Décisions D13 à D27 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). Rien n'est encore implémenté.
+
+### E17 — Socle IA · **M** *(absorbe E13)*
+Tout ce qui rend l'IA sûre et pilotable, avant le premier agent métier.
+- `lib/ai/` : passerelle (clé serveur `AI_GATEWAY_API_KEY`), registre des modèles par rôle avec secours (`decision`, `fast`, `writer`, `designer`), prix lus sur la passerelle et coût de chaque appel, plafonds et quotas avec réservation verrouillée, décisions Jev avec seuils, encadrement du contenu non fiable.
+- `features/ai/` : exécutions (`AgentRun`, `AgentStep`), validations (`AgentApproval`), registres `defineTool` et `defineAgent` (droit requis, politique de validation, limites).
+- Droits `ai:use`, `ai:read`, `ai:manage` ; compte de service `AGENT` pour les exécutions planifiées ; délégation des droits pour les autres.
+- Écran **Réglages › IA** : modèles par rôle, plafonds, consommation du mois par personne et par agent.
+- Tests avec modèles simulés (`ai/test`), aucun appel réel.
+- **Critères** : aucun appel sans exécution tracée (qui, quel agent, quel modèle, jetons, coût) ; plafond jamais dépassé, même avec 10 exécutions simultanées ; un outil refuse ce que la personne n'a pas le droit de faire.
+
+### E18 — Worker des agents sur le VPS · **M**
+Réalise D10 pour les agents : un worker Node avec `pg-boss`, en Docker à côté de l'Extractor.
+- Files `ai.audit`, `ai.offers`, `ai.draft`, `ai.studio`, `ai.maintenance` : reprise sur incident, priorités, une exécution à la fois par fiche et par type, concurrence bornée par le budget.
+- Mise en file légère depuis Netlify ; progression publiée sur Pusher (canal privé), interrogation en secours ; reprise d'une exécution après une validation humaine.
+- Playwright (Chromium) dans l'image pour les captures et les maquettes ; client MCP de l'Extractor sur le réseau local (clé `crm`, outils en lecture seulement).
+- Déploiement (image, Compose dans `/opt/cleads`), supervision (santé, alertes au propriétaire), variables d'environnement documentées.
+- **Préalable** : savoir où est la base de production et autoriser le VPS à s'y connecter.
+- **Critères** : un redémarrage du worker ne perd ni ne double aucune exécution ; une validation reprend l'exécution là où elle s'était arrêtée.
+
+### E19 — Agents, skills et catalogue d'offres · **M**
+- Définitions des huit agents (rôle d'expert, rôle de modèle, outils, skills, validations, limites) dans le code, versionnées et testées ; surcouche éditable en base (`AgentDefinition` : consignes ajoutées, modèle, skills actifs, limites).
+- **Skills** au format SKILL.md (agentskills.io) : nom, description de quand s'en servir, contenu, fichiers annexes, versions. Ils sont attachés « toujours » ou « à la demande » (l'agent lit le catalogue et charge un skill par `read_skill`), importables et exportables, avec un écran d'édition et un test sur une fiche.
+- **Catalogue d'offres** (`Offer`) : V1 rédigée d'après les offres de Cleads et les formules de la landing, validée par le propriétaire ; signaux déclencheurs, livrables, fourchette de prix, angle, objections.
+- Module `/app/agents` : exécutions, file « À valider », skills, offres, consommation.
+- **Critères** : un agent ne recommande qu'une offre active ; un skill modifié crée une version et l'ancienne reste lisible.
+
+### E20 — Audit et enrichissement des prospects · **L**
+L'Auditeur digital produit une fiche enrichie et sourcée, à la demande, depuis la fiche (2D et 3D).
+- Site (5 pages au plus, `robots.txt` respecté, adresses IP publiques seulement) : HTTPS, redirections, poids, balises, données structurées, `sitemap.xml`, `llms.txt`, mobile, signes d'un site daté, CMS, balises d'analyse et de publicité.
+- PageSpeed Insights (clé gratuite) sur mobile et ordinateur ; captures analysées par un modèle de vision (modernité, clarté, appels à l'action, freins).
+- Présence : réseaux (liens du site et Extractor), fiche Google (note, avis, catégories, photos, horaires), cohérence nom-adresse-téléphone ; GEO sur ce que le site expose.
+- Dirigeants (annuaire des entreprises) proposés comme contacts, avec source et base légale ; **aucune adresse email devinée**.
+- `ProspectAudit` : sous-scores (technique, vitesse, mobile, SEO local, GEO, conversion, présence, image) avec preuves ; forces, faiblesses, frictions, opportunités ; résumé en 3 points. Une raison « IA » s'ajoute au score de la fiche, et l'audit est réutilisé 30 jours par domaine.
+- **Critères** : chaque constat cite sa preuve ; un site injoignable donne un audit partiel explicite, pas une erreur ; coût moyen mesuré sous 0,30 €.
+
+### E21 — Offres et pitch · **M**
+- Signaux de l'audit → offres candidates (règles), puis le Conseiller offres classe, argumente avec les preuves et compose un pack.
+- Script d'appel de 15 minutes, objections et réponses, angle d'email ; onglet « Offres suggérées » sur la fiche.
+- Acceptation ou refus par la personne, conservés pour mesurer la pertinence (E27).
+- **Critères** : aucune offre sans au moins une preuve d'audit ; le closer voit en un écran pourquoi cette offre et quoi dire.
+
+### E22 — Rédaction et réponses · **M**
+- **Brouillon IA** dans la fenêtre d'email et dans les séquences : court, personnalisé, une seule proposition (15 minutes), uniquement des faits de l'audit. Le pied de page et la désinscription sont ajoutés par le code, et les modifications de la personne sont conservées.
+- **Classement des réponses** par Jev (`ReplyClass` et urgence, avec probabilité) : suggestion confirmée en un clic, « À classer » sous le seuil. C'est le classement assisté reporté en E9b.
+- Brouillon de réponse aux réponses intéressées.
+- **Critères** : aucun envoi sans relecture ; aucun statut changé sans confirmation sous le seuil.
+
+### E23 — Studio Web · **L**
+Le Designer génère une landing de démonstration en **code libre** à partir du site du prospect, de son audit et de sa charte, pour que le closer puisse la montrer.
+- Collecte (textes, images, logo, couleurs, typographies), brief relisible, puis page HTML + Tailwind générée, compilée et nettoyée (aucun script, aucun formulaire externe, appels à l'action en `tel:` ou `mailto:`).
+- Boucle de qualité : rendu Playwright sur ordinateur et mobile, critique visuelle sur une grille, axe-core, Lighthouse ; une ou deux corrections. Les scores « votre site → maquette » servent au pitch.
+- Aperçu `https://apercu.cleads.fr/<jeton>` (routage par hôte dans `proxy.ts`) : `Content-Security-Policy: sandbox`, `noindex`, bandeau « maquette non contractuelle », page d'expiration après 30 jours, purge à 90 jours ou à la suppression de la fiche.
+- Versions et « modifier par instruction » ; visite du lien enregistrée et closer notifié (D25) ; module `/app/studio` et bouton « Générer une landing » sur la fiche.
+- **Préalable** : enregistrement DNS de `apercu.cleads.fr` vers Netlify.
+- **Critères** : aucune page générée n'exécute de script ni ne lit de cookie ; aucun faux avis ni fait inventé ; coût moyen mesuré sous 2 € par maquette.
+
+### E24 — Copilote 2D et 3D · **M**
+Panneau ⌘J contextuel (page, fiche sélectionnée), en streaming : questions sur les données du CRM avec les droits de la personne, délégation aux agents spécialisés, actions proposées puis validées (`toolApproval`). Les tâches longues partent dans le worker et s'affichent en carte d'exécution. Les conversations sont conservées (`AiConversation`, `AiMessage`). Dans la 3D, les modules s'ouvrent dans les fenêtres existantes.
+- **Préalable** : mesurer la durée de streaming réellement permise par les fonctions Netlify.
+- **Critères** : le copilote ne voit que ce que la personne voit ; aucune action sans validation.
+
+### E25 — Stratège et sourcing · **M**
+- Le Stratège croise le catalogue d'offres, les résultats des campagnes et la taxonomie de l'Extractor (MCP `list_sectors`) : secteurs à cibler, douleurs par métier, offre phare, angle, zones.
+- Il propose une campagne brouillon (E15) et une recherche Extractor ; le lancement passe par le service CRM après validation (D27).
+- Jev trie les fiches importées selon leur pertinence pour la campagne et l'offre.
+- **Critères** : aucun job Extractor lancé sans validation ni hors du CRM ; chaque proposition de secteur est argumentée.
+
+### E26 — QG 3D : espaces « Agents IA » et « Studio Web » · **M**
+Deux entrées dans `features/hq/zones.ts` (touches 9 et 0), plateforme agrandie, compositions dans `scene/zones.tsx`. On y voit les agents à leur poste avec leur activité en direct, la file « À valider » et les maquettes récentes ; les modules s'ouvrent dans les fenêtres 3D. Les personnages des agents sont générés avec Meshy **après confirmation du coût**.
+- **Critères** : aucune régression de la 3D (60 images/s sur la machine de référence) ni de la 2D.
+
+### E27 — Qualité de l'IA · **S**, puis continu *(démarre avec M7)*
+- Jeux d'évaluation dans `evals/` : sites figés (sans réseau), réponses étiquetées par les SDR (objectif 200 à 500), juge LLM sur une grille. Ils se lancent à la demande, avec le coût affiché.
+- Tableau de bord dans `/app/agents` : coût par agent, taux d'acceptation des suggestions, éditions des brouillons, erreurs.
+- Non-régression obligatoire avant de changer le modèle d'un rôle ; comparatif Jev / Haiku / règles sur nos données.
+- **Critères** : chaque changement de modèle s'appuie sur une évaluation chiffrée.
 
 ### Ordre conseillé
 | Jalon | Epics | Résultat visible |
@@ -504,9 +633,14 @@ Seconde vue du CRM, isométrique et interactive, à côté de la vue 2D qui rest
 | **M3 Conversion** | E6, E8, E11, E10 | Qualifier, planifier, suivre l'entonnoir |
 | **M4 Outreach** | E9a → E9c | Envoyer et relancer avec garde-fous |
 | **M4b Pilotage visuel** | E15, E16 | Campagnes mesurées, QG en 3D |
-| **M5 Lancement** | E13, E14 | Prêt pour l'équipe et pour les agents |
+| **M5 Lancement** | E14 | Prêt pour l'équipe (E13 absorbée par M6) |
+| **M6 Socle IA** | E17, E18 | Modèles interchangeables, coûts plafonnés, exécutions longues tracées |
+| **M7 Assistance commerciale** | E19, E20, E21, E22 (+ E27) | Fiche auditée, offres argumentées, brouillons à relire, réponses classées |
+| **M8 Studio** | E23 | Une landing de démonstration à montrer au prospect |
+| **M9 Copilote et sourcing** | E24, E25 | Un assistant partout, des campagnes proposées par l'IA |
+| **M10 QG IA** | E26 | L'agence IA visible dans le QG 3D |
 
-E1 peut démarrer en parallèle d'E0 ; E5 peut commencer dès que E3 fixe le modèle.
+E1 peut démarrer en parallèle d'E0 ; E5 peut commencer dès que E3 fixe le modèle. M6 ne dépend pas de M5, mais mieux vaut disposer des sauvegardes et de la supervision d'E14 avant d'ouvrir les agents à toute l'équipe.
 
 ---
 
@@ -520,7 +654,14 @@ E1 peut démarrer en parallèle d'E0 ; E5 peut commencer dès que E3 fixe le mod
 | Chiffres d'entonnoir faussés (définitions floues) | Moyenne | Fiche de définition par indicateur (E10) |
 | Fuite de la clé Extractor | Haute | Appels serveur uniquement, rotation, journal |
 | Rendez-vous : erreurs de fuseau | Moyenne | Fonction pure testée, UTC partout |
-| Dépendance à un modèle IA immature (Jev) | Moyenne | Interface + jeu d'évaluation, pas de dépendance en V1 |
+| Dépendance à un modèle ou à un fournisseur IA | Moyenne | Registre de modèles par rôle, secours automatiques de la passerelle, évaluation avant tout changement (E27) |
+| Dépassement du budget IA | Moyenne | Plafond dur avec réservation verrouillée, quotas par personne, devis avant tout traitement en masse (D22) |
+| Injection de consignes depuis un site audité | Haute | Extraction sans outils en sortie structurée, validation de toute action externe, liste blanche des outils |
+| Affirmation fausse dans un pitch ou une maquette | Haute | Faits sourcés obligatoires, preuves affichées, relecture humaine, aucun faux avis |
+| Transfert de données hors UE | Moyenne | DPA, minimisation, information dans la politique de confidentialité, registre des traitements (D16) |
+| Panne de la passerelle ou d'un fournisseur | Moyenne | Secours entre fournisseurs ; l'IA reste une assistance : le CRM fonctionne sans elle |
+| Maquette jugée trompeuse, ou contenu du prospect réutilisé | Moyenne | Lien privé non indexé, mention « maquette non contractuelle », expiration et purge, contenu du prospect utilisé seulement pour sa propre maquette |
+| Qualité d'un modèle qui change à une mise à jour | Moyenne | Versions de modèles fixées, jeux d'évaluation, tableau de bord qualité (E27) |
 | Google bloque l'Extractor à grande échelle | Moyenne | Santé affichée dans le CRM, cadence modérée ; tolérance sur plusieurs jours **non mesurée** |
 | Perte de données lors de la migration | Moyenne | Dump, essai sur copie, contrôles avant / après |
 
@@ -533,3 +674,11 @@ E1 peut démarrer en parallèle d'E0 ; E5 peut commencer dès que E3 fixe le mod
 4. Combien de personnes dans l'équipe dès le premier mois, et quels rôles ?
 5. Quel nom de domaine secondaire pour le démarchage ?
 6. Les décisions D1 à D12 : acceptez-vous mes recommandations ?
+
+**Pour la couche agentique (E17 à E27)**
+7. *(E18)* Où est hébergée la base de production (Neon, Supabase, le VPS, autre) ? Le worker du VPS doit pouvoir s'y connecter.
+8. *(E17, E20)* Créer la clé Vercel AI Gateway (compte Vercel) et la clé gratuite Google PageSpeed Insights.
+9. *(E23)* Ajouter l'enregistrement DNS de `apercu.cleads.fr` vers Netlify.
+10. *(E19)* Valider les prix, livrables et cas d'usage du catalogue d'offres V1 ([AGENTS-IA.md](AGENTS-IA.md), section 14).
+11. *(E26)* Confirmer les crédits Meshy pour les personnages des agents, le moment venu.
+12. Accepter les DPA des fournisseurs IA, puis compléter la politique de confidentialité et le registre des traitements.

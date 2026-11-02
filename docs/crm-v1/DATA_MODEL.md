@@ -42,7 +42,7 @@ Les tables d'envoi d'emails arrivent avec leur jalon : `Mailbox`, `EmailTemplate
 - **Espace de travail** : chaque enregistrement porte `workspaceId`, toute requête s'y limite (`CurrentUser.workspaceId`). La V1 n'en a qu'un (`ws_default`). Pas de table `Membership` tant qu'une personne n'a pas besoin d'appartenir à deux espaces : le rôle reste sur `User.role`.
 - **Dates** en UTC. Un rendez-vous garde son fuseau (`timezone`, IANA). Les disponibilités sont en minutes depuis minuit, jour `0` = dimanche (comme `Date.getDay`) ; un jour avec pause = deux lignes.
 - **Origine des données** (`source`, `collectedFrom`, `collectedAt`, `legalBasis` sur le contact) : de quoi répondre à une demande d'accès ou d'opposition (voir `COMPLIANCE.md` de l'Extractor).
-- **Acteur** (`actorKind`) : `USER`, `SYSTEM`, et `AGENT` prévu pour les agents IA.
+- **Acteur** (`actorKind`) : `USER`, `SYSTEM`, et `AGENT` pour les agents IA (à partir d'E17). Les tables de la couche agentique sont décrites dans [AGENTS-IA.md](AGENTS-IA.md).
 
 ## Migrations
 
