@@ -38,7 +38,7 @@ La file est la **table `AgentRun`** elle-même :
 - Si le worker s'arrête entre les deux, l'action n'est jamais rejouée : l'exécution échoue avec le message « a peut-être déjà été faite, vérifiez avant de la relancer ».
 - Une approbation remet l'exécution en tête de file. L'agent reprend avec le résultat de l'action, qu'il ne redemande pas.
 
-**Agents.** Chaque epic métier (E20 à E25) enregistre le code de son agent (`registerAgentHandler`, dans `worker/main.ts`), et le worker ne prend que les agents qu'il connaît. Sont branchés : l'Auditeur digital (`auditor`, E20) et le Conseiller offres (`offers`, E21). Le champ `agents` de `/healthz` les liste.
+**Agents.** Chaque epic métier (E20 à E25) enregistre le code de son agent (`registerAgentHandler`, dans `worker/main.ts`), et le worker ne prend que les agents qu'il connaît. Sont branchés : l'Auditeur digital (`auditor`, E20), le Conseiller offres (`offers`, E21), le Rédacteur outreach (`writer`) et l'Analyste réponses (`replies`, E22). Le champ `agents` de `/healthz` les liste.
 
 **Tâches** (E19). Une tâche est un travail que n'importe quel agent rédacteur peut faire, reconnu au champ `kind` de l'entrée de l'exécution. Elle est enregistrée avec `registerTaskHandler`. La seule tâche pour l'instant est le **test d'un skill sur une fiche** (`skill_test`, `features/ai/skill-test.ts`).
 - Le worker prend une exécution si c'est un agent qu'il connaît, ou si c'est une tâche qu'il connaît, pour un agent qui a une place libre.
@@ -50,7 +50,8 @@ La file est la **table `AgentRun`** elle-même :
 - exécutions interrompues pendant une requête du CRM ;
 - expirations des exécutions et des validations ;
 - nettoyage des workers disparus ;
-- alerte aux propriétaires au-delà de 3 échecs en 15 minutes, une fois par heure au plus.
+- alerte aux propriétaires au-delà de 3 échecs en 15 minutes, une fois par heure au plus ;
+- rattrapage du classement des réponses (E22) : les réponses d'une personne restées sans classement ni suggestion depuis plus de 2 minutes, sur 7 jours, sont remises en file, 10 fiches au plus par passage. Une fiche qui vient d'avoir une exécution attend 30 minutes.
 
 ## 3. Temps réel et Extractor
 
@@ -118,9 +119,10 @@ La file est la **table `AgentRun`** elle-même :
 | `EXTRACTOR_API_KEY` | clé `crm` de l'Extractor, copiée sur le serveur |
 | `NEXT_PUBLIC_PUSHER_APP_ID`, `NEXT_PUBLIC_PUSHER_KEY`, `NEXT_PUBLIC_PUSHER_CLUSTER`, `PUSHER_SECRET` | temps réel ; facultatives (sinon les pages interrogent) |
 | `WORKER_CONCURRENCY` | exécutions simultanées, 3 par défaut |
+| `NEXT_PUBLIC_APP_URL` | adresse publique du CRM, pour les liens que le worker écrit (lien de réservation d'une réponse, E22). Elle est fixée dans `compose.yml` (`https://cleads.fr` par défaut) et peut être changée par `APP_URL` dans le `.env` du serveur. |
 
 ## 7. Pas encore
 
 - **Déploiement** : il se fait par script depuis un poste. L'automatisation par GitHub Actions viendra avec E14.
 - **Playwright** : les audits (E20) n'en ont pas besoin, les captures viennent de PageSpeed Insights. Le navigateur arrivera avec le Studio (E23), pour rendre nos propres maquettes.
-- **Agents métier** : l'Auditeur (E20) et le Conseiller offres (E21) sont branchés ; le Rédacteur, l'Analyste réponses, le Designer, le Stratège et l'Analyste qualification arrivent avec E22 à E25.
+- **Agents métier** : l'Auditeur (E20), le Conseiller offres (E21), le Rédacteur et l'Analyste réponses (E22) sont branchés ; le Designer, le Stratège et l'Analyste qualification arrivent avec E23 à E25.

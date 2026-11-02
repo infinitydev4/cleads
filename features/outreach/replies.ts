@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { audit } from "@/lib/audit"
 import type { CurrentUser } from "@/lib/auth/guard"
 import { LeadError } from "@/features/leads/errors"
+import type { TriageView } from "@/features/reply-triage/labels"
 import { REPLY_LABELS } from "./labels"
 import { mayUseAnyMailbox } from "./mailboxes"
 import { stopForEmail } from "./stops"
@@ -22,6 +23,8 @@ export interface ReplyView {
   /** The message we sent that this answers. */
   sentSubject: string | null
   receivedAt: string
+  /** E22: how Jev would file it, until a person does. */
+  triage: TriageView | null
 }
 
 /** Owners and managers see the team's replies; everyone else those to the messages they sent. */
@@ -39,7 +42,10 @@ export async function listReplies(user: CurrentUser, opts: { before?: string; ta
   const [rows, unread] = await Promise.all([
     prisma.emailMessage.findMany({
       where: { ...where, ...(before && !Number.isNaN(before.getTime()) ? { createdAt: { lt: before } } : {}) },
-      include: { lead: { select: { company: { select: { name: true } }, contact: { select: { name: true } } } } },
+      include: {
+        lead: { select: { company: { select: { name: true } }, contact: { select: { name: true } } } },
+        triage: { select: { replyClass: true, classConfidence: true, outcome: true, urgency: true, needsAction: true } },
+      },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: take + 1,
     }),
@@ -61,6 +67,7 @@ export async function listReplies(user: CurrentUser, opts: { before?: string; ta
       leadName: m.lead?.company?.name ?? m.lead?.contact?.name ?? null,
       sentSubject: m.repliesToId ? subjectOf.get(m.repliesToId) ?? null : null,
       receivedAt: (m.sentAt ?? m.createdAt).toISOString(),
+      triage: m.triage && { replyClass: m.triage.replyClass, confidence: m.triage.classConfidence, outcome: m.triage.outcome, urgency: m.triage.urgency, needsAction: m.triage.needsAction },
     })),
     hasMore: rows.length > take,
     unread,
@@ -68,6 +75,13 @@ export async function listReplies(user: CurrentUser, opts: { before?: string; ta
 }
 
 export const unreadReplies = (user: CurrentUser) => prisma.emailMessage.count({ where: { ...visible(user), readAt: null } })
+
+/** A reply the person may read and answer: the team's for owners and managers, the answers to their own mail otherwise. */
+export async function visibleReply(user: CurrentUser, id: string) {
+  const reply = await prisma.emailMessage.findFirst({ where: { id, ...visible(user) } })
+  if (!reply) throw new LeadError("not_found", "Réponse introuvable.", 404)
+  return reply
+}
 
 /**
  * Files a reply and/or marks it read. `STOP` ("ne m'écrivez plus") also puts the sender on the exclusion list, like a

@@ -1,4 +1,4 @@
-import { experimental_decide, generateText, NoObjectGeneratedError, Output, type Experimental_DecisionModel, type Experimental_DecisionQuestion, type Experimental_DecisionState, type LanguageModel } from "ai"
+import { experimental_decide, Experimental_DecisionRefusalError, generateText, InvalidResponseDataError, NoObjectGeneratedError, Output, type Experimental_DecisionModel, type Experimental_DecisionQuestion, type Experimental_DecisionState, type LanguageModel } from "ai"
 import type { z } from "zod"
 import { LeadError } from "@/features/leads/errors"
 import { getAiSettings } from "@/lib/ai/budget"
@@ -57,6 +57,12 @@ export function modelCallError(error: unknown, model: string, role: AiRole): Lea
     }
     return new LeadError("unavailable", "L’IA a rendu une réponse illisible : l’exécution sera relancée.", 503)
   }
+  // A decision model may decline a question: a person decides, and asking again would get the same answer.
+  if (Experimental_DecisionRefusalError.isInstance(error)) {
+    return new LeadError("invalid", "Le modèle de décision a refusé de répondre : une personne décidera.", 400, { refusal: true, questions: error.questionIds })
+  }
+  // A decision model answered outside its contract (an incomplete probability distribution): another try may do better.
+  if (InvalidResponseDataError.isInstance(error)) return new LeadError("unavailable", "L’IA a rendu une réponse invalide : l’exécution sera relancée.", 503)
   const e = rootError(error)
   const text = e?.message ?? ""
   const label = modelLabel(model)
@@ -167,7 +173,15 @@ export interface DecisionView {
 
 export async function decideForRun<Q extends Record<string, Experimental_DecisionQuestion>>(
   ctx: RunContext,
-  opts: { name: string; state: Experimental_DecisionState; questions: Q; thresholds?: Thresholds; abortSignal?: AbortSignal },
+  opts: {
+    name: string
+    state: Experimental_DecisionState
+    questions: Q
+    thresholds?: Thresholds
+    abortSignal?: AbortSignal
+    /** What the step keeps of the state: by default the state itself; a summary when it holds personal data (a reply). */
+    stateForLog?: string
+  },
   deps: ModelDeps = {}
 ): Promise<{ answers: Record<keyof Q & string, DecisionView>; model: string; costMicros: number }> {
   if (!deps.decisionModel && !aiConfigured()) throw notConfigured()
@@ -202,7 +216,7 @@ export async function decideForRun<Q extends Record<string, Experimental_Decisio
       model: served,
       usage: tokenUsage({ inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens }),
       durationMs: Date.now() - started,
-      input: { questions: Object.keys(opts.questions), state: opts.state },
+      input: { questions: Object.keys(opts.questions), state: opts.stateForLog ?? opts.state },
       output: answers,
       generationId: generationIdOf(result.providerMetadata as Record<string, Record<string, unknown>> | undefined),
       prices,

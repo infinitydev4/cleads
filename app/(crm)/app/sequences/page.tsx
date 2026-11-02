@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/crm/page-header"
 import { requirePagePermission } from "@/lib/auth/guard"
+import { can } from "@/lib/rbac"
 import { listSequences } from "@/features/outreach/sequences"
 import { SequencesView } from "./sequences-view"
 
@@ -16,7 +17,7 @@ export default async function SequencesPage() {
         description="Un premier message puis jusqu’à trois relances, envoyées toutes seules. On inscrit des prospects depuis la liste des Prospects."
         breadcrumbs={[{ label: "CRM", href: "/app" }, { label: "Séquences" }]}
       />
-      <SequencesView initial={sequences} />
+      <SequencesView initial={sequences} canUseAi={can(user.role, "ai:use")} />
     </>
   )
 }

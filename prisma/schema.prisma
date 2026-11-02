@@ -599,6 +599,8 @@ model Workspace {
   prospectAudits         ProspectAudit[]
   offerPitches           OfferPitch[]
   offerRecommendations   OfferRecommendation[]
+  emailDrafts            EmailDraft[]
+  replyTriages           ReplyTriage[]
 }
 
 enum LeadSource {
@@ -821,6 +823,7 @@ model Lead {
   agentRuns           AgentRun[]
   audits              ProspectAudit[]
   offerPitches        OfferPitch[]
+  emailDrafts         EmailDraft[]
 
   @@unique([workspaceId, companyId])
   @@index([workspaceId, status])
@@ -1256,6 +1259,10 @@ model EmailMessage {
   /// OUTBOUND: when the server accepted it; INBOUND: the message's own date.
   sentAt         DateTime?
   createdAt      DateTime            @default(now())
+  /// E22: drafts answering this reply, the draft this message was sent from, and the suggested filing.
+  draftsReplying EmailDraft[]        @relation("DraftReplyTo")
+  fromDraft      EmailDraft?         @relation("DraftSent")
+  triage         ReplyTriage?
 
   @@index([mailboxId, createdAt])
   @@index([workspaceId, direction, createdAt])
@@ -1526,6 +1533,8 @@ model AgentRun {
   approvals AgentApproval[]
   audit     ProspectAudit?
   pitch     OfferPitch?
+  draft     EmailDraft?
+  triages   ReplyTriage[]
 
   @@index([workspaceId, createdAt])
   @@index([workspaceId, status])
@@ -1810,6 +1819,7 @@ model ProspectAudit {
   createdAt   DateTime               @default(now())
   captures    ProspectAuditCapture[]
   pitches     OfferPitch[]
+  drafts      EmailDraft[]
 
   @@index([workspaceId, domain, createdAt])
   @@index([leadId, createdAt])
@@ -1931,4 +1941,87 @@ model OfferRecommendation {
   @@unique([pitchId, rank])
   @@index([workspaceId, status])
   @@index([offerId, status])
+}
+
+// E22: drafting and replies (docs/crm-v1/AGENTS-IA.md §15).
+
+enum DraftKind {
+  /// The first email to a fiche, from its audit.
+  FIRST_EMAIL
+  /// An answer to a reply received.
+  REPLY
+  /// A step of a sequence: a template with variables, for many fiches.
+  SEQUENCE_STEP
+}
+
+/// A draft written by the Rédacteur outreach: never sent by itself, always read and edited by a person first.
+model EmailDraft {
+  id          String         @id @default(cuid())
+  workspaceId String
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  kind        DraftKind
+  leadId      String?
+  lead        Lead?          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  /// REPLY: the message received that it answers.
+  replyToId   String?
+  replyTo     EmailMessage?  @relation("DraftReplyTo", fields: [replyToId], references: [id], onDelete: Cascade)
+  /// The audit its facts come from.
+  auditId     String?
+  audit       ProspectAudit? @relation(fields: [auditId], references: [id], onDelete: SetNull)
+  runId       String?        @unique
+  run         AgentRun?      @relation(fields: [runId], references: [id], onDelete: SetNull)
+  subject     String
+  body        String
+  /// The facts it relies on, each with the audit evidence it cites, copied: [{ text, evidence: [{ id, kind, label, value, url }] }].
+  facts       Json           @default("[]")
+  /// What was left out or must be checked, and why.
+  notes       String[]       @default([])
+  model       String?
+  costMicros  Int            @default(0)
+  createdById String?
+  createdAt   DateTime       @default(now())
+  /// The message sent from it, and how much the person changed it: 0 = sent as written, 1 = rewritten.
+  sentEmailId String?        @unique
+  sentEmail   EmailMessage?  @relation("DraftSent", fields: [sentEmailId], references: [id], onDelete: SetNull)
+  editRatio   Float?
+  sentAt      DateTime?
+
+  @@index([workspaceId, createdAt])
+  @@index([leadId, createdAt])
+}
+
+enum ReplyUrgency {
+  HIGH
+  NORMAL
+  LOW
+}
+
+/// Where a suggestion stands against the thresholds (lib/ai/decide.ts): confirmed in one click, or left to a person.
+enum TriageOutcome {
+  AUTO
+  REVIEW
+  HUMAN
+}
+
+/// How the Analyste réponses (Jev) would file a reply, with its probabilities. A person confirms or files it otherwise.
+model ReplyTriage {
+  id                String        @id @default(cuid())
+  workspaceId       String
+  workspace         Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  emailId           String        @unique
+  email             EmailMessage  @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  runId             String?
+  run               AgentRun?     @relation(fields: [runId], references: [id], onDelete: SetNull)
+  /// Null when the model gave no answer.
+  replyClass        ReplyClass?
+  classConfidence   Float?
+  outcome           TriageOutcome
+  urgency           ReplyUrgency?
+  urgencyConfidence Float?
+  needsAction       Boolean?
+  actionConfidence  Float?
+  model             String
+  createdAt         DateTime      @default(now())
+
+  @@index([workspaceId, createdAt])
 }

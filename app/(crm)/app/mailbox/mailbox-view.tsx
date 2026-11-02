@@ -4,7 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
 import type { ReplyClass } from "@prisma/client"
-import { Archive, ChevronDown, FileText, Pencil, Plus } from "lucide-react"
+import { Archive, Check, ChevronDown, FileText, Pencil, Plus, Reply, Sparkles } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -24,7 +24,9 @@ import { REPLY_LABELS } from "@/features/outreach/labels"
 import type { ReplyView } from "@/features/outreach/replies"
 import type { TemplateView } from "@/features/outreach/templates"
 import { VARIABLES, templateErrors } from "@/features/outreach/template"
+import { URGENCY_LABELS, isOffered, percent } from "@/features/reply-triage/labels"
 import { api } from "../leads/api"
+import { AnswerDialog } from "./answer-dialog"
 
 export const EMAIL_STATUS: Record<EmailView["status"], { label: string; variant: "success" | "info" | "destructive" | "warning" }> = {
   SENT: { label: "Envoyé", variant: "success" },
@@ -43,9 +45,11 @@ interface Props {
   initialTemplates: TemplateView[]
   canManageTemplates: boolean
   showSender: boolean
+  /** E22: suggested filings and drafted answers. */
+  canUseAi: boolean
 }
 
-export function MailboxView({ initialEmails, initialReplies, health, mailboxes, initialTemplates, canManageTemplates, showSender }: Props) {
+export function MailboxView({ initialEmails, initialReplies, health, mailboxes, initialTemplates, canManageTemplates, showSender, canUseAi }: Props) {
   const [templates, setTemplates] = useState(initialTemplates)
   const [unread, setUnread] = useState(initialReplies.unread)
   return (
@@ -75,7 +79,7 @@ export function MailboxView({ initialEmails, initialReplies, health, mailboxes, 
           <SentList initial={initialEmails} showSender={showSender} hasMailbox={mailboxes.length > 0} />
         </TabsContent>
         <TabsContent value="replies" className="mt-4">
-          <Replies initial={initialReplies} onUnread={(d) => setUnread((n) => Math.max(0, n + d))} showSender={showSender} />
+          <Replies initial={initialReplies} onUnread={(d) => setUnread((n) => Math.max(0, n + d))} showSender={showSender} canUseAi={canUseAi} />
         </TabsContent>
         <TabsContent value="health" className="mt-4">
           <Deliverability rows={health} />
@@ -146,11 +150,12 @@ function SentList({ initial, showSender, hasMailbox }: { initial: { items: Email
   )
 }
 
-function Replies({ initial, onUnread, showSender }: { initial: { items: ReplyView[]; hasMore: boolean; unread: number }; onUnread: (delta: number) => void; showSender: boolean }) {
+function Replies({ initial, onUnread, showSender, canUseAi }: { initial: { items: ReplyView[]; hasMore: boolean; unread: number }; onUnread: (delta: number) => void; showSender: boolean; canUseAi: boolean }) {
   const [items, setItems] = useState(initial.items)
   const [hasMore, setHasMore] = useState(initial.hasMore)
   const [open, setOpen] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [answering, setAnswering] = useState<ReplyView | null>(null)
 
   function patchLocal(id: string, change: Partial<ReplyView>) {
     setItems((list) => {
@@ -206,7 +211,16 @@ function Replies({ initial, onUnread, showSender }: { initial: { items: ReplyVie
                   <p className="flex flex-wrap items-center gap-2 text-sm">
                     {!r.read && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" role="img" aria-label="Non lu" />}
                     <span className={cn("truncate", r.read ? "font-medium" : "font-semibold")}>{r.leadName ?? r.fromEmail}</span>
-                    {r.replyClass && <Badge variant={r.replyClass === "INTERESTED" ? "success" : "outline"}>{REPLY_LABELS[r.replyClass]}</Badge>}
+                    {r.replyClass ? (
+                      <Badge variant={r.replyClass === "INTERESTED" ? "success" : "outline"}>{REPLY_LABELS[r.replyClass]}</Badge>
+                    ) : isOffered(r.triage) ? (
+                      <Badge variant="info" title={`Suggestion de l’IA, sûre à ${percent(r.triage.confidence)} : à confirmer`}>
+                        <Sparkles className="h-3 w-3" aria-hidden="true" /> {REPLY_LABELS[r.triage.replyClass]} ?
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="font-normal">À classer</Badge>
+                    )}
+                    {!r.replyClass && r.triage?.urgency === "HIGH" && <Badge variant="warning">{URGENCY_LABELS.HIGH}</Badge>}
                   </p>
                   <p className="truncate text-xs text-muted-foreground">{r.subject}{showSender ? ` · reçu sur ${r.toEmail}` : ""}</p>
                 </div>
@@ -217,6 +231,19 @@ function Replies({ initial, onUnread, showSender }: { initial: { items: ReplyVie
                 <div className="mt-3 space-y-3">
                   <p className="text-xs text-muted-foreground">De {r.fromEmail}{r.sentSubject ? ` · en réponse à « ${r.sentSubject} »` : ""}</p>
                   <pre className="whitespace-pre-wrap break-words rounded-lg bg-muted p-3 font-sans text-sm">{r.bodyText || "(message vide)"}</pre>
+                  {!r.replyClass && isOffered(r.triage) && (
+                    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-info/30 bg-info-subtle/40 p-2.5 text-sm">
+                      <Sparkles className="h-4 w-4 text-info" aria-hidden="true" />
+                      <span className="min-w-0 flex-1">
+                        L’IA suggère <span className="font-semibold">« {REPLY_LABELS[r.triage.replyClass]} »</span> ({percent(r.triage.confidence)})
+                        {r.triage.urgency && ` · ${URGENCY_LABELS[r.triage.urgency].toLowerCase()}`}
+                        {r.triage.needsAction && " · action attendue"}
+                      </span>
+                      <Button size="sm" onClick={() => update(r, { replyClass: r.triage!.replyClass })}>
+                        <Check className="h-3.5 w-3.5" aria-hidden="true" /> Confirmer
+                      </Button>
+                    </div>
+                  )}
                   <div className="flex flex-wrap items-center gap-3">
                     <label className="flex items-center gap-2 text-sm">
                       <span className="text-muted-foreground">Classer :</span>
@@ -225,6 +252,11 @@ function Replies({ initial, onUnread, showSender }: { initial: { items: ReplyVie
                         {(Object.keys(REPLY_LABELS) as ReplyClass[]).map((c) => <option key={c} value={c}>{REPLY_LABELS[c]}</option>)}
                       </select>
                     </label>
+                    {r.leadId && r.replyClass !== "STOP" && (
+                      <Button size="sm" variant="outline" onClick={() => setAnswering(r)}>
+                        <Reply className="h-3.5 w-3.5" aria-hidden="true" /> Répondre
+                      </Button>
+                    )}
                     {r.leadId && <Link className="text-sm font-medium underline underline-offset-4" href={`/app/leads/${r.leadId}`}>Ouvrir la fiche</Link>}
                   </div>
                   {r.replyClass === "STOP" && <p className="text-xs text-muted-foreground">Cette adresse est exclue : plus aucun email de prospection ne lui sera envoyé.</p>}
@@ -235,6 +267,17 @@ function Replies({ initial, onUnread, showSender }: { initial: { items: ReplyVie
         })}
       </ul>
       {hasMore && <div className="flex justify-center"><Button variant="outline" size="sm" loading={loading} onClick={more}>Voir plus</Button></div>}
+      {answering && (
+        <AnswerDialog
+          reply={answering}
+          canUseAi={canUseAi}
+          onClose={() => setAnswering(null)}
+          onSent={() => {
+            patchLocal(answering.id, { read: true })
+            setAnswering(null)
+          }}
+        />
+      )}
     </div>
   )
 }
