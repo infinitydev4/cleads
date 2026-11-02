@@ -528,6 +528,8 @@ Cache-Control: private, no-store
    - seules les polices du site que Google Fonts sert sont proposées.
 3. **Lien** : jeton de 22 caractères (132 bits), HMAC d'un aléa par `STUDIO_PREVIEW_SECRET` (ou une clé dérivée de `NEXTAUTH_SECRET`). La base garde l'aléa et l'empreinte du jeton : un vol de la base ne donne aucun lien, et le CRM peut réafficher le sien. « Prolonger » garde l'adresse, « Désactiver » la coupe, et un nouveau lien en change.
 4. **Hôte d'aperçu** : `netlify.toml` et `next.config.mjs` réécrivent toute adresse de `apercu.cleads.fr` vers `app/apercu/[...path]`, et `proxy.ts` y renvoie les chemins du CRM. Le CRM ne répond donc jamais sur cet hôte. En développement, les aperçus sont servis sous `/apercu` sur l'hôte du CRM.
+   - Son `robots.txt` autorise l'exploration. Une page partagée se garde des moteurs par `noindex` (en-tête et balise), qu'un robot ne lit que s'il peut charger la page.
+   - Un `Disallow: /` ne désindexait rien, et faisait tomber le score SEO de PageSpeed à 66 sur la première maquette réelle.
 5. **Stockage** : les pages, captures, images et polices sont en base, comme les captures de l'audit ; une maquette pèse environ 1 à 2 Mo.
 6. **Visites** : une par demi-heure et par maquette, robots et vérificateurs de liens écartés. La personne qui a créé le lien et le responsable de la fiche reçoivent une notification, et l'historique de la fiche note l'ouverture.
 7. **Purge** : la maintenance du worker vide une maquette 90 jours après sa dernière version ou la dernière prolongation de son lien. Les pages, captures, images et le brief sont supprimés ; la trace reste (statut, visites, coût).

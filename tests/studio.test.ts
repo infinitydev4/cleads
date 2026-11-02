@@ -202,9 +202,10 @@ describe("preview host and links (E23)", () => {
       const { GET } = await import("@/app/apercu/[...path]/route")
       const call = (host: string, path: string[]) => GET(new Request(`https://${host}/x`, { headers: { host } }), { params: Promise.resolve({ path }) })
       expect((await call("cleads.test", ["robots.txt"])).status).toBe(404)
-      expect(await (await call("apercu.cleads.test", ["robots.txt"])).text()).toContain("Disallow: /")
+      // Crawling is allowed: shared pages say noindex themselves, which a robot must be able to read.
+      expect(await (await call("apercu.cleads.test", ["robots.txt"])).text()).toBe("User-agent: *\nAllow: /\n")
       // Rewritten by Netlify, then by Next: the extra prefix is dropped.
-      expect(await (await call("apercu.cleads.test", ["apercu", "robots.txt"])).text()).toContain("Disallow: /")
+      expect(await (await call("apercu.cleads.test", ["apercu", "robots.txt"])).text()).toContain("Allow: /")
       expect((await call("apercu.cleads.test", ["apercu"])).status).toBe(404)
     } finally {
       delete process.env.STUDIO_PREVIEW_HOST

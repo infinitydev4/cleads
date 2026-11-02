@@ -823,7 +823,15 @@ L'Auditeur digital produit une fiche enrichie et sourcée, à la demande, depuis
 >   - des notes pour l'équipe s'affichaient sur la page (« à fournir par le cabinet », « horaires à confirmer ») : le brief les range dans « À vérifier avec le prospect », et une page qui en montre encore une est corrigée, même sans critique ;
 >   - le site déclarait une police Windows (« Microsoft Sans Serif ») : seules les polices que Google Fonts sert sont proposées ;
 >   - PageSpeed échouait (« Something went wrong ») : Lighthouse ne peut pas mesurer une page `sandbox` sans scripts. Seule la copie lue par PageSpeed les autorise (`sandbox allow-scripts`), et `default-src 'none'` refuse toujours ceux de la page. En local, la même page passe de l'échec à 96 en performance ;
->   - un défaut d'accessibilité sérieux (contraste) restait sans correction quand la critique manquait : les contrôles déclenchent maintenant la correction à eux seuls.
+>   - un défaut d'accessibilité sérieux (contraste) restait sans correction quand la critique manquait : les contrôles déclenchent maintenant la correction à eux seuls ;
+> - après ce correctif, PageSpeed mesure la maquette en production en 11 à 16 s :
+>
+>   | | Performance | Accessibilité | Bonnes pratiques | SEO |
+>   |---|---|---|---|---|
+>   | Téléphone | 98 | 96 | 100 | 66 |
+>   | Ordinateur | 100 | 96 | 100 | 66 |
+>
+>   Le SEO à 66 venait du `robots.txt` de l'aperçu (`Disallow: /`) : il autorise maintenant l'exploration, et les pages partagées restent en `noindex`.
 >
 > **Écarts** :
 > - les pages, captures et images sont gardées en base, comme les captures de l'audit, et non sur S3 : le worker n'a pas de clé AWS, et une maquette pèse environ 1 à 2 Mo ;
