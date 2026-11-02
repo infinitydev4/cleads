@@ -22,6 +22,8 @@ export interface ModelDeps {
 
 /** Below this, a written answer would be cut off: the run stops instead. */
 export const MIN_OUTPUT_TOKENS = 256
+/** What one screenshot weighs in the prompt, at most, for the budget check (a 1350 × 940 capture is about 1 700 tokens). */
+export const IMAGE_TOKENS = 1_800
 const NO_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
 
 const notConfigured = () => new LeadError("unavailable", "L'IA n'est pas configurée sur ce serveur : la clé AI_GATEWAY_API_KEY manque.", 503)
@@ -48,6 +50,8 @@ export interface GenerateOptions<T> {
   prompt: string
   /** Structured answer, validated by the SDK. */
   schema?: z.ZodType<T>
+  /** Images given with the prompt (screenshots of an audited site). */
+  images?: { data: Uint8Array; mediaType: string }[]
   maxOutputTokens?: number
   /** The worker aborts it when the run is cancelled. */
   abortSignal?: AbortSignal
@@ -62,13 +66,18 @@ export async function generateForRun<T = never>(
   const [settings, prices, remaining] = await Promise.all([getAiSettings(ctx.workspaceId), deps.prices ?? priceTable(), remainingMicros(ctx.id)])
   const { model, fallbacks } = resolveRole(opts.role, settings.roleModels)
   const candidates = [model, ...fallbacks]
-  const room = maxOutputTokensWithin(worstPrice(candidates, prices), remaining, estimateTokens(`${opts.system ?? ""}${opts.prompt}`), settings.eurPerUsd)
+  const images = opts.images ?? []
+  const inputTokens = estimateTokens(`${opts.system ?? ""}${opts.prompt}`) + images.length * IMAGE_TOKENS
+  const room = maxOutputTokensWithin(worstPrice(candidates, prices), remaining, inputTokens, settings.eurPerUsd)
   if (room < MIN_OUTPUT_TOKENS) return overBudget(ctx)
 
+  const content = images.length
+    ? { messages: [{ role: "user" as const, content: [{ type: "text" as const, text: opts.prompt }, ...images.map((i) => ({ type: "file" as const, data: i.data, mediaType: i.mediaType }))] }] }
+    : { prompt: opts.prompt }
   const call = {
     model: deps.languageModel ? deps.languageModel(model) : model,
     system: opts.system,
-    prompt: opts.prompt,
+    ...content,
     maxOutputTokens: Math.min(opts.maxOutputTokens ?? 4096, room),
     providerOptions: gatewayOptions({ models: fallbacks, userKey: ctx.userKey, agentId: ctx.agentId }),
     abortSignal: opts.abortSignal,
@@ -84,7 +93,7 @@ export async function generateForRun<T = never>(
       model: served,
       usage: tokenUsage(result.totalUsage),
       durationMs: Date.now() - started,
-      input: { system: opts.system, prompt: opts.prompt },
+      input: { system: opts.system, prompt: opts.prompt, ...(images.length ? { images: images.map((i) => `${i.mediaType}, ${i.data.length} octets`) } : {}) },
       output: output ?? result.text,
       generationId: generationIdOf(result.providerMetadata),
       prices,

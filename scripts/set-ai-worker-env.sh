@@ -15,10 +15,11 @@ Secrets du worker IA (saisie masquée ; Entrée sans rien = valeur inchangée).
 DATABASE_URL : l'URL PUBLIQUE de la base Railway (onglet Connect, « Public Network »), avec à la fin
                ?sslmode=require&connection_limit=5   (ou &sslmode=… si l'URL a déjà des paramètres)
                Idéalement le rôle dédié de worker/db-role.sql plutôt que le propriétaire de la base.
+GOOGLE_PAGESPEED_API_KEY : clé gratuite de l'API PageSpeed Insights (Google Cloud), pour les audits (E20).
 EOF
 
 payload=""
-for name in DATABASE_URL AI_GATEWAY_API_KEY NEXT_PUBLIC_PUSHER_APP_ID NEXT_PUBLIC_PUSHER_KEY NEXT_PUBLIC_PUSHER_CLUSTER PUSHER_SECRET; do
+for name in DATABASE_URL AI_GATEWAY_API_KEY GOOGLE_PAGESPEED_API_KEY NEXT_PUBLIC_PUSHER_APP_ID NEXT_PUBLIC_PUSHER_KEY NEXT_PUBLIC_PUSHER_CLUSTER PUSHER_SECRET; do
   read -r -s -p "$name : " value
   echo
   if [ -n "$value" ]; then

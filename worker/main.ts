@@ -2,11 +2,13 @@ import http from "node:http"
 import os from "node:os"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
-import { registerTaskHandler } from "@/features/ai/handlers"
+import { registerAgentHandler, registerTaskHandler } from "@/features/ai/handlers"
 import { SKILL_TEST, runSkillTest } from "@/features/ai/skill-test"
+import { runAudit } from "@/features/prospect-audit/handler"
 import { AgentWorker, DEFAULT_PER_AGENT } from "./runner"
 import { errorFields, log } from "./log"
-// Agents register their handler here as their epic ships (E20 to E25): import "@/features/ai/agents/<agent>/handler".
+// Agents register their handler here as their epic ships (E20 to E25).
+registerAgentHandler("auditor", (job) => runAudit(job))
 registerTaskHandler(SKILL_TEST, (job) => runSkillTest(job))
 
 /** Entry point of the AI worker container (docs/crm-v1/WORKER-IA.md). */

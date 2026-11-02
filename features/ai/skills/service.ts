@@ -288,6 +288,32 @@ export async function loadAgentSkills(workspaceId: string, agentId: AgentId, db:
   }
 }
 
+/**
+ * Skills a coded workflow chooses for one step (the audit loads its audit skills and the sector's playbook), among those
+ * the team gave to the agent: a skill taken away from the agent is not used, whatever the code asks.
+ */
+export async function loadSkillsByName(workspaceId: string, agentId: AgentId, names: readonly string[], db: Db = prisma): Promise<LoadedSkill[]> {
+  if (!names.length) return []
+  const links = await db.agentSkill.findMany({
+    where: { workspaceId, agentId, skill: { name: { in: [...names] }, archivedAt: null } },
+    select: { skill: { select: { id: true, name: true, description: true, version: true, generator: true } } },
+    orderBy: { skill: { name: "asc" } },
+  })
+  const versions = links.length
+    ? await db.skillVersion.findMany({ where: { OR: links.map((l) => ({ skillId: l.skill.id, version: l.skill.version })) }, select: { skillId: true, content: true, files: true } })
+    : []
+  const byId = new Map(versions.map((v) => [v.skillId, v]))
+  return Promise.all(
+    links.map(async (l) => ({
+      name: l.skill.name,
+      version: l.skill.version,
+      description: l.skill.description,
+      content: await contentOf(workspaceId, l.skill, byId.get(l.skill.id)?.content ?? "", db),
+      files: filesOf(byId.get(l.skill.id)?.files),
+    }))
+  )
+}
+
 /** read_skill: a skill given to this agent (or one of its annexes), never another one. */
 export async function readSkillForAgent(workspaceId: string, agentId: AgentId, name: string, file?: string): Promise<{ name: string; version: number; content: string; files: string[] }> {
   const link = await prisma.agentSkill.findFirst({

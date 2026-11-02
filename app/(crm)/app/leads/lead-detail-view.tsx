@@ -32,6 +32,7 @@ import { SequenceCard } from "./sequence-card"
 import { TasksCard } from "./tasks-card"
 import { CALL_OUTCOMES } from "@/features/activity/rules"
 import { CampaignField } from "./campaign-field"
+import { AuditCard } from "@/components/crm/ai/audit-card"
 
 interface Props {
   lead: LeadDetail
@@ -207,15 +208,22 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
           <h3 className="text-sm font-bold">Score de pertinence</h3>
           <ScoreMeter score={lead.score} />
         </div>
-        {lead.scoreReasons.length > 0 ? (
+        {lead.scoreReasons.length > 0 || lead.aiReason ? (
           <ul className="flex flex-wrap gap-2">
             {lead.scoreReasons.map((r) => <li key={r.code} className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium">{r.label} <span className="text-muted-foreground">+{r.points}</span></li>)}
+            {lead.aiReason && (
+              <li className="rounded-full bg-info-subtle px-2.5 py-1 text-xs font-medium text-info" title="L’audit IA ne change pas les règles du score : il ajoute sa lecture, avec la part des volets réellement mesurés.">
+                {lead.aiReason.label} <span className="opacity-80">· confiance {Math.round(lead.aiReason.confidence * 100)} %</span>
+              </li>
+            )}
           </ul>
         ) : (
           <p className="text-sm text-muted-foreground">{lead.score === 0 ? "Rien ne le justifie encore : complétez la fiche (email, téléphone, site)." : "Score enregistré sans détail ; il sera expliqué à la prochaine modification de la fiche."}</p>
         )}
         <p className="text-xs text-muted-foreground">Règles simples et visibles ; les poids seront ajustés avec les résultats réels.</p>
       </Card>
+
+      {lead.company && <AuditCard leadId={lead.id} canRun={lead.can.audit} onChanged={reload} />}
 
       <QualificationCard lead={lead} onEdit={() => setQualifying(true)} />
 

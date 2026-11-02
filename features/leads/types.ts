@@ -90,5 +90,7 @@ export interface LeadDetail {
   meetings: { id: string; startsAt: string; endsAt: string; status: string; type: string; hostName: string | null }[]
   tasks: { id: string; title: string; dueAt: string | null; doneAt: string | null; assigneeId: string | null; assigneeName: string | null; canChange: boolean }[]
   /** What the signed-in person may do with this fiche, computed on the server. */
-  can: { write: boolean; log: boolean; assignOthers: boolean; delete: boolean; qualify: boolean; meet: boolean; meetAnywhere: boolean; email: boolean; campaign: boolean }
+  can: { write: boolean; log: boolean; assignOthers: boolean; delete: boolean; qualify: boolean; meet: boolean; meetAnywhere: boolean; email: boolean; campaign: boolean; audit: boolean }
+  /** E20: what the latest AI audit adds to the score, without changing its rules. */
+  aiReason: { label: string; confidence: number; createdAt: string } | null
 }
