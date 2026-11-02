@@ -51,7 +51,7 @@ Détails et conséquences techniques : [AGENTS-IA.md](AGENTS-IA.md).
 | # | Question | Décision | Pourquoi |
 |---|---|---|---|
 | D13 | Socle de la couche agentique | **AI SDK 7 + Vercel AI Gateway** | TypeScript natif (Next, zod), agents avec validation humaine intégrée, client MCP, Jev via `experimental_decide` ; une clé pour tous les fournisseurs, bascules automatiques, suivi des coûts. LangChain / LangGraph : lourd, pensé Python d'abord ; Mastra : une couche de plus alors que nos services doivent rester au centre. |
-| D14 | Exécution des tâches longues des agents | **Worker Node + `pg-boss` sur le VPS OVH** (réalise D10) | Un audit (1 à 3 min) ou une maquette ne tient pas dans une fonction Netlify ; le VPS héberge déjà l'Extractor (MCP en réseau local). |
+| D14 | Exécution des tâches longues des agents | **Worker Node sur le VPS OVH, file dans PostgreSQL** (réalise D10 ; mise en œuvre E18 : la table des exécutions sert de file, sans `pg-boss`) | Un audit (1 à 3 min) ou une maquette ne tient pas dans une fonction Netlify ; le VPS héberge déjà l'Extractor (MCP en réseau local). |
 | D15 | Modèles | **Mix par rôle**, interchangeable dans les réglages : Jev (décider), Claude Haiku 5.5 (volume), Sonnet 5.5 (rédiger, analyser), Opus 5.5 (Studio, audit approfondi) | Le meilleur rapport qualité / coût par tâche ; aucun code métier ne nomme un modèle. |
 | D16 | Données envoyées aux fournisseurs IA | **Fournisseurs hors UE autorisés avec garanties** : DPA, pas d'entraînement sur nos données, minimisation | Les meilleurs modèles sont américains ; le RGPD le permet avec des garanties et l'information des personnes. |
 | D17 | Ordre | **Socle, puis audit + offres + email**, puis Studio, copilote et sourcing | Valeur immédiate pour SDR et closers ; l'audit nourrit tout le reste. |
@@ -359,7 +359,7 @@ components/
 features/<domaine>/    components/ · actions.ts (serveur) · service.ts (règles métier) · schemas.ts (zod) · queries.ts
 features/ai/           agents · outils · skills · exécutions · validations (E17, E19) ; features/audit · offers · studio (E20, E21, E23)
 lib/                   rbac · audit · extractor-client · mail · ai (passerelle, modèles par rôle, coûts, budgets, décisions Jev) · time
-worker/                Node + pg-boss sur le VPS : agents IA d'abord (E18), puis envois, relances, lecture des réponses, rappels
+worker/                Node sur le VPS, file PostgreSQL : agents IA d'abord (E18), puis envois, relances, lecture des réponses, rappels
 evals/                 jeux d'évaluation des agents (E27)
 styles/tokens.css      jetons partagés landing + CRM
 ```
@@ -580,7 +580,36 @@ Tout ce qui rend l'IA sûre et pilotable, avant le premier agent métier.
 - **Critères** : aucun appel sans exécution tracée (qui, quel agent, quel modèle, jetons, coût) ; plafond jamais dépassé, même avec 10 exécutions simultanées ; un outil refuse ce que la personne n'a pas le droit de faire.
 
 ### E18 — Worker des agents sur le VPS · **M**
-Réalise D10 pour les agents : un worker Node avec `pg-boss`, en Docker à côté de l'Extractor.
+> **Avancement (branche `feat/e18-worker-ia`)** — fait :
+> - migration additive `20261103090000_ai_worker` : colonnes de file sur `AgentRun`, exécution « au plus une fois » sur `AgentApproval`, table `AiWorker`, une seule exécution d'un agent par fiche ;
+> - `features/ai/queue.ts` : prise `FOR UPDATE SKIP LOCKED`, bail par battement de cœur, reprises bornées, expiration ;
+> - `features/ai/maintenance.ts` : maintenance sous verrou consultatif, alertes aux propriétaires ;
+> - exécution des actions approuvées au plus une fois ;
+> - registre des agents (`features/ai/handlers.ts`) ;
+> - worker `worker/` : boucle, arrêt propre, santé, paquet esbuild ;
+> - client MCP de l'Extractor en lecture seule ;
+> - Pusher : progression en direct avec repli en interrogation, et **correctif de sécurité** de `/api/pusher/auth`, qui autorisait n'importe quel canal privé ;
+> - état du worker dans Réglages › IA ;
+> - image durcie et déploiement avec retour arrière (`scripts/deploy-ai-worker.sh`), secrets saisis par le propriétaire (`scripts/set-ai-worker-env.sh`).
+>
+> Détails : [WORKER-IA.md](WORKER-IA.md).
+>
+> **Vérifié** :
+> - `tests/ai-worker.integration.test.ts` (15 tests) : prise unique par 6 workers concurrents, reprise, abandon, annulation, arrêt propre, action approuvée exécutée une fois et jamais rejouée après un arrêt, maintenance ;
+> - `tests/extractor-mcp.integration.test.ts` (3 tests, contre un vrai Extractor local) ;
+> - suite complète verte (657 tests) et build ;
+> - paquet démarré en local (santé, arrêt propre) ;
+> - sur le VPS : image construite, Prisma chargé dans le conteneur en lecture seule, Extractor joignable depuis le réseau du worker, pile de l'Extractor intacte.
+>
+> **Pas encore** : mise en service, qui attend la `DATABASE_URL` Railway saisie par le propriétaire ; aucun agent métier n'est branché (E20 à E25).
+>
+> **Écarts** :
+> - la table des exécutions sert de file, sans `pg-boss` : la création de l'exécution et sa mise en file ne font qu'une transaction, sans double état à synchroniser ;
+> - Playwright est reporté à E20, son premier utilisateur ;
+> - le déploiement se fait par script, avant la CI d'E14 ;
+> - bug corrigé : des heures SQL dépendaient du fuseau de la session Postgres (`lib/ai/sql.ts`).
+
+Réalise D10 pour les agents : un worker Node, en Docker à côté de l'Extractor.
 - Files `ai.audit`, `ai.offers`, `ai.draft`, `ai.studio`, `ai.maintenance` : reprise sur incident, priorités, une exécution à la fois par fiche et par type, concurrence bornée par le budget.
 - Mise en file légère depuis Netlify ; progression publiée sur Pusher (canal privé), interrogation en secours ; reprise d'une exécution après une validation humaine.
 - Playwright (Chromium) dans l'image pour les captures et les maquettes ; client MCP de l'Extractor sur le réseau local (clé `crm`, outils en lecture seulement).

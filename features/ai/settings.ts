@@ -9,6 +9,7 @@ import { aiConfigured } from "@/lib/ai/gateway"
 import { AI_ROLES, ROLES, modelLabel, resolveRole, roleModelsSchema, type AiRole, type RoleModels } from "@/lib/ai/models"
 import { formatPrice, priceTable } from "@/lib/ai/pricing"
 import { agentLabel } from "./agents"
+import { workerStatus, type WorkerStatus } from "./queue"
 import { isManager } from "./runs"
 
 /** Réglages › IA: models per role, caps, and the month's consumption (docs/crm-v1/AGENTS-IA.md §5 and §6). */
@@ -49,6 +50,8 @@ export interface AiSettingsView {
     byUser: SpendLine[] | null
   }
   me: { todayEur: number; quotaEur: number }
+  /** The AI worker on the VPS (E18): up or not, and the queue. */
+  worker: WorkerStatus
 }
 
 const add = (map: Map<string, SpendLine>, key: string, label: string, micros: number, calls: number) => {
@@ -62,11 +65,12 @@ const sorted = (map: Map<string, SpendLine>) => [...map.values()].sort((a, b) =>
 export async function aiSettingsView(actor: CurrentUser): Promise<AiSettingsView> {
   if (!can(actor.role, "ai:read")) throw new LeadError("forbidden", "Accès refusé", 403)
   const now = new Date()
-  const [settings, prices, c, rows] = await Promise.all([
+  const [settings, prices, c, rows, worker] = await Promise.all([
     getAiSettings(actor.workspaceId),
     priceTable(),
     commitments(prisma, actor.workspaceId, actor.id, now),
     prisma.aiUsage.findMany({ where: { workspaceId: actor.workspaceId, day: { gte: monthStart(now) } } }),
+    workerStatus(actor.workspaceId, now),
   ])
   const manager = isManager(actor)
   const byAgent = new Map<string, SpendLine>()
@@ -113,6 +117,7 @@ export async function aiSettingsView(actor: CurrentUser): Promise<AiSettingsView
       byUser: manager ? sorted(byUser) : null,
     },
     me: { todayEur: microsToEur(c.userSpentToday), quotaEur: microsToEur(settings.userDailyCapMicros) },
+    worker,
   }
 }
 

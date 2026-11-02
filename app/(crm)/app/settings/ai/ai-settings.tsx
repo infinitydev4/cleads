@@ -6,6 +6,7 @@ import { CheckCircle2, CircleAlert } from "lucide-react"
 import { toast } from "sonner"
 import { ApprovalCard } from "@/components/crm/ai/approval-card"
 import { RunCard } from "@/components/crm/ai/run-card"
+import { useLiveRuns } from "@/components/crm/ai/use-live-runs"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -13,7 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
-import { formatEur } from "@/features/ai/labels"
+import { ACTIVE_STATUSES, formatEur } from "@/features/ai/labels"
 import type { ApprovalView } from "@/features/ai/approvals"
 import type { RunView } from "@/features/ai/runs"
 import type { AiSettingsView, SpendLine } from "@/features/ai/settings"
@@ -44,8 +45,11 @@ function SpendList({ title, lines }: { title: string; lines: SpendLine[] }) {
   )
 }
 
-export function AiSettings({ initial, approvals: initialApprovals, runs: initialRuns }: { initial: AiSettingsView; approvals: ApprovalView[]; runs: RunView[] }) {
+const seen = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+
+export function AiSettings({ userId, initial, approvals: initialApprovals, runs: initialRuns }: { userId: string; initial: AiSettingsView; approvals: ApprovalView[]; runs: RunView[] }) {
   const router = useRouter()
+  useLiveRuns(userId, initialRuns.some((r) => ACTIVE_STATUSES.includes(r.status)) || initialApprovals.length > 0)
   const [base, setBase] = useState(initial)
   const [view, setView] = useState(initial)
   // A refresh brings new server figures (after a decision or a cancel): show them.
@@ -126,6 +130,15 @@ export function AiSettings({ initial, approvals: initialApprovals, runs: initial
           </span>
         </Card>
       )}
+      <p className="flex flex-wrap items-center gap-2 text-sm">
+        {view.worker.online ? <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden="true" /> : <CircleAlert className="h-4 w-4 shrink-0 text-warning" aria-hidden="true" />}
+        {view.worker.online
+          ? `Worker IA en ligne (version ${view.worker.version}) · ${view.worker.running} en cours`
+          : view.worker.lastSeen
+            ? `Worker IA hors ligne depuis le ${seen.format(new Date(view.worker.lastSeen))} : les tâches longues attendent son retour.`
+            : "Worker IA pas encore installé : les tâches longues (audits, maquettes) attendront son démarrage."}
+        {view.worker.queued > 0 && <Badge variant="outline">{view.worker.queued} en file</Badge>}
+      </p>
 
       <section aria-labelledby="ai-month" className="space-y-4">
         <h2 id="ai-month" className="text-lg font-bold">

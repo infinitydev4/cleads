@@ -1,0 +1,38 @@
+# AI worker of the CRM on the VPS (docs/crm-v1/WORKER-IA.md), installed as /opt/cleads/ai/docker-compose.yml.
+# Its own Compose project: the Extractor's deployments (`up --remove-orphans` in /opt/cleads) never touch it. It joins
+# the Extractor's network to reach its MCP endpoint, and needs no published port.
+name: cleads-ai
+
+services:
+  ai-worker:
+    image: cleads-ai-worker:${IMAGE_TAG:?set IMAGE_TAG in .env}
+    restart: unless-stopped
+    # Secrets (database, AI Gateway, Pusher, Extractor key): chmod 600, filled by scripts/set-ai-worker-env.sh.
+    env_file: [worker.env]
+    environment:
+      NODE_ENV: production
+      EXTRACTOR_MCP_URL: http://api:8080/mcp
+      WORKER_ID: ai-worker-1
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 384m
+    cpus: 1.0
+    pids_limit: 128
+    stop_grace_period: 40s # the worker gives runs 25 s to finish, then puts them back in the queue
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+    healthcheck:
+      test: ["CMD", "node", "dist/healthcheck.mjs"]
+      interval: 15s
+      timeout: 6s
+      start_period: 20s
+      retries: 3
+    networks: [extractor]
+
+networks:
+  extractor:
+    external: true
+    name: cleads_default

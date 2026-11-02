@@ -3,6 +3,9 @@ import nextCoreWebVitals from "eslint-config-next/core-web-vitals";
 import nextTypescript from "eslint-config-next/typescript";
 
 export default defineConfig([{
+    // The AI worker's bundle (npm run worker:build) is generated code.
+    ignores: ["worker/dist/**"],
+}, {
     extends: [...nextCoreWebVitals, ...nextTypescript],
 
     rules: {

@@ -35,7 +35,7 @@ UI 2D + 3D (Netlify, Next 16)
  ├─ Fiche : Audit IA · Offres suggérées · Brouillon IA · Générer une landing ─► AgentRun en file
  ├─ /app/agents (exécutions, à valider, skills, offres, coûts) · /app/studio (maquettes)
  └─ Copilote ⌘J (tours courts en streaming)               ▲ Pusher : progression en direct
-PostgreSQL ◄── pg-boss ──► Worker agents (VPS OVH, Docker, Node 22)
+PostgreSQL ◄── file AgentRun ──► Worker agents (VPS OVH, Docker, Node 24)
                             ├─ workflows + ToolLoopAgent (AI SDK 7)
                             ├─ outils = services CRM (droits + journal, actorKind AGENT)
                             ├─ MCP Extractor en lecture (réseau local du VPS)
@@ -61,8 +61,8 @@ apercu.cleads.fr ──► proxy.ts ──► route d'aperçu (HTML depuis S3, C
 | `@ai-sdk/mcp` | client MCP de l'Extractor | 2.0.88 |
 | `@ai-sdk/react` | streaming du copilote (`useChat`) | 4.0.163 |
 | Vercel AI Gateway | une clé pour tous les fournisseurs, bascules, prix, suivi des dépenses, variantes batch | service |
-| `pg-boss` | files de tâches dans PostgreSQL (worker) | 12.38.0 |
-| Playwright | captures, rendu et contrôle des maquettes (worker) | à fixer en E18 |
+| File de tâches | la table `AgentRun` elle-même (`FOR UPDATE SKIP LOCKED`, bail par battement de cœur), voir [WORKER-IA.md](WORKER-IA.md) | E18 |
+| Playwright | captures, rendu et contrôle des maquettes (worker) | à fixer en E20 |
 
 **Pourquoi ce socle.**
 - **Intégration** : le CRM est en TypeScript (Next 16, React 19, zod) et l'AI SDK s'y intègre sans couche de traduction. Il parle aux principaux fournisseurs avec la même interface.
@@ -74,7 +74,7 @@ apercu.cleads.fr ──► proxy.ts ──► route d'aperçu (HTML depuis S3, C
   - pour ses rapports de dépense, l'identifiant opaque de la personne et une étiquette `agent:<id>`, jamais un nom ni un email.
 
 **Écartés.**
-- **LangChain / LangGraph** : couche lourde, pensée Python d'abord, intégration moins directe au streaming React. Ce que LangGraph apporte (reprise, humain dans la boucle) est couvert par `pg-boss`, nos tables d'exécution et `toolApproval`.
+- **LangChain / LangGraph** : couche lourde, pensée Python d'abord, intégration moins directe au streaming React. Ce que LangGraph apporte (reprise, humain dans la boucle) est couvert par notre file PostgreSQL, nos tables d'exécution et `toolApproval`.
 - **Mastra** : framework crédible, mais une couche et des conventions de plus, alors que nos services doivent rester au centre.
 - **SDK propres à chaque fournisseur** : accès complet aux fonctions de chaque modèle, mais la bascule, le streaming et les outils seraient à réécrire.
 
@@ -242,8 +242,14 @@ Un outil appelle un service existant ; il ne touche jamais la base directement.
 
 **Cycle d'une exécution** (`AgentRun.status`) : `QUEUED` → `RUNNING`, puis éventuellement un ou plusieurs passages par `WAITING_APPROVAL`, jusqu'à une fin : `SUCCEEDED`, `FAILED`, `CANCELLED`, `BUDGET_EXCEEDED` ou `EXPIRED` (validation non donnée à temps).
 
-- **Mise en file** : le CRM (Netlify) vérifie le droit et le budget, crée l'exécution avec sa réservation, puis envoie le job dans `pg-boss`. Le worker reprend toute exécution restée sans job.
-- **Files** : `ai.audit`, `ai.offers`, `ai.draft`, `ai.studio` et `ai.maintenance` (prix, purges, expirations, alertes). Une seule exécution à la fois par fiche et par type (`singletonKey`), concurrence bornée, 2 reprises avec un délai croissant sur une erreur passagère.
+- **Mise en file** : le CRM (Netlify) vérifie le droit et le budget, puis crée l'exécution `QUEUED` avec sa réservation, dans une seule transaction. L'exécution est elle-même l'entrée de la file : aucune tâche ne peut se perdre (détails : [WORKER-IA.md](WORKER-IA.md)).
+- **File** :
+  - prise par `FOR UPDATE SKIP LOCKED`, par priorité puis par ancienneté ;
+  - bail renouvelé toutes les 20 s, et reprise automatique si le worker s'arrête ;
+  - 3 tentatives au plus, avec un délai croissant ;
+  - une seule exécution d'un agent à la fois par fiche (index unique) ;
+  - concurrence bornée par agent ;
+  - expiration après 24 h en file.
 - **Étapes** : chaque appel de modèle, outil ou décision devient un `AgentStep` : entrée et sortie tronquées, modèle, jetons, coût, durée. Les données personnelles n'y sont recopiées que si c'est nécessaire.
 - **Validations** : une action à effet externe crée un `AgentApproval`, avec un résumé lisible, les données exactes de l'action et une expiration.
   - Elle apparaît sur la fiche, dans `/app/agents` (« À valider ») et dans l'espace 3D « Agents IA ».
@@ -483,18 +489,18 @@ Cache-Control: private, no-store
 | `STUDIO_PREVIEW_HOST` | CRM | `apercu.cleads.fr` |
 | `STUDIO_PREVIEW_SECRET` | CRM | signature de l'aperçu interne |
 
-**Worker.**
-- **Image** : Docker (Node 22 + Chromium pour Playwright), construite depuis `worker/` dans `cleads-main`. Le worker réutilise `features/*` et Prisma.
-- **Service** : ajouté au Compose de `/opt/cleads`, à côté de l'Extractor.
-- **Robustesse** : arrêt propre (les jobs en cours sont repris), point de santé, journaux structurés.
-- **Alertes** au propriétaire après des échecs répétés ou à l'approche du plafond.
-- **Déploiement** : manuel et documenté d'abord, automatisé avec E14.
+**Worker** (E18, détails et commandes : [WORKER-IA.md](WORKER-IA.md)).
+- **Image** : Node 24, construite sur le VPS depuis le paquet `worker/dist`, un seul fichier produit par esbuild, plus le client Prisma généré dans l'image. Chromium arrivera avec E20.
+- **Service** : projet Compose à part dans `/opt/cleads/ai`, relié au réseau de l'Extractor ; les déploiements de l'Extractor n'y touchent pas.
+- **Robustesse** : bail par battement de cœur, reprises bornées, arrêt propre (les exécutions en cours sont remises en file), point de santé local, journaux JSON.
+- **Alertes** : notification aux propriétaires après des échecs répétés ou à l'approche du plafond.
+- **Déploiement** : `scripts/deploy-ai-worker.sh`, avec retour automatique à l'image précédente ; l'automatisation viendra avec E14.
 
 ## 22. Points ouverts
 
 | Point | Qui | Avant |
 |---|---|---|
-| Hébergement de la base de production (connexion du worker, adresses autorisées) | à vérifier | E18 |
+| `DATABASE_URL` du worker (base Railway, rôle dédié recommandé) à saisir avec `scripts/set-ai-worker-env.sh` | le propriétaire | mise en service du worker |
 | Clé Vercel AI Gateway (compte Vercel) et clé gratuite Google PageSpeed Insights | le propriétaire | E17, E20 |
 | Enregistrement DNS `apercu.cleads.fr` vers Netlify, alias de domaine sur le site | le propriétaire | E23 |
 | Prix, livrables et cas d'usage du catalogue d'offres (section 14) | le propriétaire | E19 |

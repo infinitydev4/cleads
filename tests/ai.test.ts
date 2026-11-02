@@ -232,3 +232,13 @@ describe("gateway, agents and tools", () => {
     expect(FORBIDDEN_FOR_AGENTS).toContain("ai:manage")
   })
 })
+
+describe("live updates", () => {
+  it("lets a member listen to their own private channel only", async () => {
+    const { canSubscribe, userChannel } = await import("@/lib/ai/realtime")
+    expect(canSubscribe("u1", userChannel("u1"))).toBe(true)
+    expect(canSubscribe("u1", userChannel("u2"))).toBe(false)
+    expect(canSubscribe("u1", "private-user-u1-extra")).toBe(false)
+    expect(canSubscribe("u1", "presence-team")).toBe(false)
+  })
+})

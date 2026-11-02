@@ -36,7 +36,11 @@ export interface StartRunInput {
   input?: Prisma.InputJsonValue
   /** RUNNING for work done during the request; QUEUED for the worker (E18). */
   status?: "QUEUED" | "RUNNING"
+  /** Higher runs first in the queue. */
+  priority?: number
 }
+
+const isUniqueViolation = (error: unknown) => (error as { code?: string } | null)?.code === "P2002"
 
 async function checkTargets(workspaceId: string, actor: CurrentUser | null, input: StartRunInput): Promise<void> {
   if (input.leadId) {
@@ -54,25 +58,32 @@ async function createRun(workspaceId: string, requester: CurrentUser | null, inp
   const cap = agentCapMicros(input.agentId)
   const status = input.status ?? "QUEUED"
   const userKey = requester?.id ?? SYSTEM_USER
-  const run = await prisma.$transaction(async (tx) => {
-    await reserveBudget(tx, { workspaceId, userKey, capMicros: cap })
-    return tx.agentRun.create({
-      data: {
-        workspaceId,
-        agentId: input.agentId,
-        status,
-        requestedById: requester?.id ?? null,
-        leadId: input.leadId ?? null,
-        campaignId: input.campaignId ?? null,
-        parentRunId: input.parentRunId ?? null,
-        input: input.input,
-        capMicros: cap,
-        reservedMicros: cap,
-        startedAt: status === "RUNNING" ? new Date() : null,
-      },
-      select: { id: true },
+  const run = await prisma
+    .$transaction(async (tx) => {
+      await reserveBudget(tx, { workspaceId, userKey, capMicros: cap })
+      return tx.agentRun.create({
+        data: {
+          workspaceId,
+          agentId: input.agentId,
+          status,
+          requestedById: requester?.id ?? null,
+          leadId: input.leadId ?? null,
+          campaignId: input.campaignId ?? null,
+          parentRunId: input.parentRunId ?? null,
+          input: input.input,
+          priority: input.priority ?? 0,
+          capMicros: cap,
+          reservedMicros: cap,
+          startedAt: status === "RUNNING" ? new Date() : null,
+        },
+        select: { id: true },
+      })
     })
-  })
+    .catch((error: unknown) => {
+      // One run of an agent at a time per fiche (unique index of migration 20261103090000_ai_worker).
+      if (isUniqueViolation(error)) throw new LeadError("conflict", "Cet agent travaille déjà sur cette fiche : attendez la fin de l'exécution en cours.", 409)
+      throw error
+    })
   await audit({
     action: "ai.run_started",
     actorId: requester?.id ?? null,
@@ -185,10 +196,13 @@ export async function recordStep(ctx: RunContext, step: { type: "TOOL" | "APPROV
 
 export type EndStatus = Extract<AgentRunStatus, "SUCCEEDED" | "FAILED" | "CANCELLED" | "BUDGET_EXCEEDED" | "EXPIRED">
 
-/** Ends an active run and releases what it still held. False when it had already ended. */
-export async function finishRun(runId: string, end: { status: EndStatus; output?: unknown; error?: string | null }): Promise<boolean> {
+/**
+ * Ends an active run and releases what it still held. False when it had already ended. A worker passes its id so it
+ * never ends a run another worker took over after a stall.
+ */
+export async function finishRun(runId: string, end: { status: EndStatus; output?: unknown; error?: string | null; lockedBy?: string }): Promise<boolean> {
   const res = await prisma.agentRun.updateMany({
-    where: { id: runId, status: { in: [...ACTIVE_RUN_STATUSES] } },
+    where: { id: runId, status: { in: [...ACTIVE_RUN_STATUSES] }, ...(end.lockedBy ? { lockedBy: end.lockedBy } : {}) },
     data: { status: end.status, finishedAt: new Date(), reservedMicros: 0, output: end.output === undefined ? undefined : forLog(end.output, 8_000), error: end.error?.slice(0, 2_000) ?? null },
   })
   return res.count === 1

@@ -133,7 +133,8 @@ export async function decideApproval(actor: CurrentUser, approvalId: string, dec
     const pending = await tx.agentApproval.count({ where: { runId: a.runId, status: "PENDING" } })
     if (pending > 0) return
     if (decision.approve) {
-      await tx.agentRun.updateMany({ where: { id: a.runId, status: "WAITING_APPROVAL" }, data: { status: "QUEUED" } })
+      // Back in the queue ahead of new work; the wait for a person does not count as a failed try.
+      await tx.agentRun.updateMany({ where: { id: a.runId, status: "WAITING_APPROVAL" }, data: { status: "QUEUED", attempts: 0, priority: 1, notBefore: null, lockedBy: null, heartbeatAt: null } })
     } else {
       await tx.agentRun.updateMany({
         where: { id: a.runId, status: { in: [...ACTIVE_RUN_STATUSES] } },
@@ -153,14 +154,14 @@ export async function decideApproval(actor: CurrentUser, approvalId: string, dec
 }
 
 /** Marks overdue approvals as expired and ends the runs that waited only for them. Returns how many expired. */
-export async function expireApprovals(now = new Date()): Promise<number> {
-  const overdue = await prisma.agentApproval.findMany({ where: { status: "PENDING", expiresAt: { lte: now } }, select: { id: true, runId: true } })
+export async function expireApprovals(now = new Date(), db: Prisma.TransactionClient | typeof prisma = prisma): Promise<number> {
+  const overdue = await db.agentApproval.findMany({ where: { status: "PENDING", expiresAt: { lte: now } }, select: { id: true, runId: true } })
   if (!overdue.length) return 0
-  await prisma.agentApproval.updateMany({ where: { id: { in: overdue.map((o) => o.id) }, status: "PENDING" }, data: { status: "EXPIRED", decidedAt: now } })
+  await db.agentApproval.updateMany({ where: { id: { in: overdue.map((o) => o.id) }, status: "PENDING" }, data: { status: "EXPIRED", decidedAt: now } })
   for (const runId of new Set(overdue.map((o) => o.runId))) {
-    const pending = await prisma.agentApproval.count({ where: { runId, status: "PENDING" } })
+    const pending = await db.agentApproval.count({ where: { runId, status: "PENDING" } })
     if (pending === 0) {
-      await prisma.agentRun.updateMany({
+      await db.agentRun.updateMany({
         where: { id: runId, status: "WAITING_APPROVAL" },
         data: { status: "EXPIRED", finishedAt: now, reservedMicros: 0, error: "Validation non donnée à temps" },
       })
