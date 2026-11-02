@@ -546,7 +546,7 @@ Seconde vue du CRM, isométrique et interactive, à côté de la vue 2D qui rest
 - **Critères** : aucune régression de la vue 2D (tests et parcours dans le navigateur) ; aucun chiffre sans définition ; fluide sur un portable récent.
 
 ### Couche agentique IA (E17 à E27, décidée le 2 novembre 2026)
-Décisions D13 à D27 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17 est fait ; E18 à E27 restent à faire.
+Décisions D13 à D27 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17, E18 et E19 sont faits ; E20 à E27 restent à faire.
 
 ### E17 — Socle IA · **M** *(absorbe E13)*
 > **Avancement (branche `feat/e17-socle-ia`)** — fait :
@@ -618,6 +618,31 @@ Réalise D10 pour les agents : un worker Node, en Docker à côté de l'Extracto
 - **Critères** : un redémarrage du worker ne perd ni ne double aucune exécution ; une validation reprend l'exécution là où elle s'était arrêtée.
 
 ### E19 — Agents, skills et catalogue d'offres · **M**
+> **Avancement (branche `feat/e19-agents-skills-offres`)** — fait :
+> - migration additive `20261104090000_ai_catalog` : surcouche des agents et ses versions, skills et leurs versions, skills donnés aux agents, catalogue d'offres ;
+> - huit agents complets dans le code : rôle d'expert, rôles de modèle permis, outils, skills V1, ce qu'ils produisent, ce qu'une personne valide ;
+> - surcouche par espace : consignes et skills (propriétaire et managers), rôle de modèle, limites plus basses et activation (propriétaire). Chaque enregistrement crée une version, et les exécutions réservent le plafond de la surcouche ;
+> - skills au format SKILL.md : versions lisibles et retour à une version, archivage, import d'un `.md` ou d'un `.zip`, export `.zip`, outil `read_skill` limité aux skills donnés à l'agent ;
+> - catalogue V1 installé une fois par espace : 12 skills rédigés et `offres-cleads`, écrit à partir des offres actives ; 13 offres en brouillon, à vérifier puis activer ;
+> - garde « offre active seulement » : `list_offers`, skill `offres-cleads`, `assertActiveOffers` ;
+> - test d'un skill sur une fiche : une tâche du worker, faite par l'agent choisi avec ce skill seul, sans donnée personnelle de la fiche ;
+> - module `/app/agents` : agents, skills, offres, exécutions avec le détail des étapes, « À valider », consommation ; entrée « Agents IA » dans la navigation ;
+> - droits `skill:manage` et `offer:manage`, interdits aux agents.
+>
+> Détails : [AGENTS-IA.md](AGENTS-IA.md), sections 7, 8 et 14.
+>
+> **Vérifié** :
+> - `tests/agents-catalog.test.ts` (21 tests) et `tests/agents-catalog.integration.test.ts` (18 tests, base jetable) : installation simultanée du catalogue, versions, droits, `read_skill`, offres actives seulement, plafond de la surcouche, test d'un skill pris par un worker qui n'a encore aucun agent métier ;
+> - suite complète verte (706 tests), build, paquet du worker démarré en local ;
+> - pages et routes contrôlées par HTTP sur la base de prévisualisation.
+>
+> **Pas encore** : contrôle visuel dans un navigateur ; onglet « Qualité » (E27) ; aucun agent métier branché (E20 à E25).
+>
+> **Écarts** :
+> - les offres V1 sont installées en brouillon : un agent ne recommande rien tant que personne ne les a activées ;
+> - un skill s'archive au lieu d'être supprimé : ses versions restent lisibles ;
+> - le module demande `ai:use`, pas `ai:read` : un lecteur ne voit ni les consignes internes ni les prix.
+
 - Définitions des huit agents (rôle d'expert, rôle de modèle, outils, skills, validations, limites) dans le code, versionnées et testées ; surcouche éditable en base (`AgentDefinition` : consignes ajoutées, modèle, skills actifs, limites).
 - **Skills** au format SKILL.md (agentskills.io) : nom, description de quand s'en servir, contenu, fichiers annexes, versions. Ils sont attachés « toujours » ou « à la demande » (l'agent lit le catalogue et charge un skill par `read_skill`), importables et exportables, avec un écran d'édition et un test sur une fiche.
 - **Catalogue d'offres** (`Offer`) : V1 rédigée d'après les offres de Cleads et les formules de la landing, validée par le propriétaire ; signaux déclencheurs, livrables, fourchette de prix, angle, objections.
@@ -730,6 +755,6 @@ E1 peut démarrer en parallèle d'E0 ; E5 peut commencer dès que E3 fixe le mod
 7. *(E18)* Où est hébergée la base de production (Neon, Supabase, le VPS, autre) ? Le worker du VPS doit pouvoir s'y connecter.
 8. *(E17, E20)* Créer la clé Vercel AI Gateway (compte Vercel) et la clé gratuite Google PageSpeed Insights.
 9. *(E23)* Ajouter l'enregistrement DNS de `apercu.cleads.fr` vers Netlify.
-10. *(E19)* Valider les prix, livrables et cas d'usage du catalogue d'offres V1 ([AGENTS-IA.md](AGENTS-IA.md), section 14).
+10. *(E19)* Vérifier puis activer les offres du catalogue V1 dans Agents IA › Offres, où elles attendent en brouillon (prix indicatifs, [AGENTS-IA.md](AGENTS-IA.md), section 14).
 11. *(E26)* Confirmer les crédits Meshy pour les personnages des agents, le moment venu.
 12. Accepter les DPA des fournisseurs IA, puis compléter la politique de confidentialité et le registre des traitements.

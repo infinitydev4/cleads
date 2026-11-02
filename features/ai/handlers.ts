@@ -26,6 +26,8 @@ export type AgentHandler = (job: HandlerContext) => Promise<{ output?: unknown }
 export class RetryableError extends Error {}
 
 const handlers = new Map<AgentId, AgentHandler>()
+/** Work any language agent can do, chosen by the run's input `kind` (a skill test, E19), whatever the agent. */
+const tasks = new Map<string, AgentHandler>()
 
 export function registerAgentHandler(agentId: AgentId, handler: AgentHandler): void {
   if (handlers.has(agentId)) throw new Error(`Agent ${agentId} : déjà enregistré`)
@@ -35,7 +37,24 @@ export function registerAgentHandler(agentId: AgentId, handler: AgentHandler): v
 export const agentHandler = (agentId: AgentId) => handlers.get(agentId)
 export const handledAgents = (): AgentId[] => [...handlers.keys()]
 
+export function registerTaskHandler(kind: string, handler: AgentHandler): void {
+  if (tasks.has(kind)) throw new Error(`Tâche ${kind} : déjà enregistrée`)
+  tasks.set(kind, handler)
+}
+
+/** The kind written in a run's input (`{ kind: "skill_test", … }`), if any. */
+export const taskKindOf = (input: unknown): string | null => {
+  const kind = input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>).kind : null
+  return typeof kind === "string" ? kind : null
+}
+export const taskHandler = (input: unknown) => {
+  const kind = taskKindOf(input)
+  return kind ? tasks.get(kind) : undefined
+}
+export const handledTasks = (): string[] => [...tasks.keys()]
+
 /** Tests only. */
 export function clearAgentHandlers() {
   handlers.clear()
+  tasks.clear()
 }

@@ -8,7 +8,8 @@ import { LeadError } from "@/features/leads/errors"
 import { ACTIVE_RUN_STATUSES, SYSTEM_USER, addUsage, chargeRun, checkBudgetAlerts, getAiSettings, microsToEur, reserveBudget } from "@/lib/ai/budget"
 import { costMicros, priceTable, type ModelPrice, type TokenUsage } from "@/lib/ai/pricing"
 import { forLog } from "@/lib/ai/untrusted"
-import { agentCapMicros, agentLabel, isAgentId, type AgentId } from "./agents"
+import { agentLabel, isAgentId, type AgentId } from "./agents"
+import { effectiveAgent } from "./definitions"
 
 /**
  * AI runs (docs/crm-v1/AGENTS-IA.md §10): one execution of an agent, who it acts for, what it did and what it cost.
@@ -55,7 +56,10 @@ async function checkTargets(workspaceId: string, actor: CurrentUser | null, inpu
 }
 
 async function createRun(workspaceId: string, requester: CurrentUser | null, input: StartRunInput): Promise<RunContext> {
-  const cap = agentCapMicros(input.agentId)
+  // The workspace may lower an agent's cap or switch it off (E19, features/ai/definitions.ts), never raise it.
+  const agent = await effectiveAgent(workspaceId, input.agentId)
+  if (!agent.enabled) throw new LeadError("conflict", `L'agent « ${agent.def.label} » est désactivé : le propriétaire peut le réactiver dans Agents IA.`, 409)
+  const cap = agent.capMicros
   const status = input.status ?? "QUEUED"
   const userKey = requester?.id ?? SYSTEM_USER
   const run = await prisma
@@ -264,4 +268,67 @@ export async function listRuns(actor: CurrentUser, opts: { leadId?: string; limi
     finishedAt: r.finishedAt?.toISOString() ?? null,
     canCancel: (ACTIVE_RUN_STATUSES as readonly string[]).includes(r.status) && (r.requestedById === actor.id || isManager(actor)),
   }))
+}
+
+export interface StepView {
+  index: number
+  type: string
+  name: string
+  model: string | null
+  inputTokens: number
+  outputTokens: number
+  costEur: number
+  durationMs: number
+  input: unknown
+  output: unknown
+  createdAt: string
+}
+
+export interface RunDetail extends Omit<RunView, "steps"> {
+  input: unknown
+  output: unknown
+  steps: StepView[]
+}
+
+/** One run with its steps, for the person who asked for it, a manager or the owner. */
+export async function getRunDetail(actor: CurrentUser, runId: string): Promise<RunDetail> {
+  if (!can(actor.role, "ai:read")) throw new LeadError("forbidden", "Accès refusé", 403)
+  const r = await prisma.agentRun.findFirst({
+    where: { id: runId, workspaceId: actor.workspaceId, ...(isManager(actor) ? {} : { requestedById: actor.id }) },
+    include: {
+      requestedBy: { select: { name: true, email: true } },
+      lead: { select: { id: true, company: { select: { name: true } }, contact: { select: { name: true, email: true } } } },
+      steps: { orderBy: { index: "asc" }, take: 100 },
+    },
+  })
+  if (!r) throw new LeadError("not_found", "Exécution introuvable", 404)
+  return {
+    id: r.id,
+    agentId: r.agentId,
+    agentLabel: agentLabel(r.agentId),
+    status: r.status,
+    requestedBy: r.requestedBy?.name ?? r.requestedBy?.email ?? null,
+    lead: r.lead ? { id: r.lead.id, name: leadName(r.lead) } : null,
+    costEur: microsToEur(r.costMicros),
+    capEur: microsToEur(r.capMicros),
+    steps: r.steps.map((s) => ({
+      index: s.index,
+      type: s.type,
+      name: s.name,
+      model: s.model,
+      inputTokens: s.inputTokens,
+      outputTokens: s.outputTokens,
+      costEur: microsToEur(s.costMicros),
+      durationMs: s.durationMs,
+      input: s.input,
+      output: s.output,
+      createdAt: s.createdAt.toISOString(),
+    })),
+    error: r.error,
+    createdAt: r.createdAt.toISOString(),
+    finishedAt: r.finishedAt?.toISOString() ?? null,
+    canCancel: (ACTIVE_RUN_STATUSES as readonly string[]).includes(r.status) && (r.requestedById === actor.id || isManager(actor)),
+    input: r.input,
+    output: r.output,
+  }
 }

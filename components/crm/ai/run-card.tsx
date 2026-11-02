@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { Bot, Square } from "lucide-react"
+import { Bot, ListTree, Square } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -10,8 +10,8 @@ import type { RunView } from "@/features/ai/runs"
 
 const when = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
 
-/** One AI run: agent, status, fiche, who asked, cost against its cap. */
-export function RunCard({ run, onCancel, busy }: { run: RunView; onCancel?: (id: string) => void; busy?: boolean }) {
+/** One AI run: agent, status, fiche, who asked, cost against its cap. `onOpen` shows its steps and result. */
+export function RunCard({ run, onCancel, onOpen, busy }: { run: RunView; onCancel?: (id: string) => void; onOpen?: (id: string) => void; busy?: boolean }) {
   return (
     <Card className="p-4">
       <div className="flex flex-wrap items-start gap-3">
@@ -39,6 +39,12 @@ export function RunCard({ run, onCancel, busy }: { run: RunView; onCancel?: (id:
             sur {formatEur(run.capEur)} · {run.steps} étape{run.steps > 1 ? "s" : ""}
           </p>
         </div>
+        {onOpen && (
+          <Button variant="ghost" size="sm" onClick={() => onOpen(run.id)}>
+            <ListTree className="h-3.5 w-3.5" aria-hidden="true" />
+            Détails
+          </Button>
+        )}
         {run.canCancel && onCancel && (
           <Button variant="outline" size="sm" onClick={() => onCancel(run.id)} disabled={busy}>
             <Square className="h-3.5 w-3.5" aria-hidden="true" />

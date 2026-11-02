@@ -2,7 +2,7 @@
 
 > Architecture de référence décidée le 2 novembre 2026 (décisions D13 à D27 de [PLAN.md](PLAN.md)). Elle sert de spécification aux epics E17 à E27.
 >
-> **État** : le socle (E17) est implémenté, avec `lib/ai/`, `features/ai/` et Réglages › IA ; les sections 4 à 12 décrivent ce qui existe. Le reste (worker, agents métier, Studio, copilote, QG) est la spécification des epics E18 à E27.
+> **État** : le socle (E17), le worker (E18) et les agents, skills et catalogue d'offres (E19) sont implémentés : `lib/ai/`, `features/ai/`, `features/offers/`, `worker/`, Réglages › IA et Agents IA (`/app/agents`). Les sections 4 à 12 et le catalogue de la section 14 décrivent ce qui existe. Le reste (agents métier, Studio, copilote, QG) est la spécification des epics E20 à E27.
 
 ## 1. Objet
 
@@ -153,19 +153,27 @@ Exemple de mois (ordre de grandeur, à mesurer en E20 et E23) :
 | Stratège marché | Stratège growth : secteurs, douleurs par métier, offre phare, angle | `writer` | `list_offers`, `campaign_metrics`, MCP `list_sectors`, `propose_campaign`, `launch_search` | campagne brouillon, recherche | le lancement |
 | Analyste qualification | — | `decision` | `score_import`, `next_action` | pertinence, probabilité | sous le seuil |
 
-**Définition dans le code** (`features/ai/agents.ts`, depuis E17), versionnée et testée. E17 fixe l'identité de chaque agent, son rôle de modèle et ses limites ; chaque epic métier y ajoutera ses consignes (`persona`), ses outils et ses skills :
+**Définition dans le code** (`features/ai/agents.ts`), versionnée et testée. Depuis E19, chaque agent y a son rôle d'expert (`persona`), les rôles de modèle permis, ses outils, ses skills V1, ce qu'il produit, ce qu'une personne valide et ses limites. Son epic métier y branchera son comportement :
 ```ts
 auditor: defineAgent({
   id: "auditor",
   label: "Auditeur digital",
   mission: "Audite le site et la présence en ligne d'un prospect, chaque constat avec sa preuve.",
+  persona: `Tu es consultant senior en acquisition locale et en performance web…`,
   modelRole: "writer",
+  modelRoles: ["writer", "fast", "designer"], // ce que le propriétaire peut choisir, le sien d'abord
   epic: "E20",
+  tools: ["fetch_page", "pagespeed", "screenshot", /* … */ "read_skill"],
+  skills: [{ name: "audit-seo-local", mode: "on_demand" } /* … */],
   limits: { maxSteps: 12, maxCostEur: 0.3 }, // le plafond réservé au démarrage d'une exécution
 }),
 ```
 
-**Surcouche éditable** (`AgentDefinition`) : consignes ajoutées, modèle (parmi la liste blanche), skills actifs, limites. Chaque modification crée une version et est journalisée.
+**Surcouche éditable** (`AgentDefinition`, `features/ai/definitions.ts`) : elle complète l'agent sans rien remplacer.
+- Consignes de l'équipe et skills : propriétaire et managers (`skill:manage`).
+- Rôle de modèle parmi ceux permis, limites plus basses que celles du code, activation : propriétaire (`ai:manage`). Une valeur hors bornes est refusée, jamais rognée.
+- Chaque enregistrement crée une version (`AgentDefinitionVersion`, avec l'état complet) et une ligne du journal d'audit. Une exécution réserve le plafond de la surcouche ; un agent désactivé ne démarre pas.
+- Les consignes d'une exécution s'écrivent toujours dans le même ordre (`features/ai/runtime.ts`) : rôle d'expert, règles communes, consignes de l'équipe, skills « toujours », catalogue des skills « à la demande ». Les consignes de l'équipe ne lèvent aucune règle commune.
 
 ## 8. Skills
 
@@ -181,13 +189,14 @@ Un skill est un savoir-faire qu'on ajoute à un agent sans toucher au code : une
   1. Fiche Google : catégories, horaires, photos, nombre d'avis, note…
   2. …
   ```
-- **Stockage** : table `Skill`, avec ses versions. `AgentSkill` relie un skill à un agent en mode `always` (le contenu entre dans les consignes) ou `on_demand`.
+- **Stockage** : `Skill` (nom, description, version courante), `SkillVersion` (chaque version, avec ses fichiers annexes en texte et une note) et `AgentSkill`, qui donne un skill à un agent en mode `ALWAYS` (le contenu entre dans les consignes) ou `ON_DEMAND`. Un skill archivé n'est plus donné aux agents ; ses versions restent lisibles.
 - **Chargement à la demande** : l'agent ne reçoit que le catalogue (nom et description) et appelle `read_skill(name)` quand il en a besoin. Les consignes restent courtes, stables et cachables.
-- **Écran** (`/app/agents`, onglet Skills, propriétaire et manager) :
-  - éditer et prévisualiser ;
-  - tester sur une fiche (exécution réelle, comptée dans le budget) ;
-  - activer ;
-  - importer et exporter des fichiers SKILL.md.
+- **Écran** (`/app/agents`, onglet Skills ; lecture pour tous ceux qui utilisent l'IA, écriture pour le propriétaire et les managers) :
+  - créer et modifier, chaque enregistrement créant une version, et revenir à une version ;
+  - tester sur une fiche : une exécution réelle de l'agent choisi, avec ce skill seul, faite par le worker et comptée dans le budget ; la fiche est transmise sans nom de contact, email ni téléphone ;
+  - archiver et restaurer ;
+  - importer un fichier SKILL.md ou le `.zip` d'un dossier de skill (les annexes qui ne sont pas du texte sont ignorées), exporter au même format.
+- **Skill généré** : `offres-cleads` n'a pas de texte propre ; il est écrit à partir des offres actives à chaque utilisation.
 - **Origine** : un skill est une consigne interne, écrite par l'équipe. Il n'est jamais rempli automatiquement à partir d'un contenu externe.
 
 | Skill V1 | Utilisé par | Contenu |
@@ -202,6 +211,8 @@ Un skill est un savoir-faire qu'on ajoute à un agent sans toucher au code : une
 | `script-appel-15min` | Conseiller | structure de l'appel, accroche sur l'audit, proposition de rendez-vous |
 | `charte-studio` | Designer | principes de design, typographies, sections, accessibilité, interdits (scripts, faux avis) |
 | `playbook-<secteur>` | tous | architectes, artisans du bâtiment, restaurants, santé… : douleurs, vocabulaire, offres qui marchent |
+
+Le catalogue V1 (`features/ai/skills/catalog-v1.ts`) est installé une fois par espace, à la première ouverture d'Agents IA : 12 skills rédigés, dont quatre playbooks (artisans du bâtiment, restaurants, santé, architectes), plus `offres-cleads`. Ce que l'équipe archive ensuite ne revient pas.
 
 ## 9. Outils et MCP
 
@@ -268,9 +279,9 @@ Migrations additives uniquement ; chaque table porte `workspaceId`.
 | `AgentRun` | E17 | agent, type, statut, demandeur, fiche ou campagne liée, entrée, sortie, erreur, réservation, coût réel, début, fin, exécution parente |
 | `AgentStep` | E17 | exécution, rang, type (modèle, outil, décision, validation), nom, entrée et sortie tronquées, modèle, jetons, coût, durée |
 | `AgentApproval` | E17 | exécution, action, données de l'action, résumé, statut (en attente, approuvée, refusée, expirée), décidée par, date |
-| `AgentDefinition` | E19 | agent, consignes ajoutées, modèle, skills actifs, limites, version |
-| `Skill`, `AgentSkill` | E19 | nom, description, contenu, fichiers, version, actif ; mode `always` ou `on_demand` |
-| `Offer` | E19 | nom, description, livrables, signaux déclencheurs, fourchette de prix, angle, objections, active |
+| `AgentDefinition`, `AgentDefinitionVersion` | E19 | agent, consignes ajoutées, rôle de modèle, limites, activation, version ; chaque version garde l'état complet, skills compris |
+| `Skill`, `SkillVersion`, `AgentSkill` | E19 | nom, description, version courante, archivé ; contenu, fichiers et note de chaque version ; mode `ALWAYS` ou `ON_DEMAND` |
+| `Offer` | E19 | identifiant stable, nom, catégorie, description, livrables, signaux, fourchette de prix et facturation, angle, objections, statut (à valider, active, archivée), validée par |
 | `ProspectAudit` | E20 | fiche, entreprise, domaine, sous-scores, constats et preuves, résumé, captures, coût, date, valable jusqu'au |
 | `OfferRecommendation` | E21 | audit, offre, adéquation, argumentaire, preuves, script, angle, statut (suggérée, acceptée, refusée) |
 | `GeneratedSite` | E23 | fiche, audit, brief, version, clés S3, empreinte du jeton, expiration, scores avant / après, statut |
@@ -291,6 +302,13 @@ Le contenu d'un site audité n'est pas stocké en entier. On ne garde que les ex
 | `studio:generate` | ✓ | ✓ | ✓ | ✓ | — | fiches que la personne peut modifier |
 
 Peut valider l'action d'un agent : la personne qui a lancé l'exécution, ou un manager ou le propriétaire. Dans tous les cas, il faut avoir soi-même le droit de faire l'action (par exemple `email:send` sur sa boîte).
+
+`skill:manage` et `offer:manage` sont interdits aux outils des agents : un agent ne réécrit jamais ses consignes ni les offres qu'il recommande.
+
+**Agents IA** (`/app/agents`, E19) :
+- **Accès** : visible avec `ai:use`. Un lecteur n'y a pas accès : il verrait des consignes internes et des prix.
+- **Onglets** : agents, skills, offres, exécutions (avec le détail des étapes et le résultat), « À valider », consommation.
+- **Routes** : `PUT /api/ai/agents/[id]`, `GET` et `POST /api/ai/skills`, `POST /api/ai/skills/import`, `GET` et `PATCH /api/ai/skills/[id]`, `GET /api/ai/skills/[id]/versions/[version]`, `POST /api/ai/skills/[id]/test`, `GET` et `POST /api/ai/offers`, `PATCH /api/ai/offers/[id]`, `GET /api/ai/runs/[id]`.
 
 **Réglages › IA** (`/app/settings/ai`) :
 - **Accès** : la page est visible avec `ai:use`. Le propriétaire la modifie (`ai:manage`) ; les autres la lisent.
@@ -319,7 +337,7 @@ Peut valider l'action d'un agent : la personne qui a lancé l'exécution, ou un 
 
 ## 14. Offres et pitch (E21)
 
-**Catalogue V1 proposé, à valider.** Les prix sont indicatifs : à remplacer par les tiens.
+**Catalogue V1** (`features/offers/catalog-v1.ts`), installé une fois par espace **en brouillon**. Le propriétaire ou un manager vérifie chaque offre dans Agents IA › Offres, puis l'active. Les agents ne voient que les offres actives : `list_offers`, le skill `offres-cleads` et la garde `assertActiveOffers` lisent le même filtre. Les prix sont indicatifs : à remplacer par les tiens. Les signaux viennent d'un vocabulaire fixe (`features/offers/signals.ts`), que l'audit (E20) lèvera avec leurs preuves.
 
 | Offre | Signaux qui la déclenchent | Livrables | Prix indicatif HT |
 |---|---|---|---|
@@ -503,9 +521,9 @@ Cache-Control: private, no-store
 | `DATABASE_URL` du worker (base Railway, rôle dédié recommandé) à saisir avec `scripts/set-ai-worker-env.sh` | le propriétaire | mise en service du worker |
 | Clé Vercel AI Gateway (compte Vercel) et clé gratuite Google PageSpeed Insights | le propriétaire | E17, E20 |
 | Enregistrement DNS `apercu.cleads.fr` vers Netlify, alias de domaine sur le site | le propriétaire | E23 |
-| Prix, livrables et cas d'usage du catalogue d'offres (section 14) | le propriétaire | E19 |
+| Vérifier puis activer les offres du catalogue V1 dans Agents IA › Offres (prix indicatifs) | le propriétaire | E21 |
 | Crédits Meshy pour les personnages des agents | confirmation au moment venu | E26 |
 | DPA des fournisseurs, politique de confidentialité, registre des traitements | le propriétaire | ouverture à l'équipe |
 | Durée de streaming réellement permise par les fonctions Netlify | à mesurer | E24 |
 
-**Prochaine étape : E17 (socle IA).**
+**Prochaine étape : E20 (audit et enrichissement des prospects).**

@@ -38,7 +38,12 @@ La file est la **table `AgentRun`** elle-même :
 - Si le worker s'arrête entre les deux, l'action n'est jamais rejouée : l'exécution échoue avec le message « a peut-être déjà été faite, vérifiez avant de la relancer ».
 - Une approbation remet l'exécution en tête de file. L'agent reprend avec le résultat de l'action, qu'il ne redemande pas.
 
-**Agents.** Chaque epic métier (E20 à E25) enregistre le code de son agent (`registerAgentHandler`), et le worker ne prend que les agents qu'il connaît. **Avec E18 seul, aucun agent n'est encore branché** : le worker tient la file à jour (maintenance) et attend.
+**Agents.** Chaque epic métier (E20 à E25) enregistre le code de son agent (`registerAgentHandler`), et le worker ne prend que les agents qu'il connaît. Aucun agent métier n'est encore branché.
+
+**Tâches** (E19). Une tâche est un travail que n'importe quel agent rédacteur peut faire, reconnu au champ `kind` de l'entrée de l'exécution. Elle est enregistrée avec `registerTaskHandler`. La seule tâche pour l'instant est le **test d'un skill sur une fiche** (`skill_test`, `features/ai/skill-test.ts`).
+- Le worker prend une exécution si c'est un agent qu'il connaît, ou si c'est une tâche qu'il connaît, pour un agent qui a une place libre.
+- Les autres exécutions restent en file.
+- Le champ `tasks` de `/healthz` liste les tâches connues.
 
 **Maintenance** (toutes les 30 s ; un verrou consultatif la réserve à un seul worker s'il y en a plusieurs) :
 - reprises et abandons ;
@@ -117,4 +122,4 @@ La file est la **table `AgentRun`** elle-même :
 
 - **Déploiement** : il se fait par script depuis un poste. L'automatisation par GitHub Actions viendra avec E14.
 - **Playwright** : le navigateur des captures et des maquettes arrivera avec E20, son premier utilisateur. Il est inutile de l'embarquer avant.
-- **Aucun agent métier branché** : ils arrivent avec E20 à E25.
+- **Aucun agent métier branché** : ils arrivent avec E20 à E25. Le worker sait déjà exécuter les tests de skills (E19).

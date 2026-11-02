@@ -2,8 +2,8 @@ import os from "node:os"
 import { prisma } from "@/lib/prisma"
 import { publishRunUpdate, type RunUpdate } from "@/lib/ai/realtime"
 import { LeadError } from "@/features/leads/errors"
-import type { AgentId } from "@/features/ai/agents"
-import { RetryableError, agentHandler, handledAgents } from "@/features/ai/handlers"
+import { AGENT_IDS, type AgentId } from "@/features/ai/agents"
+import { RetryableError, agentHandler, handledAgents, handledTasks, taskHandler } from "@/features/ai/handlers"
 import { runMaintenance } from "@/features/ai/maintenance"
 import { HEARTBEAT_MS, claimNextRun, heartbeat, releaseRun, retryRun, workerBeat, type ClaimedRun } from "@/features/ai/queue"
 import { finishRun, loadRunContext } from "@/features/ai/runs"
@@ -79,11 +79,11 @@ export class AgentWorker {
     await Promise.all([...this.running.values()].map((r) => r.done))
   }
 
-  /** Agents this worker can take now: it has their handler and a free slot for them. */
-  private claimable(): AgentId[] {
+  /** Agents with a free slot on this worker. */
+  private freeAgents(): AgentId[] {
     const counts = new Map<AgentId, number>()
     for (const r of this.running.values()) counts.set(r.agentId, (counts.get(r.agentId) ?? 0) + 1)
-    return handledAgents().filter((id) => (counts.get(id) ?? 0) < (this.cfg.perAgent[id] ?? this.cfg.concurrency))
+    return AGENT_IDS.filter((id) => (counts.get(id) ?? 0) < (this.cfg.perAgent[id] ?? this.cfg.concurrency))
   }
 
   /** Takes runs until the worker is full; returns how many it started. */
@@ -91,7 +91,13 @@ export class AgentWorker {
     this.lastTickAt = new Date()
     let started = 0
     while (!this.stopping && this.running.size < this.cfg.concurrency) {
-      const claim = await claimNextRun(this.cfg.id, this.claimable())
+      const free = this.freeAgents()
+      const handled = new Set(handledAgents())
+      const claim = await claimNextRun(
+        this.cfg.id,
+        free.filter((id) => handled.has(id)),
+        { kinds: handledTasks(), agentIds: free }
+      )
       if (!claim) break
       const controller = new AbortController()
       const done = this.execute(claim, controller).finally(() => this.running.delete(claim.id))
@@ -130,13 +136,15 @@ export class AgentWorker {
         await fail(`L'action approuvée « ${approved.failed[0].tool} » a échoué : ${approved.failed[0].error}`.slice(0, 2_000))
         return
       }
-      const handler = agentHandler(claim.agentId)
+      const row = await prisma.agentRun.findUnique({ where: { id: claim.id }, select: { input: true } })
+      const input = row?.input ?? null
+      // A task (a skill test) runs the same way for every agent; otherwise the agent's own behaviour.
+      const handler = taskHandler(input) ?? agentHandler(claim.agentId)
       if (!handler) {
         await fail("Cet agent n'est pas encore disponible sur le worker.")
         return
       }
-      const row = await prisma.agentRun.findUnique({ where: { id: claim.id }, select: { input: true } })
-      const result = await handler({ run: ctx, attempt: claim.attempts, input: row?.input ?? null, approved: approved.done, signal: controller.signal })
+      const result = await handler({ run: ctx, attempt: claim.attempts, input, approved: approved.done, signal: controller.signal })
       if (controller.signal.aborted) return
       // A handler that asked for approval left the run waiting; one that ran out of budget already ended it.
       const state = await prisma.agentRun.findUnique({ where: { id: claim.id }, select: { status: true, lockedBy: true } })
@@ -224,6 +232,7 @@ export class AgentWorker {
       version: this.cfg.version,
       running: this.running.size,
       agents: handledAgents(),
+      tasks: handledTasks(),
       lastTickAt: this.lastTickAt?.toISOString() ?? null,
       lastMaintenanceAt: this.lastMaintenanceAt?.toISOString() ?? null,
       lastError: this.lastError,

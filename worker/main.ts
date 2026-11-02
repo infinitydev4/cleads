@@ -2,9 +2,12 @@ import http from "node:http"
 import os from "node:os"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
+import { registerTaskHandler } from "@/features/ai/handlers"
+import { SKILL_TEST, runSkillTest } from "@/features/ai/skill-test"
 import { AgentWorker, DEFAULT_PER_AGENT } from "./runner"
 import { errorFields, log } from "./log"
 // Agents register their handler here as their epic ships (E20 to E25): import "@/features/ai/agents/<agent>/handler".
+registerTaskHandler(SKILL_TEST, (job) => runSkillTest(job))
 
 /** Entry point of the AI worker container (docs/crm-v1/WORKER-IA.md). */
 const env = z
