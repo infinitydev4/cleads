@@ -204,7 +204,7 @@ suite("Offers and pitch (database)", () => {
     ])
     const known = new Set(REPORT.evidence.map((e) => e.id))
     for (const r of view.recommendations) expect(r.evidence.length > 0 && r.evidence.every((id) => known.has(id)), r.offer.slug).toBe(true)
-    expect(view.recommendations[0]).toMatchObject({ evidence: ["M1", "C1"], offer: { name: "Refonte de site", active: true }, signals: [{ key: "site_outdated", label: "Site daté" }, { key: "mobile_score_low", label: "Score mobile sous 50" }] })
+    expect(view.recommendations[0]).toMatchObject({ evidence: ["M1", "C1"], offer: { name: "Refonte de site", active: true }, signals: [{ key: "site_outdated", label: "Site daté" }, { key: "mobile_score_low", label: "Site lent ou non adapté au téléphone" }] })
     expect(view.pack).toEqual({ names: ["Refonte de site", "SEO local"], budget: labels.packBudget([{ priceMinEur: 2000, priceMaxEur: 6000, billing: "ONE_OFF" }, { priceMinEur: 300, priceMaxEur: 800, billing: "MONTHLY" }]) })
     expect(view.notes).toEqual([expect.stringMatching(/« Google Ads » retirée/)])
     expect(view.evidence.map((e) => e.id).sort()).toEqual(["C1", "M1", "S1"])

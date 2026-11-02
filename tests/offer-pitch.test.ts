@@ -5,7 +5,7 @@ import { formatOfferPrice, withPriceNote } from "@/features/offers/labels"
 import type { SkillOffer } from "@/features/offers/skill"
 import type { AuditReport } from "@/features/prospect-audit/schemas"
 import { MAX_CANDIDATES, candidatesFor, pitchSignals } from "@/features/offer-pitch/rules"
-import { buildPitch, pitchPrompt, settleRoles, type PitchFacts } from "@/features/offer-pitch/advisor"
+import { buildPitch, pitchPrompt, settleRoles, withoutReviewNote, type PitchFacts } from "@/features/offer-pitch/advisor"
 import { packBudget, stepTimes } from "@/features/offer-pitch/labels"
 import { decideSchema, pitchOutputSchema, type PitchOutput } from "@/features/offer-pitch/schemas"
 import { pitchSkills } from "@/features/offer-pitch/handler"
@@ -148,6 +148,16 @@ describe("what is kept of the advisor's answer", () => {
     expect(built.headline).toBe("Site lent et daté sur mobile, et seulement 8 avis : des demandes perdues chaque semaine.")
     // Only cited evidence travels with the pitch.
     expect(built.evidence.map((e) => e.id).sort()).toEqual(["C1", "M1", "S1"])
+  })
+
+  it("keeps the email angle an idea for the person who writes, without the rule on review copied into it", () => {
+    const angle = "Votre site est très rapide (99/100 sur mobile), mais il s'affiche réduit sur téléphone. Nous vous proposons de vous montrer comment présenter vos projets. Cet email est à relire et valider avant tout envoi."
+    expect(withoutReviewNote(angle)).toBe("Votre site est très rapide (99/100 sur mobile), mais il s'affiche réduit sur téléphone. Nous vous proposons de vous montrer comment présenter vos projets.")
+    expect(withoutReviewNote("À valider par une personne avant envoi")).toBe("")
+    // Nothing else is touched, even a sentence about sending.
+    expect(withoutReviewNote("Je vous envoie l'audit et je vous rappelle jeudi.")).toBe("Je vous envoie l'audit et je vous rappelle jeudi.")
+    const built = buildPitch({ ...OUTPUT, email: { ...OUTPUT.email, angle } }, candidatesFor(REPORT, offers("refonte-site", "seo-local")), REPORT)
+    expect(built.email?.angle).not.toMatch(/relire|valider/)
   })
 
   it("replaces an unsourced hook with the first finding, and drops an unsourced email angle", () => {

@@ -162,12 +162,51 @@ function checkUrl(raw: string, opts: FetchOptions): URL {
   return url
 }
 
-function decoderFor(contentType: string | null): TextDecoder {
-  const charset = /charset=["']?([\w-]+)/i.exec(contentType ?? "")?.[1]?.toLowerCase()
+/**
+ * Windows-1252 at 0x80-0x9F: €, …, ’, œ… (five positions are undefined and stay as they are). Some Node versions decode
+ * these bytes as control characters (Node 24.10 does, 24.22 does not): they are mapped here, whatever the version.
+ */
+const CP1252_HIGH = [
+  0x20ac, 0x81, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030, 0x0160, 0x2039, 0x0152, 0x8d, 0x017d, 0x8f,
+  0x90, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0x9d, 0x017e, 0x0178,
+]
+
+function decodeWith(decoder: TextDecoder, buffer: Uint8Array): string {
+  const text = decoder.decode(buffer)
+  return decoder.encoding === "windows-1252" ? text.replace(/[\u0080-\u009f]/g, (c) => String.fromCharCode(CP1252_HIGH[c.charCodeAt(0) - 0x80])) : text
+}
+
+/** A decoder for an encoding label, or null when the label is unknown. */
+function decoderOf(label: string | null | undefined): TextDecoder | null {
+  if (!label) return null
   try {
-    return new TextDecoder(charset && charset !== "utf8" ? charset : "utf-8")
+    return new TextDecoder(label.trim().toLowerCase())
   } catch {
-    return new TextDecoder("utf-8")
+    return null
+  }
+}
+
+/**
+ * A page's text, decoded the way a browser does: byte order mark, then the charset of the Content-Type header, then the
+ * one the page declares in its first bytes (<meta charset> or http-equiv), then UTF-8. Bytes that are not valid UTF-8
+ * whatever was declared are read as Windows-1252: many old French sites use it without saying so, or while claiming
+ * UTF-8, and reading them as UTF-8 turns « maîtrise » into « ma�trise ».
+ */
+export function decodeBody(buffer: Uint8Array, contentType: string | null, opts: { truncated?: boolean } = {}): string {
+  const [a, b, c] = buffer
+  const bom = a === 0xef && b === 0xbb && c === 0xbf ? "utf-8" : a === 0xfe && b === 0xff ? "utf-16be" : a === 0xff && b === 0xfe ? "utf-16le" : null
+  const header = /charset=["']?\s*([\w.:-]+)/i.exec(contentType ?? "")?.[1]
+  // The declaration sits in the first 1 024 bytes; reading them as Windows-1252 keeps every ASCII character as it is.
+  const head = new TextDecoder("windows-1252").decode(buffer.subarray(0, 1_024))
+  const meta = /<meta\b[^>]*?charset\s*=\s*["']?\s*([\w.:-]+)/i.exec(head)?.[1]
+  const chosen = [bom, header, meta].map(decoderOf).find((d): d is TextDecoder => !!d) ?? new TextDecoder("utf-8")
+  if (chosen.encoding !== "utf-8") return decodeWith(chosen, buffer)
+  try {
+    // A page cut by the size limit may end in the middle of a letter: that letter is dropped, not counted as invalid.
+    // A whole page ending that way is not UTF-8 (« café » in Windows-1252 ends with 0xE9).
+    return new TextDecoder("utf-8", { fatal: true }).decode(buffer, { stream: !!opts.truncated })
+  } catch {
+    return decodeWith(new TextDecoder("windows-1252"), buffer)
   }
 }
 
@@ -228,7 +267,7 @@ function once(url: URL, opts: FetchOptions, deadline: number): Promise<{ status:
       const finish = () => {
         clearTimeout(timer)
         const buffer = Buffer.concat(chunks)
-        resolve({ status, location: null, contentType, body: decoderFor(contentType).decode(buffer), bytes: buffer.length, truncated })
+        resolve({ status, location: null, contentType, body: decodeBody(buffer, contentType, { truncated }), bytes: buffer.length, truncated })
       }
       stream.on("data", (chunk: Buffer) => {
         if (truncated) return

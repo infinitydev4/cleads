@@ -29,7 +29,7 @@ const INSTRUCTIONS = [
   "- recommendations : une à quatre offres candidates, de la plus utile à la moins utile. Une seule « main », l'offre principale ; au plus deux « complement » pour un pack réaliste, à la mesure de la taille et du budget probable de l'entreprise ; au plus une « entry », une première étape moins chère si le pack est trop lourd ; « later » pour une seconde étape. Pour chacune : fit de 0 à 100, why en deux phrases avec les faits de l'audit, gain (ce que le prospect y gagne, sans chiffre inventé), evidence, et l'objection la plus probable avec sa réponse ;",
   "- script : l'appel de 15 minutes, selon le skill script-appel-15min s'il t'est donné : opening, hook (un constat précis posé comme une question, avec sa preuve), questions (trois au plus, adaptées au métier), proposal (l'offre principale reliée au besoin, puis l'offre d'entrée s'il y en a une), close (une prochaine étape datée : rendez-vous, maquette à montrer ou proposition écrite) ;",
   "- objections : les deux ou trois objections les plus probables pendant l'appel, avec leur réponse ;",
-  "- email : l'angle du premier email, un objet de moins de 50 caractères et deux phrases, appuyés sur une preuve.",
+  "- email : l'angle du premier email, un objet de moins de 50 caractères et deux phrases, appuyés sur une preuve. C'est une idée pour la personne qui écrira l'email, pas l'email lui-même : ni formule de politesse, ni mention de relecture ou de validation, que le CRM affiche déjà.",
   "Vouvoiement, phrases courtes, sans jargon. Les prix sont ceux du catalogue : n'en donne pas d'autres, et ne promets aucun résultat chiffré. Un élément qui ne cite aucune preuve existante sera supprimé.",
 ].join("\n")
 
@@ -131,6 +131,12 @@ export const PACK_COMPLEMENTS = 2
 
 const squash = (s: string) => s.replace(/\s+/g, " ").trim()
 
+/** A sentence about reviewing or approving before sending, which the model may copy from the common rules. */
+const REVIEW_NOTE = /[^.!?]*\b(?:relire|relu|relecture|valid\w*)\b[^.!?]*\b(?:envoi|envoy\w*|envoie\w*)\b[^.!?]*[.!?]?/gi
+
+/** The angle without « Cet email est à relire et valider avant tout envoi » : the CRM says it where it matters. */
+export const withoutReviewNote = (text: string) => squash(text.replace(REVIEW_NOTE, " "))
+
 function objectionOf(o: Objection | null): Objection | null {
   const objection = o ? squash(o.objection) : ""
   const answer = o ? squash(o.answer) : ""
@@ -191,7 +197,8 @@ export function buildPitch(output: PitchOutput, candidates: readonly Candidate[]
     notes.push("L'accroche proposée ne citait aucune preuve de l'audit : elle est remplacée par le premier constat.")
   }
   const emailEvidence = valid(output.email.evidence)
-  const email = emailEvidence.length && squash(output.email.subject) && squash(output.email.angle) ? { subject: squash(output.email.subject), angle: squash(output.email.angle), evidence: emailEvidence } : null
+  const angle = withoutReviewNote(output.email.angle)
+  const email = emailEvidence.length && squash(output.email.subject) && angle ? { subject: squash(output.email.subject), angle, evidence: emailEvidence } : null
   if (!email) notes.push("L'angle d'email ne citait aucune preuve de l'audit : il est retiré.")
 
   const cited = new Set([...recommendations.flatMap((r) => r.evidence), ...hook.evidence, ...(email?.evidence ?? [])])
