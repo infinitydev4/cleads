@@ -15,13 +15,20 @@ services:
       WORKER_ID: ai-worker-1
       # The CRM's public address, for the links the worker writes (booking page in a drafted answer, E22).
       NEXT_PUBLIC_APP_URL: ${APP_URL:-https://cleads.fr}
+      # E23: where the Studio's previews are served; PageSpeed measures each new version there.
+      STUDIO_PREVIEW_HOST: ${PREVIEW_HOST:-apercu.cleads.fr}
+      # The root filesystem is read-only: Chromium keeps its configuration and cache in /tmp.
+      XDG_CONFIG_HOME: /tmp/.config
+      XDG_CACHE_HOME: /tmp/.cache
     read_only: true
-    tmpfs: [/tmp]
+    # Chromium (E23) writes its profile and shared memory under /tmp.
+    tmpfs: ["/tmp:size=512m"]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    mem_limit: 384m
+    # Node and, during a Studio run, one headless Chromium (about 300 MB for a page render).
+    mem_limit: 1g
     cpus: 1.0
-    pids_limit: 128
+    pids_limit: 512
     stop_grace_period: 40s # the worker gives runs 25 s to finish, then puts them back in the queue
     logging:
       driver: json-file

@@ -104,6 +104,8 @@ export interface FetchOptions {
   maxRedirects?: number
   /** Do not read the body (robots.txt existence, llms.txt…): only the status. */
   headOnly?: boolean
+  /** Read the body as bytes, and only for these content types (the Studio's images, E23): `data` instead of `body`. */
+  binary?: RegExp
   /** Tests only: a local server on any port. Never set in the application. */
   unsafeTestOverrides?: { allowAddress?: (ip: string) => boolean; allowPort?: (port: number) => boolean; resolve?: (host: string) => Promise<string[]> }
 }
@@ -116,6 +118,8 @@ export interface FetchResult {
   redirects: string[]
   contentType: string | null
   body: string | null
+  /** The bytes, when `binary` was asked and the content type matched. */
+  data?: Uint8Array | null
   /** Bytes read, after decompression. */
   bytes: number
   truncated: boolean
@@ -233,7 +237,9 @@ const failureOf = (error: NodeJS.ErrnoException): FetchRefused => {
   return new FetchRefused("network", `Connexion impossible (${code || error.message.slice(0, 80)})`)
 }
 
-function once(url: URL, opts: FetchOptions, deadline: number): Promise<{ status: number; location: string | null; contentType: string | null; body: string | null; bytes: number; truncated: boolean }> {
+type Once = { status: number; location: string | null; contentType: string | null; body: string | null; data?: Uint8Array | null; bytes: number; truncated: boolean }
+
+function once(url: URL, opts: FetchOptions, deadline: number): Promise<Once> {
   const maxBytes = opts.maxBytes ?? FETCH_LIMITS.maxBytes
   return new Promise((resolve, reject) => {
     const remaining = deadline - Date.now()
@@ -243,7 +249,12 @@ function once(url: URL, opts: FetchOptions, deadline: number): Promise<{ status:
       method: "GET",
       agent: false,
       lookup: guardedLookup(opts) as unknown as typeof dns.lookup,
-      headers: { "User-Agent": BOT_USER_AGENT, Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5", "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.5", "Accept-Encoding": "gzip, deflate, br" },
+      headers: {
+        "User-Agent": BOT_USER_AGENT,
+        Accept: opts.binary ? "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8" : "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5",
+        "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate, br",
+      },
     })
     const timer = setTimeout(() => req.destroy(Object.assign(new Error("timeout"), { code: "ETIMEDOUT" })), remaining)
     req.on("error", (error: NodeJS.ErrnoException) => {
@@ -254,7 +265,8 @@ function once(url: URL, opts: FetchOptions, deadline: number): Promise<{ status:
       const status = res.statusCode ?? 0
       const contentType = (res.headers["content-type"] as string | undefined) ?? null
       const location = status >= 300 && status < 400 ? ((res.headers.location as string | undefined) ?? null) : null
-      if (location || opts.headOnly || !(status >= 200 && status < 300) || (contentType && !TEXT_TYPE.test(contentType))) {
+      const unwanted = opts.binary ? !contentType || !opts.binary.test(contentType) : !!contentType && !TEXT_TYPE.test(contentType)
+      if (location || opts.headOnly || !(status >= 200 && status < 300) || unwanted) {
         clearTimeout(timer)
         res.resume()
         req.destroy()
@@ -267,7 +279,8 @@ function once(url: URL, opts: FetchOptions, deadline: number): Promise<{ status:
       const finish = () => {
         clearTimeout(timer)
         const buffer = Buffer.concat(chunks)
-        resolve({ status, location: null, contentType, body: decodeBody(buffer, contentType, { truncated }), bytes: buffer.length, truncated })
+        if (opts.binary) resolve({ status, location: null, contentType, body: null, data: new Uint8Array(buffer), bytes: buffer.length, truncated })
+        else resolve({ status, location: null, contentType, body: decodeBody(buffer, contentType, { truncated }), bytes: buffer.length, truncated })
       }
       stream.on("data", (chunk: Buffer) => {
         if (truncated) return
@@ -307,7 +320,7 @@ export async function safeFetch(raw: string, opts: FetchOptions = {}): Promise<F
       url = checkUrl(new URL(res.location, url).toString(), opts)
       continue
     }
-    return { url: raw, finalUrl: url.toString(), status: res.status, redirects, contentType: res.contentType, body: res.body, bytes: res.bytes, truncated: res.truncated, timeMs: Date.now() - started }
+    return { url: raw, finalUrl: url.toString(), status: res.status, redirects, contentType: res.contentType, body: res.body, data: res.data, bytes: res.bytes, truncated: res.truncated, timeMs: Date.now() - started }
   }
 }
 

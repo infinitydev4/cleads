@@ -2,7 +2,7 @@
 
 > Architecture de référence décidée le 2 novembre 2026 (décisions D13 à D27 de [PLAN.md](PLAN.md)). Elle sert de spécification aux epics E17 à E27.
 >
-> **État** : le socle (E17), le worker (E18), les agents, skills et catalogue d'offres (E19), l'audit des prospects (E20), les offres argumentées (E21), la rédaction et le classement des réponses (E22) sont implémentés : `lib/ai/`, `features/ai/`, `features/offers/`, `features/prospect-audit/`, `features/offer-pitch/`, `features/email-draft/`, `features/reply-triage/`, `worker/`, Réglages › IA, Agents IA (`/app/agents`), les onglets « Audit IA » et « Offres suggérées » des fiches, le Brouillon IA et les suggestions de la boîte. Les sections 4 à 15 décrivent ce qui existe. Le reste (Studio, copilote, QG) est la spécification des epics E23 à E27.
+> **État** : le socle (E17), le worker (E18), les agents, skills et catalogue d'offres (E19), l'audit des prospects (E20), les offres argumentées (E21), la rédaction et le classement des réponses (E22) et le Studio Web (E23) sont implémentés : `lib/ai/`, `features/ai/`, `features/offers/`, `features/prospect-audit/`, `features/offer-pitch/`, `features/email-draft/`, `features/reply-triage/`, `features/studio/`, `worker/`, Réglages › IA, Agents IA (`/app/agents`), Studio Web (`/app/studio`), les onglets « Audit IA », « Offres suggérées » et « Maquette » des fiches, le Brouillon IA et les suggestions de la boîte. Les sections 4 à 16 décrivent ce qui existe. Le reste (copilote, stratège, QG, évaluations) est la spécification des epics E24 à E27.
 
 ## 1. Objet
 
@@ -62,7 +62,7 @@ apercu.cleads.fr ──► proxy.ts ──► route d'aperçu (HTML depuis S3, C
 | `@ai-sdk/react` | streaming du copilote (`useChat`) | 4.0.163 |
 | Vercel AI Gateway | une clé pour tous les fournisseurs, bascules, prix, suivi des dépenses, variantes batch | service |
 | File de tâches | la table `AgentRun` elle-même (`FOR UPDATE SKIP LOCKED`, bail par battement de cœur), voir [WORKER-IA.md](WORKER-IA.md) | E18 |
-| Playwright | captures, rendu et contrôle des maquettes (worker) | à fixer en E20 |
+| Playwright (`playwright-core`) et axe-core | rendu et contrôle des maquettes dans le worker (Chromium *headless shell*) ; les captures de l'audit viennent de PageSpeed | 1.64.1 et 4.14.0 (E23) |
 
 **Pourquoi ce socle.**
 - **Intégration** : le CRM est en TypeScript (Next 16, React 19, zod) et l'AI SDK s'y intègre sans couche de traduction. Il parle aux principaux fournisseurs avec la même interface.
@@ -126,7 +126,8 @@ Les seuils partent prudents (0,85 et 0,60), puis sont calibrés sur le jeu d'év
   - extraction de l'audit : 4 000 jetons ;
   - analyse de l'audit : 6 000 jetons ;
   - pitch : 6 000 jetons ;
-  - test d'un skill : 3 000 jetons.
+  - test d'un skill : 3 000 jetons ;
+  - brief du Studio : 8 000 jetons ; page du Studio : 24 000 jetons, écrite en flux continu (une page entière prend plusieurs minutes) ; critique d'une page : 4 000 jetons.
 
   Une réponse coupée à cette limite arrête l'exécution sans nouvel essai, car elle serait coupée de la même façon, et le message le dit.
 - **Coût réel** : il est calculé à partir de l'usage renvoyé par chaque appel, y compris une réponse coupée ou illisible (la passerelle la facture aussi), et des prix lus sur la passerelle (liste publique relue toutes les 12 heures, instantané intégré en secours). Il est converti en micro-euros au taux réglé dans `AiSetting` au moment de l'appel. Chaque étape garde l'identifiant de génération de la passerelle, pour rapprocher plus tard ce coût estimé du coût facturé.
@@ -294,8 +295,10 @@ Migrations additives uniquement ; chaque table porte `workspaceId`.
 | `OfferRecommendation` | E21 | pitch, offre (nom et prix copiés), rang, rôle (principale, pack, entrée, plus tard), adéquation, signaux, argumentaire, gain, preuves, objection, statut (suggérée, retenue, écartée), raison et note d'un refus, décidée par, date |
 | `EmailDraft` | E22 | type (premier email, réponse, étape de séquence), fiche, réponse visée, audit, exécution, objet, corps, faits cités (preuves copiées), points à vérifier, modèle, coût, message envoyé, écart `editRatio` |
 | `ReplyTriage` | E22 | réponse, exécution, classe proposée et probabilité, place par rapport aux seuils (`AUTO`, `REVIEW`, `HUMAN`), urgence et probabilité, action attendue et probabilité, modèle |
-| `GeneratedSite` | E23 | fiche, audit, brief, version, clés S3, empreinte du jeton, expiration, scores avant / après, statut |
-| `GeneratedSiteVisit` | E23 | maquette, date (aucune adresse IP en clair) |
+| `GeneratedSite` | E23 | fiche, audit, statut, ce que le collecteur a trouvé, brief (et qui l'a modifié), version en ligne, aléa et empreinte du lien, expiration, visites, date de purge |
+| `GeneratedSiteVersion` | E23 | maquette, numéro, instruction, exécution, page publiée, captures (ordinateur, téléphone, premier écran), contrôles, scores PageSpeed avant / après, jeton PageSpeed (empreinte), modèle, coût |
+| `GeneratedSiteAsset` | E23 | maquette, nom, type (logo, image, police), données, dimensions, source |
+| `GeneratedSiteVisit` | E23 | maquette, version, date (ni cookie ni adresse IP) |
 | `AiConversation`, `AiMessage` | E24 | personne, contexte, messages, exécutions liées |
 
 Le contenu d'un site audité n'est pas stocké en entier. On ne garde que les extraits utiles aux constats et les captures (S3, purgées avec la fiche).
@@ -334,6 +337,17 @@ Peut valider l'action d'un agent : la personne qui a lancé l'exécution, ou un 
   - `GET /api/ai/drafts/[runId]` ;
   - `POST /api/replies/[id]/answer` ;
   - `POST /api/leads/[id]/email`, qui accepte `draftId`.
+
+**Studio Web** (E23) :
+- **Accès** : `studio:generate` (propriétaire, manager, SDR, closer), avec la portée de `lead:write` pour agir ; voir une maquette demande de voir sa fiche. Lancer le Designer demande aussi `ai:use` et réserve son plafond (2 €).
+- **Routes** :
+  - `GET` et `POST /api/leads/[id]/studio` (état de la fiche, nouvelle maquette) ;
+  - `GET` et `PATCH /api/studio/sites/[id]` (maquette, brief modifié) ;
+  - `POST /api/studio/sites/[id]/brief`, `/build`, `/revise` (brief relancé, génération, instruction) ;
+  - `POST` et `DELETE /api/studio/sites/[id]/link` (créer ou prolonger le lien, le désactiver) ;
+  - `POST /api/studio/sites/[id]/versions/[n]` (remettre une version en ligne) ;
+  - `GET /api/studio/sites/[id]/preview?v=n`, `/versions/[n]/[desktop|mobile|thumb]`, `/assets/[name]` (aperçu interne, captures, images) ;
+  - public, sur l'hôte d'aperçu seulement : `/<jeton>`, `/<jeton>/a/<nom>`, `/<jeton>/vu` (`app/apercu/[...path]`).
 
 **Réglages › IA** (`/app/settings/ai`) :
 - **Accès** : la page est visible avec `ai:use`. Le propriétaire la modifie (`ai:manage`) ; les autres la lisent.
@@ -493,6 +507,29 @@ Cache-Control: private, no-store
 
 **Partage.** Envoyer le lien au prospect est une action externe : elle passe par une validation, puis par l'envoi d'email habituel.
 
+**Implémentation (E23, `features/studio/`)** : un workflow codé, exécuté par le worker, en deux exécutions de l'agent `designer`.
+1. **Brief** (`kind: "brief"`) :
+   - le collecteur de l'audit lit le site (`collectSite`, robots.txt respecté, adresses publiques seulement) en gardant le HTML de chaque page ;
+   - `brand.ts` y relève le logo, les photos (y compris chargées en différé ou en fond), les feuilles de style et la couleur déclarée ; `palette.ts` classe les couleurs des feuilles de style, `fonts.ts` les polices ;
+   - les images sont téléchargées par `safeFetch` en binaire (4 Mo au plus), puis préparées par Chromium : décodées, réduites à 1 600 px (600 pour le logo), réencodées en WebP. Les couleurs du logo sont lues au passage. Un SVG devient une image : il n'est jamais servi tel quel ;
+   - le brief (Opus) reçoit les pages, la fiche (F1…) et les constats de l'audit (A1…), encadrés comme contenu externe. Chaque point cite sa source ; un point sans source connue est retiré, et une image ou une police hors liste est remplacée ;
+   - la personne relit et modifie le brief : un point qu'elle écrit n'a pas de source, il est le sien.
+2. **Page** (`kind: "build"`, ou `"revise"` avec une instruction) :
+   - Opus écrit le contenu du `<body>` en classes Tailwind, en flux continu ;
+   - `sanitize.ts` le nettoie par liste blanche, sur un arbre analysé puis réécrit (htmlparser2) : éléments et attributs connus, images `asset:<nom>` du site seulement (avec leurs vraies dimensions, en différé sous le premier écran), liens `https:`, `tel:`, `mailto:` ou ancres, SVG simples sans référence extérieure ;
+   - `tailwind.ts` compile les classes utilisées avec le thème de la marque (`brand`, `accent`, `font-display`), puis retire toute règle qui chargerait une ressource ;
+   - `document.ts` assemble la page : en-tête, polices hébergées avec la page (Google Fonts, sous-ensemble latin), bandeau, balise de visite ;
+   - Chromium la rend sur ordinateur et téléphone, sans réseau ; axe-core la contrôle (WCAG 2.1 A et AA) ; Sonnet la critique sur six critères (hiérarchie, lisibilité, contrastes, mobile, fidélité à la marque, conversion) d'après les captures ;
+   - si la grille n'est pas atteinte (une note sous 3, une moyenne sous 3,8, un défaut grave, une erreur axe critique ou sérieuse), Opus corrige, deux fois au plus et s'il reste 0,65 € dans le plafond ; la meilleure version est publiée ;
+   - une page coupée par la limite de longueur n'est jamais publiée ;
+   - PageSpeed mesure la version publiée par un jeton de 15 minutes, sans `noindex` ni balise de visite. Les scores du site actuel viennent de son audit.
+3. **Lien** : jeton de 22 caractères (132 bits), HMAC d'un aléa par `STUDIO_PREVIEW_SECRET` (ou une clé dérivée de `NEXTAUTH_SECRET`). La base garde l'aléa et l'empreinte du jeton : un vol de la base ne donne aucun lien, et le CRM peut réafficher le sien. « Prolonger » garde l'adresse, « Désactiver » la coupe, et un nouveau lien en change.
+4. **Hôte d'aperçu** : `netlify.toml` et `next.config.mjs` réécrivent toute adresse de `apercu.cleads.fr` vers `app/apercu/[...path]`, et `proxy.ts` y renvoie les chemins du CRM. Le CRM ne répond donc jamais sur cet hôte. En développement, les aperçus sont servis sous `/apercu` sur l'hôte du CRM.
+5. **Stockage** : les pages, captures, images et polices sont en base, comme les captures de l'audit ; une maquette pèse environ 1 à 2 Mo.
+6. **Visites** : une par demi-heure et par maquette, robots et vérificateurs de liens écartés. La personne qui a créé le lien et le responsable de la fiche reçoivent une notification, et l'historique de la fiche note l'ouverture.
+7. **Purge** : la maintenance du worker vide une maquette 90 jours après sa dernière version ou la dernière prolongation de son lien. Les pages, captures, images et le brief sont supprimés ; la trace reste (statut, visites, coût).
+8. **Partage** : « Insérer le lien de la maquette » dans la fenêtre d'email de la fiche. La personne relit et envoie l'email, ce qui vaut validation.
+
 ## 17. Copilote (E24) et Stratège (E25)
 
 - **Copilote** :
@@ -572,9 +609,9 @@ Cache-Control: private, no-store
 | `DATABASE_URL` | worker | même base que le CRM |
 | `EXTRACTOR_URL`, `EXTRACTOR_API_KEY` | CRM, worker | REST et MCP de l'Extractor (adresse interne côté worker) |
 | variables Pusher existantes | CRM, worker | progression en direct |
-| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_BUCKET_NAME` | CRM, worker | captures et maquettes (S3, `lib/s3.ts`) |
-| `STUDIO_PREVIEW_HOST` | CRM | `apercu.cleads.fr` |
-| `STUDIO_PREVIEW_SECRET` | CRM | signature de l'aperçu interne |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_BUCKET_NAME` | CRM | fichiers du CRM (S3, `lib/s3.ts`) ; les captures et les maquettes sont gardées en base |
+| `STUDIO_PREVIEW_HOST` | CRM, worker | hôte des aperçus, `apercu.cleads.fr` par défaut en production ; aucun en développement (aperçus sous `/apercu`) |
+| `STUDIO_PREVIEW_SECRET` | CRM | facultatif : secret dont les liens d'aperçu sont dérivés ; sinon une clé dérivée de `NEXTAUTH_SECRET` |
 
 **Worker** (E18, détails et commandes : [WORKER-IA.md](WORKER-IA.md)).
 - **Image** : Node 24, construite sur le VPS depuis le paquet `worker/dist`, un seul fichier produit par esbuild, plus le client Prisma généré dans l'image. Chromium arrivera avec E20.
@@ -589,10 +626,10 @@ Cache-Control: private, no-store
 |---|---|---|
 | `DATABASE_URL` du worker (base Railway, rôle dédié recommandé) à saisir avec `scripts/set-ai-worker-env.sh` | le propriétaire | mise en service du worker |
 | Clé Vercel AI Gateway (compte Vercel) et clé gratuite Google PageSpeed Insights | le propriétaire | E17, E20 |
-| Enregistrement DNS `apercu.cleads.fr` vers Netlify, alias de domaine sur le site | le propriétaire | E23 |
+| Domaine `apercu.cleads.fr` ajouté au site Netlify (alias de domaine ; le DNS de cleads.fr est chez Netlify) | le propriétaire | partage des maquettes (E23) |
 | Vérifier puis activer les offres du catalogue V1 dans Agents IA › Offres (prix indicatifs) | le propriétaire | E21 |
 | Crédits Meshy pour les personnages des agents | confirmation au moment venu | E26 |
 | DPA des fournisseurs, politique de confidentialité, registre des traitements | le propriétaire | ouverture à l'équipe |
 | Durée de streaming réellement permise par les fonctions Netlify | à mesurer | E24 |
 
-**Prochaine étape : E21 (offres et pitch).**
+**Prochaine étape : E24 (copilote).**

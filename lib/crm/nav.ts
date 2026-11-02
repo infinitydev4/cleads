@@ -11,6 +11,7 @@ import {
   Mail,
   Megaphone,
   Palette,
+  PanelsTopLeft,
   Plus,
   Search,
   Send,
@@ -69,6 +70,7 @@ export const navGroups: NavGroup[] = [
       { id: "pipeline", label: "Pipeline", href: "/app/pipeline", icon: Handshake, permission: "deal:read", keywords: ["opportunités", "deals"] },
       { id: "meetings", label: "Rendez-vous", href: "/app/meetings", icon: CalendarDays, permission: "meeting:read", exact: true, keywords: ["agenda", "calendrier", "rdv"] },
       { id: "availability", label: "Disponibilités", href: "/app/meetings/availability", icon: CalendarClock, permission: "availability:manage", keywords: ["horaires", "créneaux", "réservation", "page publique"] },
+      { id: "studio", label: "Studio Web", href: "/app/studio", icon: PanelsTopLeft, permission: "studio:generate", keywords: ["maquette", "landing", "site", "démonstration", "designer", "aperçu"] },
     ],
   },
   {

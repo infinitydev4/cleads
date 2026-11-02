@@ -236,6 +236,7 @@ export async function getLead(user: CurrentUser, id: string): Promise<LeadDetail
       campaign: canAccessRecord(user, "lead:write", lead.ownerId) && can(user.role, "campaign:manage"),
       audit: !!c && can(user.role, "ai:use") && canAccessRecord(user, "lead:write", lead.ownerId),
       offers: !!c && can(user.role, "ai:use"),
+      studio: !!c && can(user.role, "studio:generate"),
     },
     aiReason: can(user.role, "ai:read") ? await leadAiReason(user.workspaceId, { id: lead.id, company: c && { domain: c.domain, website: c.website } }) : null,
     pitch: c && can(user.role, "ai:use") ? await latestPitchSummary(user.workspaceId, lead.id) : null,

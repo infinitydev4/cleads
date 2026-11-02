@@ -1,4 +1,4 @@
-import { experimental_decide, Experimental_DecisionRefusalError, generateText, InvalidResponseDataError, NoObjectGeneratedError, Output, type Experimental_DecisionModel, type Experimental_DecisionQuestion, type Experimental_DecisionState, type LanguageModel } from "ai"
+import { experimental_decide, Experimental_DecisionRefusalError, generateText, InvalidResponseDataError, NoObjectGeneratedError, Output, streamText, type Experimental_DecisionModel, type Experimental_DecisionQuestion, type Experimental_DecisionState, type LanguageModel } from "ai"
 import type { z } from "zod"
 import { LeadError } from "@/features/leads/errors"
 import { getAiSettings } from "@/lib/ai/budget"
@@ -103,13 +103,28 @@ export interface GenerateOptions<T> {
   maxOutputTokens?: number
   /** The worker aborts it when the run is cancelled. */
   abortSignal?: AbortSignal
+  /**
+   * Streams a long text answer (a whole page, E23): a request that waits minutes for its first byte would hit the
+   * HTTP client's timeouts. Text answers only.
+   */
+  stream?: boolean
+}
+
+/** A streamed call read to its end: the same fields generateText gives, or the error that stopped the stream. */
+async function streamed(call: Parameters<typeof streamText>[0]) {
+  let failure: unknown = null
+  const result = streamText({ ...call, onError: ({ error }) => void (failure ??= error) })
+  for await (const part of result.stream) if (part.type === "error") failure ??= part.error
+  if (failure) throw failure
+  const [text, totalUsage, finishReason, response, providerMetadata] = await Promise.all([result.text, result.totalUsage, result.finishReason, result.response, result.providerMetadata])
+  return { text, totalUsage, finishReason, response, providerMetadata }
 }
 
 export async function generateForRun<T = never>(
   ctx: RunContext,
   opts: GenerateOptions<T>,
   deps: ModelDeps = {}
-): Promise<{ text: string; output: T | undefined; model: string; costMicros: number }> {
+): Promise<{ text: string; output: T | undefined; model: string; costMicros: number; finishReason: string }> {
   if (!deps.languageModel && !aiConfigured()) throw notConfigured()
   const [settings, prices, remaining] = await Promise.all([getAiSettings(ctx.workspaceId), deps.prices ?? priceTable(), remainingMicros(ctx.id)])
   const { model, fallbacks } = resolveRole(opts.role, settings.roleModels)
@@ -132,7 +147,7 @@ export async function generateForRun<T = never>(
   }
   const started = Date.now()
   try {
-    const result = opts.schema ? await generateText({ ...call, output: Output.object({ schema: opts.schema }) }) : await generateText(call)
+    const result = opts.schema ? await generateText({ ...call, output: Output.object({ schema: opts.schema }) }) : opts.stream ? await streamed(call) : await generateText(call)
     const served = servedModel(result.response?.modelId, candidates)
     const output = opts.schema ? ((result as { output?: unknown }).output as T) : undefined
     const step = await recordModelStep(ctx, {
@@ -146,7 +161,7 @@ export async function generateForRun<T = never>(
       generationId: generationIdOf(result.providerMetadata),
       prices,
     })
-    return { text: result.text, output, model: served, costMicros: step.costMicros }
+    return { text: result.text, output, model: served, costMicros: step.costMicros, finishReason: result.finishReason }
   } catch (error) {
     const answered = NoObjectGeneratedError.isInstance(error) ? error : null
     await recordModelStep(ctx, {

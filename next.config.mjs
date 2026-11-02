@@ -1,3 +1,6 @@
+// E23: the Studio Web's previews have their own host (features/studio/link.ts); every address on it is a preview.
+const studioPreviewHost = process.env.STUDIO_PREVIEW_HOST || 'apercu.cleads.fr';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   agentRules: false,
@@ -33,10 +36,19 @@ const nextConfig = {
     ];
   },
 
+  async rewrites() {
+    return {
+      // Netlify may have rewritten the address already (netlify.toml): app/apercu reads /apercu/apercu/… the same way.
+      beforeFiles: [{ source: '/:path*', has: [{ type: 'host', value: studioPreviewHost }], destination: '/apercu/:path*' }],
+    };
+  },
+
   async headers() {
     return [
       {
-        source: '/(.*)',
+        // Previews set their own, stricter headers (no referrer at all): features/studio/preview.ts.
+        source: '/((?!apercu/).*)',
+        missing: [{ type: 'host', value: studioPreviewHost }],
         headers: [
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },

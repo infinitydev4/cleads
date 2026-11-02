@@ -38,7 +38,7 @@ La file est la **table `AgentRun`** elle-même :
 - Si le worker s'arrête entre les deux, l'action n'est jamais rejouée : l'exécution échoue avec le message « a peut-être déjà été faite, vérifiez avant de la relancer ».
 - Une approbation remet l'exécution en tête de file. L'agent reprend avec le résultat de l'action, qu'il ne redemande pas.
 
-**Agents.** Chaque epic métier (E20 à E25) enregistre le code de son agent (`registerAgentHandler`, dans `worker/main.ts`), et le worker ne prend que les agents qu'il connaît. Sont branchés : l'Auditeur digital (`auditor`, E20), le Conseiller offres (`offers`, E21), le Rédacteur outreach (`writer`) et l'Analyste réponses (`replies`, E22). Le champ `agents` de `/healthz` les liste.
+**Agents.** Chaque epic métier (E20 à E25) enregistre le code de son agent (`registerAgentHandler`, dans `worker/main.ts`), et le worker ne prend que les agents qu'il connaît. Sont branchés : l'Auditeur digital (`auditor`, E20), le Conseiller offres (`offers`, E21), le Rédacteur outreach (`writer`), l'Analyste réponses (`replies`, E22) et le Designer web (`designer`, E23). Le champ `agents` de `/healthz` les liste.
 
 **Tâches** (E19). Une tâche est un travail que n'importe quel agent rédacteur peut faire, reconnu au champ `kind` de l'entrée de l'exécution. Elle est enregistrée avec `registerTaskHandler`. La seule tâche pour l'instant est le **test d'un skill sur une fiche** (`skill_test`, `features/ai/skill-test.ts`).
 - Le worker prend une exécution si c'est un agent qu'il connaît, ou si c'est une tâche qu'il connaît, pour un agent qui a une place libre.
@@ -51,7 +51,15 @@ La file est la **table `AgentRun`** elle-même :
 - expirations des exécutions et des validations ;
 - nettoyage des workers disparus ;
 - alerte aux propriétaires au-delà de 3 échecs en 15 minutes, une fois par heure au plus ;
-- rattrapage du classement des réponses (E22) : les réponses d'une personne restées sans classement ni suggestion depuis plus de 2 minutes, sur 7 jours, sont remises en file, 10 fiches au plus par passage. Une fiche qui vient d'avoir une exécution attend 30 minutes.
+- rattrapage du classement des réponses (E22) : les réponses d'une personne restées sans classement ni suggestion depuis plus de 2 minutes, sur 7 jours, sont remises en file, 10 fiches au plus par passage. Une fiche qui vient d'avoir une exécution attend 30 minutes ;
+- Studio Web (E23) : les jetons PageSpeed de plus de 15 minutes sont effacés, et le contenu des maquettes arrivées à échéance (90 jours) est supprimé, 20 maquettes au plus par passage.
+
+**Navigateur** (E23). Le Designer rend ses maquettes dans Chromium, le *headless shell* installé par Playwright dans l'image (`worker/browser.ts`) :
+- un navigateur par exécution, fermé à la fin ;
+- coupé du réseau : la page et ses images sont servies depuis la mémoire sous une adresse réservée (`.invalid`), toute autre requête est refusée ;
+- lancé sans le bac à sable de Chromium, que le conteneur ne permet pas (pas d'espaces de noms utilisateur) : il ne rend que nos pages, nettoyées et sans réseau ;
+- il prépare aussi les images du prospect (décodage, redimensionnement, WebP) et lit les couleurs du logo ;
+- `playwright-core` et `axe-core` ne sont pas dans le paquet : l'image les installe, aux versions du `package.json`.
 
 ## 3. Temps réel et Extractor
 
@@ -67,7 +75,7 @@ La file est la **table `AgentRun`** elle-même :
 
 - **Conteneur** :
   - système de fichiers en lecture seule, `/tmp` en mémoire, aucune capability, `no-new-privileges` ;
-  - limites : 384 Mo, 1 CPU, 128 processus ;
+  - limites : 1 Go, 1 CPU, 512 processus (Chromium compte ses fils), `/tmp` de 512 Mo ;
   - utilisateur `node`, pas root ;
   - journaux limités à 5 × 10 Mo ;
   - santé vérifiée sur la boucle locale (`/healthz` en `127.0.0.1`).
@@ -83,6 +91,8 @@ La file est la **table `AgentRun`** elle-même :
 - **Charge** :
   - la file est interrogée toutes les 3 s au repos, toutes les 0,5 s quand il y a du travail ;
   - 3 exécutions à la fois au plus, dont 1 maquette et 2 audits ;
+  - une maquette prend 3 à 8 minutes, surtout l'écriture de la page par le modèle ; le rendu prend environ une seconde par passage ;
+  - l'image passe d'environ 400 Mo à environ 700 Mo avec Chromium ;
   - la file a son propre index.
 
 ## 5. Mise en route
@@ -120,9 +130,9 @@ La file est la **table `AgentRun`** elle-même :
 | `NEXT_PUBLIC_PUSHER_APP_ID`, `NEXT_PUBLIC_PUSHER_KEY`, `NEXT_PUBLIC_PUSHER_CLUSTER`, `PUSHER_SECRET` | temps réel ; facultatives (sinon les pages interrogent) |
 | `WORKER_CONCURRENCY` | exécutions simultanées, 3 par défaut |
 | `NEXT_PUBLIC_APP_URL` | adresse publique du CRM, pour les liens que le worker écrit (lien de réservation d'une réponse, E22). Elle est fixée dans `compose.yml` (`https://cleads.fr` par défaut) et peut être changée par `APP_URL` dans le `.env` du serveur. |
+| `STUDIO_PREVIEW_HOST` | hôte des aperçus du Studio (E23), où PageSpeed mesure chaque nouvelle version. Fixé dans `compose.yml` (`apercu.cleads.fr` par défaut), modifiable par `PREVIEW_HOST` dans le `.env` du serveur. |
 
 ## 7. Pas encore
 
 - **Déploiement** : il se fait par script depuis un poste. L'automatisation par GitHub Actions viendra avec E14.
-- **Playwright** : les audits (E20) n'en ont pas besoin, les captures viennent de PageSpeed Insights. Le navigateur arrivera avec le Studio (E23), pour rendre nos propres maquettes.
-- **Agents métier** : l'Auditeur (E20), le Conseiller offres (E21), le Rédacteur et l'Analyste réponses (E22) sont branchés ; le Designer, le Stratège et l'Analyste qualification arrivent avec E23 à E25.
+- **Agents métier** : l'Auditeur (E20), le Conseiller offres (E21), le Rédacteur et l'Analyste réponses (E22) et le Designer web (E23) sont branchés ; le Stratège et l'Analyste qualification arrivent avec E25.

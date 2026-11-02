@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
-import { CircleAlert, Send, Sparkles } from "lucide-react"
+import { CircleAlert, PanelsTopLeft, Send, Sparkles } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -77,6 +77,14 @@ export function EmailDialog({ open, onOpenChange, leadId, leadName, onDone }: Pr
     } finally {
       if (drafts.current === controller) setDrafting(false)
     }
+  }
+
+  /** E23: the mock-up's private link, at the end of the message; the person words it as they like. */
+  function insertStudioLink() {
+    if (!ctx?.studio) return
+    const until = new Date(ctx.studio.expiresAt).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })
+    const line = `Nous avons préparé une maquette de ce que pourrait devenir votre site : ${ctx.studio.url}\n(lien personnel, en ligne jusqu’au ${until})`
+    setBody((b) => (b.trim() ? `${b.trimEnd()}\n\n${line}` : line))
   }
 
   function chooseTemplate(id: string) {
@@ -177,6 +185,16 @@ export function EmailDialog({ open, onOpenChange, leadId, leadName, onDone }: Pr
               <FormField label="Message" required error={unfilled ? `À compléter : ${missing.length ? missing.map((m) => `{{${m}}} (${VARIABLES[m].toLowerCase()})`).join(", ") : "une variable {{…}} reste dans le texte"}.` : undefined}>
                 <Textarea value={body} onChange={(e) => setBody(e.target.value)} rows={9} placeholder="Bonjour…" />
               </FormField>
+              {ctx.studio && (
+                <div className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/60 p-2.5">
+                  <Button type="button" variant="outline" size="sm" onClick={insertStudioLink} disabled={body.includes(ctx.studio.url)}>
+                    <PanelsTopLeft className="h-3.5 w-3.5" aria-hidden="true" /> Insérer le lien de la maquette
+                  </Button>
+                  <span className="min-w-0 flex-1 text-xs text-muted-foreground">
+                    {body.includes(ctx.studio.url) ? "Le lien est dans le message." : `Lien privé de la landing de démonstration, valable jusqu’au ${new Date(ctx.studio.expiresAt).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}. Vous serez prévenu à son ouverture.`}
+                  </span>
+                </div>
+              )}
               {draft && <DraftReview draft={draft} />}
 
               {mailbox && (
