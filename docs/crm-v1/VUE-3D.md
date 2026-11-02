@@ -70,7 +70,7 @@ scripts/                build-characters.mjs, build-props.mjs
 - **Bibliothèques** : `three` 0.186.1, `@react-three/fiber` 9.8.2, `@react-three/drei` 10.7.9, `@react-three/postprocessing` 3.2.2 et `postprocessing` 6.39.5 (versions figées). GSAP n'est pas utilisé ici : les transitions de caméra viennent de camera-controls (via drei). Hyperframes sert aux films de la landing, pas à une interface interactive.
 - **Chargement** : le code 3D est un morceau séparé (`next/dynamic`, sans rendu serveur) ; la vue 2D ne le télécharge jamais. Le HUD s'affiche tout de suite avec les données du serveur ; la scène arrive ensuite.
 - **Sans WebGL** (ou si la scène plante) : le HUD reste utilisable et un message propose la vue 2D.
-- **Ajouter un espace** (futur « Agents IA », E13) : une entrée dans `features/hq/zones.ts`, une composition dans `scene/zones.tsx`, un cas dans `getZone`. Rien d'autre à toucher.
+- **Ajouter un espace** (« Agents IA » et « Studio Web » prévus en E26, voir [AGENTS-IA.md](AGENTS-IA.md)) : une entrée dans `features/hq/zones.ts`, une composition dans `scene/zones.tsx`, un cas dans `getZone`. Rien d'autre à toucher.
 
 ## Rendu
 
@@ -144,4 +144,4 @@ Tripo n'a pas été nécessaire (Meshy était déjà connecté). Total Meshy du 
 - Pas de redirection automatique vers la 3D au démarrage : le sélecteur mémorise la dernière page 2D, pas une préférence globale (une redirection renverrait en 3D quelqu'un qui clique « Aujourd'hui »).
 - Personnages des espaces vides : ils représentent le module, pas une personne (aucun nom, le clic ouvre l'espace).
 - Aucune marche animée en V1 : le clip existe dans les fichiers, prêt pour des déplacements entre espaces.
-- Pas d'agent IA (hors périmètre V1).
+- Pas d'agent IA dans cette version : les espaces « Agents IA » et « Studio Web » arrivent avec E26 ([AGENTS-IA.md](AGENTS-IA.md)).
