@@ -69,7 +69,21 @@ export interface StaticChecks {
   bytes: number
 }
 
-const PLACEHOLDERS = [/lorem ipsum/i, /\{\{[^}]*\}\}/, /\[(?:à compléter|a completer|insérer|inserer|todo|xx+)[^\]]*\]/i, /\bXX\s?XX\b/, /0[1-9](?:[ .]?00){4}/]
+/**
+ * Text that speaks to the team instead of the visitor (« à fournir par le cabinet », « horaires à confirmer »). The first
+ * real mock-up showed such notes on the page: the brief keeps them in « À vérifier », and a page that still shows one is
+ * corrected.
+ */
+export const TEAM_NOTE =
+  /(?:^|[^\p{L}])(?:à|a) (?:fournir|confirmer|compléter|completer|ajouter|préciser|preciser|vérifier|verifier|détailler|detailler|reprendre|valider|demander)(?![\p{L}])|(?:^|[^\p{L}])non (?:fourni|communiqué|renseigné|précisé)e?s?(?![\p{L}])|rien n['’]est inventé|(?:^|[^\p{L}])(?:sera|seront) (?:ajouté|complété|précisé|confirmé)e?s?(?![\p{L}])|avant (?:la )?publication/iu
+
+const PLACEHOLDERS = [/lorem ipsum/i, /\{\{[^}]*\}\}/, /\[(?:à compléter|a completer|insérer|inserer|todo|xx+)[^\]]*\]/i, /\bXX\s?XX\b/, /0[1-9](?:[ .]?00){4}/, TEAM_NOTE]
+
+function sentenceAround(text: string, at: number): string {
+  const start = Math.max(text.lastIndexOf(".", at), text.lastIndexOf("\n", at), 0)
+  const end = text.indexOf(".", at)
+  return text.slice(start === 0 ? 0 : start + 1, end < 0 ? at + 80 : end + 1)
+}
 
 /** What can be checked in the markup itself, before any rendering. */
 export function staticChecks(body: string, logo: string | null): StaticChecks {
@@ -80,7 +94,11 @@ export function staticChecks(body: string, logo: string | null): StaticChecks {
     emptyAlt: imgs.filter((i) => /\balt=""/.test(i) && !(logo && i.includes(`${ASSET_SCHEME}${logo}"`))).length,
     phoneLink: /href="tel:/.test(body),
     emailLink: /href="mailto:/.test(body),
-    placeholders: PLACEHOLDERS.flatMap((re) => re.exec(textOnly)?.[0] ?? []).map((s) => s.trim().slice(0, 60)),
+    placeholders: PLACEHOLDERS.flatMap((re) => {
+      const m = re.exec(textOnly)
+      // The sentence around a note for the team, so the correction knows what to remove.
+      return m ? [re === TEAM_NOTE ? sentenceAround(textOnly, m.index) : m[0]] : []
+    }).map((s) => s.replace(/\s+/g, " ").trim().slice(0, 120)),
     bytes: Buffer.byteLength(body, "utf8"),
   }
 }

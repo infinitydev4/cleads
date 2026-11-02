@@ -22,14 +22,16 @@ export function fontStack(family: string): string {
   return `"${family}", ${fallback}`
 }
 
-const GENERIC = /^(inherit|initial|unset|serif|sans-serif|monospace|cursive|fantasy|system-ui|ui-[a-z-]+|-apple-system|blinkmacsystemfont|arial|helvetica|helvetica neue|verdana|tahoma|georgia|times|times new roman|segoe ui|roboto|courier new|var\(.*)$/i
+const GENERIC = /^(inherit|initial|unset|serif|sans-serif|monospace|cursive|fantasy|system-ui|ui-[a-z-]+|-apple-system|blinkmacsystemfont|arial|arial black|helvetica|helvetica neue|verdana|tahoma|georgia|times|times new roman|segoe ui|courier|courier new|microsoft sans serif|calibri|cambria|candara|consolas|constantia|corbel|trebuchet ms|lucida.*|palatino.*|book antiqua|century gothic|garamond|impact|optima|futura|avenir.*|comic sans ms|monaco|menlo|sf pro.*|symbol|wingdings|webdings|var\(.*)$/i
+/** Icon fonts, often the most declared family of a stylesheet: never a text font. */
+const ICON_FONT = /awesome|icon|glyph|dashicons|eicons|material symbols|ionicons|linearicons|themify|elegant|simple-line|feather|swiper|slick/i
 
 /** Families a stylesheet sets (first of each font-family list), most used first; system fonts left out. */
 export function cssFamilies(css: string): string[] {
   const counts = new Map<string, number>()
   for (const m of css.slice(0, 600_000).matchAll(/font-family\s*:\s*([^;}{]+)/gi)) {
     const first = m[1].split(",")[0].trim().replace(/^["']|["']$/g, "").replace(/\s*!important$/i, "").trim()
-    if (!first || GENERIC.test(first) || !isFamilyName(first)) continue
+    if (!first || GENERIC.test(first) || ICON_FONT.test(first) || !isFamilyName(first)) continue
     counts.set(first, (counts.get(first) ?? 0) + 1)
   }
   return [...counts].sort((a, b) => b[1] - a[1]).map(([f]) => f)
@@ -78,6 +80,8 @@ export function latinFaces(css: string): FontFace[] {
 }
 
 export const FONT_LIMITS = { files: 6, bytes: 400_000, timeoutMs: 10_000 } as const
+
+const titleCase = (family: string) => family.replace(/\b\p{L}/gu, (c) => c.toUpperCase())
 
 /** Google answers woff2 only to a browser it knows. */
 const BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
@@ -128,6 +132,34 @@ export async function downloadFonts(families: { family: string; weights: number[
     }
   }
   return { fonts, errors }
+}
+
+/**
+ * Among a site's families, the ones Google Fonts serves, by their exact name there: the first real mock-up chose a
+ * Windows font (« Microsoft Sans Serif ») that no page can host. A family Google does not know is not offered.
+ */
+export async function googleServes(families: readonly string[], fetchImpl: typeof fetch = fetch): Promise<string[]> {
+  const out: string[] = []
+  for (const family of families.slice(0, 6)) {
+    const known = CATALOG_FAMILIES.find((f) => f.toLowerCase() === family.toLowerCase())
+    if (known) {
+      out.push(known)
+      continue
+    }
+    for (const name of [...new Set([family, titleCase(family)])]) {
+      try {
+        const res = await fetchImpl(`https://fonts.googleapis.com/css2?family=${name.replace(/ /g, "+")}&display=swap`, { headers: { "User-Agent": BROWSER_UA, Accept: "text/css" }, signal: AbortSignal.timeout(FONT_LIMITS.timeoutMs) })
+        const faces = res.ok ? latinFaces(await res.text()) : []
+        if (faces.length) {
+          out.push(faces[0].family)
+          break
+        }
+      } catch {
+        // Unknown or unreachable: not offered.
+      }
+    }
+  }
+  return [...new Set(out)]
 }
 
 /** @font-face rules for fonts hosted with the page: `asset` is the name the page knows the file by. */

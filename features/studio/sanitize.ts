@@ -43,6 +43,7 @@ const SVG_ATTRS = new Set([
   "points", "offset", "stop-color", "stop-opacity", "gradientunits", "gradienttransform", "fx", "fy", "preserveaspectratio", "focusable",
 ])
 
+const MANAGED_IMG_ATTRS = new Set(["loading", "decoding", "fetchpriority"])
 const ROLES = new Set(["img", "presentation", "none", "list", "listitem", "region", "navigation", "banner", "contentinfo", "note", "group", "separator"])
 const ID = /^[A-Za-z][\w-]{0,63}$/
 const NUMBER = /^-?\d+(\.\d+)?(%|px)?$/
@@ -171,6 +172,8 @@ class Cleaner {
     for (const [rawKey, rawValue] of Object.entries(node.attribs)) {
       const key = rawKey.toLowerCase()
       const value = rawValue ?? ""
+      // How an image loads is decided below, from its place in the page: the model's choice is replaced, not refused.
+      if (name === "img" && MANAGED_IMG_ATTRS.has(key)) continue
       const allowed = svg ? SVG_ATTRS.has(key) || GLOBAL_ATTRS.has(key) : GLOBAL_ATTRS.has(key) || (TAG_ATTRS[name] ?? []).includes(key)
       const clean = allowed ? this.attribute(name, key, value, svg) : null
       if (clean == null) {

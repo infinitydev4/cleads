@@ -42,7 +42,7 @@ PostgreSQL ◄── file AgentRun ──► Worker agents (VPS OVH, Docker, Nod
                             ├─ Playwright : captures, rendu et contrôle des maquettes
                             └─ PageSpeed Insights · annuaire des entreprises
 Vercel AI Gateway ──► Jev · Claude Haiku / Sonnet / Opus 5.5 (+ OpenAI, Google, Mistral en secours)
-apercu.cleads.fr ──► proxy.ts ──► route d'aperçu (HTML depuis S3, CSP sandbox, noindex)
+apercu.cleads.fr ──► réécriture par hôte ──► route d'aperçu (page en base, CSP sandbox, noindex)
 ```
 
 **Parcours type, de la fiche à la maquette**
@@ -519,10 +519,13 @@ Cache-Control: private, no-store
    - `sanitize.ts` le nettoie par liste blanche, sur un arbre analysé puis réécrit (htmlparser2) : éléments et attributs connus, images `asset:<nom>` du site seulement (avec leurs vraies dimensions, en différé sous le premier écran), liens `https:`, `tel:`, `mailto:` ou ancres, SVG simples sans référence extérieure ;
    - `tailwind.ts` compile les classes utilisées avec le thème de la marque (`brand`, `accent`, `font-display`), puis retire toute règle qui chargerait une ressource ;
    - `document.ts` assemble la page : en-tête, polices hébergées avec la page (Google Fonts, sous-ensemble latin), bandeau, balise de visite ;
-   - Chromium la rend sur ordinateur et téléphone, sans réseau ; axe-core la contrôle (WCAG 2.1 A et AA) ; Sonnet la critique sur six critères (hiérarchie, lisibilité, contrastes, mobile, fidélité à la marque, conversion) d'après les captures ;
+   - Chromium la rend sur ordinateur et téléphone, sans réseau, toutes ses images chargées ; axe-core la contrôle (WCAG 2.1 A et AA) ; Sonnet la critique sur six critères (hiérarchie, lisibilité, contrastes, mobile, fidélité à la marque, conversion) d'après les captures ;
    - si la grille n'est pas atteinte (une note sous 3, une moyenne sous 3,8, un défaut grave, une erreur axe critique ou sérieuse), Opus corrige, deux fois au plus et s'il reste 0,65 € dans le plafond ; la meilleure version est publiée ;
    - une page coupée par la limite de longueur n'est jamais publiée ;
-   - PageSpeed mesure la version publiée par un jeton de 15 minutes, sans `noindex` ni balise de visite. Les scores du site actuel viennent de son audit.
+   - PageSpeed mesure la version publiée par un jeton de 15 minutes, sans `noindex` ni balise de visite, et avec `sandbox allow-scripts` : Lighthouse mesure par ses propres scripts et échoue sous une isolation qui les interdit. `default-src 'none'` refuse toujours ceux de la page. Les scores du site actuel viennent de son audit ;
+   - les réponses du modèle (brief, critique) sont validées par des schémas souples : longueurs, nombres et formats sont ramenés par le code, car un seul texte un peu long faisait rejeter toute la critique au premier essai réel ;
+   - ce qui manque ou reste à vérifier avec le prospect va dans la liste « À vérifier » du brief, jamais sur la page. Une page qui en garde la trace (« à fournir », « à confirmer ») est corrigée, même sans critique ;
+   - seules les polices du site que Google Fonts sert sont proposées.
 3. **Lien** : jeton de 22 caractères (132 bits), HMAC d'un aléa par `STUDIO_PREVIEW_SECRET` (ou une clé dérivée de `NEXTAUTH_SECRET`). La base garde l'aléa et l'empreinte du jeton : un vol de la base ne donne aucun lien, et le CRM peut réafficher le sien. « Prolonger » garde l'adresse, « Désactiver » la coupe, et un nouveau lien en change.
 4. **Hôte d'aperçu** : `netlify.toml` et `next.config.mjs` réécrivent toute adresse de `apercu.cleads.fr` vers `app/apercu/[...path]`, et `proxy.ts` y renvoie les chemins du CRM. Le CRM ne répond donc jamais sur cet hôte. En développement, les aperçus sont servis sous `/apercu` sur l'hôte du CRM.
 5. **Stockage** : les pages, captures, images et polices sont en base, comme les captures de l'audit ; une maquette pèse environ 1 à 2 Mo.
@@ -626,7 +629,6 @@ Cache-Control: private, no-store
 |---|---|---|
 | `DATABASE_URL` du worker (base Railway, rôle dédié recommandé) à saisir avec `scripts/set-ai-worker-env.sh` | le propriétaire | mise en service du worker |
 | Clé Vercel AI Gateway (compte Vercel) et clé gratuite Google PageSpeed Insights | le propriétaire | E17, E20 |
-| Domaine `apercu.cleads.fr` ajouté au site Netlify (alias de domaine ; le DNS de cleads.fr est chez Netlify) | le propriétaire | partage des maquettes (E23) |
 | Vérifier puis activer les offres du catalogue V1 dans Agents IA › Offres (prix indicatifs) | le propriétaire | E21 |
 | Crédits Meshy pour les personnages des agents | confirmation au moment venu | E26 |
 | DPA des fournisseurs, politique de confidentialité, registre des traitements | le propriétaire | ouverture à l'équipe |

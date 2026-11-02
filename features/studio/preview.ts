@@ -20,11 +20,16 @@ const appOrigin = () => {
   }
 }
 
-/** Security headers of everything a preview serves; `frame` is who may show it in a frame. */
-export function previewHeaders(frame = appOrigin()): Record<string, string> {
+/**
+ * Security headers of everything a preview serves; `frame` is who may show it in a frame. PageSpeed's copy (`measure`)
+ * lets the browser run scripts: Lighthouse measures a page through scripts of its own, and under a plain sandbox it
+ * times out (the first real mock-up's PageSpeed answered « Something went wrong » after 2 minutes). The page itself still
+ * runs none: `default-src 'none'` refuses every script it could carry, and its origin stays opaque.
+ */
+export function previewHeaders(frame = appOrigin(), opts: { measure?: boolean } = {}): Record<string, string> {
   return {
     "Content-Security-Policy": [
-      "sandbox allow-popups allow-popups-to-escape-sandbox allow-top-navigation-to-custom-protocols",
+      `sandbox${opts.measure ? " allow-scripts" : ""} allow-popups allow-popups-to-escape-sandbox allow-top-navigation-to-custom-protocols`,
       "default-src 'none'",
       "img-src 'self' https: data:",
       "style-src 'unsafe-inline'",
@@ -93,7 +98,7 @@ export async function servePage(token: string, now = new Date()): Promise<Respon
     page = page.replace("<head>", `<head>${NOINDEX}`).replace(VISIT_MARKER, `<img src="${token}/vu" alt="" width="1" height="1" decoding="async">`)
     return html(page, 200)
   }
-  return new Response(page.replace(VISIT_MARKER, ""), { status: 200, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "private, no-store", ...previewHeaders() } })
+  return new Response(page.replace(VISIT_MARKER, ""), { status: 200, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "private, no-store", ...previewHeaders(undefined, { measure: true }) } })
 }
 
 /** An image or a font of the page, for whoever holds a valid token. */

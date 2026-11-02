@@ -170,7 +170,8 @@ export async function generateForRun<T = never>(
       model: answered ? servedModel(answered.response?.modelId, candidates) : model,
       usage: usageOf(error),
       durationMs: Date.now() - started,
-      output: { error: error instanceof Error ? error.message : String(error), ...(answered?.finishReason ? { finishReason: answered.finishReason } : {}) },
+      // What the model answered, when it did not fit the expected shape: the only way to see why afterwards.
+      output: { error: error instanceof Error ? error.message : String(error), ...(answered?.finishReason ? { finishReason: answered.finishReason } : {}), ...(answered?.text ? { text: answered.text } : {}) },
       prices,
     })
     console.error("[AI_GENERATE]", ctx.agentId, error)

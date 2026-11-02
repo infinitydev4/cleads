@@ -59,6 +59,7 @@ La file est la **table `AgentRun`** elle-même :
 - coupé du réseau : la page et ses images sont servies depuis la mémoire sous une adresse réservée (`.invalid`), toute autre requête est refusée ;
 - lancé sans le bac à sable de Chromium, que le conteneur ne permet pas (pas d'espaces de noms utilisateur) : il ne rend que nos pages, nettoyées et sans réseau ;
 - il prépare aussi les images du prospect (décodage, redimensionnement, WebP) et lit les couleurs du logo ;
+- avant les captures, toutes les images sont chargées et décodées : une image chargée en différé sous le premier écran restait blanche dans une capture pleine page (premier essai réel) ;
 - `playwright-core` et `axe-core` ne sont pas dans le paquet : l'image les installe, aux versions du `package.json`.
 
 ## 3. Temps réel et Extractor
@@ -92,7 +93,7 @@ La file est la **table `AgentRun`** elle-même :
   - la file est interrogée toutes les 3 s au repos, toutes les 0,5 s quand il y a du travail ;
   - 3 exécutions à la fois au plus, dont 1 maquette et 2 audits ;
   - une maquette prend 3 à 8 minutes, surtout l'écriture de la page par le modèle ; le rendu prend environ une seconde par passage ;
-  - l'image passe d'environ 400 Mo à environ 700 Mo avec Chromium ;
+  - l'image passe d'environ 400 Mo à 1,3 Go avec Chromium, ses bibliothèques et ses polices ;
   - la file a son propre index.
 
 ## 5. Mise en route

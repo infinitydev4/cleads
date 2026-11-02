@@ -35,23 +35,26 @@ export type Collected = z.infer<typeof collectedSchema>
 
 // ── Brief ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-const pointSchema = z.object({ text: z.string().trim().min(2).max(240), evidence: z.array(evidenceId).max(4) })
-const sectionSchema = z.object({ kind: z.enum(SECTION_KINDS), title: z.string().trim().min(2).max(80), points: z.array(pointSchema).max(8) })
+const pointSchema = z.object({ text: z.string().trim().min(2).max(300), evidence: z.array(evidenceId).max(4) })
+const sectionSchema = z.object({ kind: z.enum(SECTION_KINDS), title: z.string().trim().min(2).max(100), points: z.array(pointSchema).max(8) })
 
 /** The brief as stored and as the person edits it: a point a person writes needs no evidence, it is theirs. */
+export const BRIEF_LIMITS = { positioning: 400, audience: 240, tone: 200, headline: 120, subheadline: 300, title: 100, point: 300, alt: 200, why: 300, cta: 60, check: 240 } as const
 export const briefSchema = z
   .object({
-    positioning: z.string().trim().min(10).max(300),
-    audience: z.string().trim().max(200),
-    tone: z.string().trim().max(160),
-    headline: z.string().trim().min(4).max(90),
-    subheadline: z.string().trim().max(220),
+    positioning: z.string().trim().min(10).max(BRIEF_LIMITS.positioning),
+    audience: z.string().trim().max(BRIEF_LIMITS.audience),
+    tone: z.string().trim().max(BRIEF_LIMITS.tone),
+    headline: z.string().trim().min(4).max(BRIEF_LIMITS.headline),
+    subheadline: z.string().trim().max(BRIEF_LIMITS.subheadline),
     sections: z.array(sectionSchema).min(3).max(9),
-    palette: z.object({ primary: hex, accent: hex.nullable(), why: z.string().trim().max(200) }),
-    fonts: z.object({ heading: z.string().max(40), body: z.string().max(40), why: z.string().trim().max(200) }),
-    images: z.array(z.object({ name: z.string().regex(ASSET_NAME), use: z.enum(IMAGE_USES), alt: z.string().trim().max(140) })).max(10),
-    cta: z.object({ kind: z.enum(CTA_KINDS), label: z.string().trim().min(2).max(40) }),
+    palette: z.object({ primary: hex, accent: hex.nullable(), why: z.string().trim().max(BRIEF_LIMITS.why) }),
+    fonts: z.object({ heading: z.string().max(40), body: z.string().max(40), why: z.string().trim().max(BRIEF_LIMITS.why) }),
+    images: z.array(z.object({ name: z.string().regex(ASSET_NAME), use: z.enum(IMAGE_USES), alt: z.string().trim().max(BRIEF_LIMITS.alt) })).max(10),
+    cta: z.object({ kind: z.enum(CTA_KINDS), label: z.string().trim().min(2).max(BRIEF_LIMITS.cta) }),
     changes: z.array(pointSchema).min(1).max(6),
+    /** What is missing or must be confirmed with the prospect: for the team, never on the page. */
+    toCheck: z.array(z.string().trim().min(2).max(BRIEF_LIMITS.check)).max(12).default([]),
     /** What the person adds for the Designer, in their own words. */
     notes: z.string().trim().max(600).default(""),
   })
@@ -59,30 +62,30 @@ export const briefSchema = z
 export type Brief = z.infer<typeof briefSchema>
 
 /**
- * What the Designer must answer. Points must cite where they come from; an image or a font outside the lists is
- * impossible to name. The code then drops what cites nothing that exists (features/studio/brief.ts).
+ * What the Designer must answer. An image or a font outside the lists is impossible to name; everything else is loose on
+ * purpose. Providers do not enforce lengths, counts or patterns, and one point a little too long must not cost the
+ * whole (expensive) answer: the code clips, sorts and drops afterwards (features/studio/brief.ts), as the first real
+ * mock-up showed with the critique.
  */
 export function briefOutputSchema(opts: { assets: readonly string[]; fonts: readonly string[] }) {
-  const name = opts.assets.length ? z.enum(opts.assets as [string, ...string[]]) : z.string().regex(ASSET_NAME)
+  const name = opts.assets.length ? z.enum(opts.assets as [string, ...string[]]) : z.string()
   const font = z.enum(opts.fonts as [string, ...string[]])
-  // Loose on purpose: one badly cited point must not cost the whole (expensive) answer; the code drops it afterwards.
-  const sourced = z.object({ text: z.string().min(2).max(240), evidence: z.array(z.string().max(12)).max(4).describe("Identifiants des preuves : P1… (pages), F1… (fiche), A1… (audit)") })
+  const sourced = z.object({ text: z.string(), evidence: z.array(z.string()).describe("Identifiants des preuves : P1… (pages), F1… (fiche), A1… (audit)") })
   return z.object({
-    positioning: z.string().min(10).max(300).describe("Qui, quoi, où, pour qui : une phrase"),
-    audience: z.string().max(200),
-    tone: z.string().max(160).describe("Le ton, en quelques mots (rassurant, expert, chaleureux…)"),
-    headline: z.string().min(4).max(90).describe("Titre du premier écran, tourné vers le bénéfice du client"),
-    subheadline: z.string().max(220).describe("Le métier, la zone et la preuve la plus forte"),
+    positioning: z.string().describe("Qui, quoi, où, pour qui : une phrase de 300 caractères au plus"),
+    audience: z.string(),
+    tone: z.string().describe("Le ton, en quelques mots (rassurant, expert, chaleureux…)"),
+    headline: z.string().describe("Titre du premier écran, tourné vers le bénéfice du client : 90 caractères au plus"),
+    subheadline: z.string().describe("Le métier, la zone et la preuve la plus forte : 220 caractères au plus"),
     sections: z
-      .array(z.object({ kind: z.enum(SECTION_KINDS), title: z.string().min(2).max(80), points: z.array(sourced).max(8) }))
-      .min(3)
-      .max(9)
-      .describe("Les sections de la page, dans l'ordre"),
-    palette: z.object({ primary: hex, accent: hex.nullable(), why: z.string().max(200) }),
-    fonts: z.object({ heading: font, body: font, why: z.string().max(200) }),
-    images: z.array(z.object({ name, use: z.enum(IMAGE_USES), alt: z.string().max(140).describe("Texte alternatif : ce que montre l'image") })).max(10),
-    cta: z.object({ kind: z.enum(CTA_KINDS), label: z.string().min(2).max(40).describe("Libellé du bouton principal, verbe d'action") }),
-    changes: z.array(sourced).min(1).max(6).describe("Ce qui change par rapport au site actuel, chaque point avec sa preuve"),
+      .array(z.object({ kind: z.enum(SECTION_KINDS), title: z.string().describe("Titre lu par les visiteurs, 60 caractères au plus"), points: z.array(sourced).describe("Le texte que liront les visiteurs, 8 points au plus") }))
+      .describe("4 à 7 sections, dans l'ordre de la page"),
+    palette: z.object({ primary: z.string().describe("Couleur #rrggbb"), accent: z.string().nullable().describe("Couleur #rrggbb, ou null"), why: z.string() }),
+    fonts: z.object({ heading: font, body: font, why: z.string() }),
+    images: z.array(z.object({ name, use: z.enum(IMAGE_USES), alt: z.string().describe("Texte alternatif : ce que montre l'image") })),
+    cta: z.object({ kind: z.enum(CTA_KINDS), label: z.string().describe("Libellé du bouton principal, verbe d'action, 40 caractères au plus") }),
+    changes: z.array(sourced).describe("Ce qui change par rapport au site actuel : 3 à 5 points, chacun avec sa preuve"),
+    toCheck: z.array(z.string()).describe("Ce qui manque ou reste à vérifier avec le prospect (horaires, email, détail des projets…) : pour l'équipe, jamais sur la page"),
   })
 }
 export type BriefOutput = z.infer<ReturnType<typeof briefOutputSchema>>
@@ -91,17 +94,45 @@ export type BriefOutput = z.infer<ReturnType<typeof briefOutputSchema>>
 
 export const CRITERIA = ["hierarchy", "readability", "contrast", "mobile", "brand", "conversion"] as const
 export type Criterion = (typeof CRITERIA)[number]
-const grade = z.number().int().min(1).max(5)
+const grade = z.number().describe("De 1 (à refaire) à 5 (excellent)")
 
+/** What the critic answers: loose, like the brief (its first real answer was refused for a defect described at length). */
 export const critiqueSchema = z.object({
   scores: z.object({ hierarchy: grade, readability: grade, contrast: grade, mobile: grade, brand: grade, conversion: grade }),
   issues: z
-    .array(z.object({ severity: z.enum(["high", "medium", "low"]), criterion: z.enum(CRITERIA), problem: z.string().max(240), fix: z.string().max(300) }))
-    .max(8)
-    .describe("Les défauts visibles sur les captures, du plus grave au moins grave"),
-  summary: z.string().max(300),
+    .array(z.object({ severity: z.enum(["high", "medium", "low"]), criterion: z.enum(CRITERIA), problem: z.string(), fix: z.string() }))
+    .describe("Les défauts visibles sur les captures, du plus grave au moins grave, huit au plus"),
+  summary: z.string(),
 })
-export type Critique = z.infer<typeof critiqueSchema>
+export type CritiqueOutput = z.infer<typeof critiqueSchema>
+
+/** The critique as kept: grades from 1 to 5, eight issues at most, texts of a reasonable length. */
+export interface Critique {
+  scores: Record<Criterion, number>
+  issues: { severity: "high" | "medium" | "low"; criterion: Criterion; problem: string; fix: string }[]
+  summary: string
+}
+
+const clipText = (text: string, max: number) => {
+  const t = text.replace(/\s+/g, " ").trim()
+  if (t.length <= max) return t
+  const cut = t.slice(0, max - 1)
+  const space = cut.lastIndexOf(" ")
+  return `${space > max * 0.6 ? cut.slice(0, space) : cut}…`
+}
+export { clipText }
+
+export function normalizeCritique(raw: CritiqueOutput): Critique {
+  // A 0-10 answer is brought back to 1-5; anything else is rounded and kept in range.
+  const tenths = Object.values(raw.scores).some((v) => v > 5)
+  const grade = (v: number) => Math.min(5, Math.max(1, Math.round(Number.isFinite(v) ? (tenths ? v / 2 : v) : 3)))
+  const scores = Object.fromEntries(CRITERIA.map((c) => [c, grade(raw.scores[c])])) as Record<Criterion, number>
+  return {
+    scores,
+    issues: raw.issues.slice(0, 8).map((i) => ({ severity: i.severity, criterion: i.criterion, problem: clipText(i.problem, 400), fix: clipText(i.fix, 500) })),
+    summary: clipText(raw.summary, 500),
+  }
+}
 
 // ── Versions ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
