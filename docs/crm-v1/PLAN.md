@@ -547,7 +547,7 @@ Seconde vue du CRM, isométrique et interactive, à côté de la vue 2D qui rest
 - **Critères** : aucune régression de la vue 2D (tests et parcours dans le navigateur) ; aucun chiffre sans définition ; fluide sur un portable récent.
 
 ### Couche agentique IA (E17 à E27, décidée le 2 novembre 2026)
-Décisions D13 à D27 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17 à E25 sont faits ; E26 et E27 restent à faire.
+Décisions D13 à D27 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17 à E26 sont faits ; E27 reste à faire.
 
 ### E17 — Socle IA · **M** *(absorbe E13)*
 > **Avancement (branche `feat/e17-socle-ia`)** — fait :
@@ -925,6 +925,36 @@ Panneau ⌘J contextuel (page, fiche sélectionnée), en streaming : questions s
 - **Critères** : aucun job Extractor lancé sans validation ni hors du CRM ; chaque proposition de secteur est argumentée.
 
 ### E26 — QG 3D : espaces « Agents IA » et « Studio Web » · **M**
+> **Avancement (branche `feat/e26-qg-agence-ia`)** — fait :
+> - **aile « Agence IA »** : la plateforme passe de 40 × 40 à 52 × 40 m sur sa face gauche ;
+>   - deux espaces, touches **9** et **0**, sur un plancher de verre marine à trame lime discrète ;
+>   - deux avenues du circuit y mènent par les rues entre les plateaux, et leur lumière suit les agents au travail ;
+>   - un totem « Agence IA » marque l'entrée ;
+> - **Agents IA** (`/app/agents`, droit `ai:use`), une salle de contrôle :
+>   - au centre, le noyau holographique du copilote : un clic l'ouvre (⌘J) ;
+>   - autour, six postes dans l'ordre du parcours (Stratège, Analyste qualification, Auditeur, Conseiller offres, Rédacteur, Analyste réponses), chacun avec son androïde, son panneau holographique et la lumière de son état (au travail, en file, à valider, au repos, désactivé) ;
+>   - les données coulent des postes au travail vers le noyau ; une réussite est saluée d'un pouce levé et d'un anneau de lumière ;
+> - **Studio Web** (`/app/studio`, droit `studio:generate`), l'atelier du Designer :
+>   - un mur galerie montre les quatre dernières maquettes avec leur vraie capture ; un cadre ouvre la maquette dans une fenêtre 3D ;
+>   - la page en cours de génération se construit sur une toile holographique ; une balise ambre signale un brief à relire ;
+> - **panneaux** : les agents et leur état en direct, la file « À valider » (approuver, refuser), les dernières exécutions avec leurs étapes, la dépense du mois, les dernières maquettes ; le panneau d'un agent donne sa mission, son modèle, ses chiffres du jour et ses exécutions ;
+> - **dans le HUD** : une pastille « Agence IA » près de l'horloge quand quelque chose se passe ; le nom de l'agent survolé ; la vue d'ensemble passe sur Échap (puis Début), puisque 0 ouvre le Studio ;
+> - **en direct** : le pouls de l'agence (`GET /api/hq/agency`) est relu à chaque événement `ai-run` du canal privé de la personne, et toutes les 8 s tant qu'un agent travaille ou qu'un espace IA est ouvert ;
+> - **personnage** : un androïde Meshy (50 crédits) ; ses liserés sont repeints en néon par `scripts/build-characters.mjs` pour que la scène les allume selon l'état ;
+> - **au passage** : l'écoute des événements `ai-run` est commune (`components/crm/ai/run-events.ts`) ; les petites pièces du panneau 3D sont dans `hud/panel-kit.tsx`.
+>
+> **Vérifié** :
+> - `tests/hq.test.ts` (25 tests) et `tests/hq.integration.test.ts` (11 tests, base jetable) ;
+> - suite complète verte (874 tests), `tsc`, lint des fichiers touchés, build ;
+> - le morceau 3D reste chargé par `/app/3d` seul ;
+> - dans Chrome sur la base de démo : survol et clic sur le noyau et un androïde, approbation depuis le panneau, cadre de la galerie ouvert en fenêtre, touches 9, 0, Échap et Début, pastille, téléphone, mouvement réduit, jour et nuit ; aucune erreur dans la console ;
+> - fluidité, dans une fenêtre Chrome pilotée, sur le serveur de développement : `main` et la branche se valent (image médiane 16,7 ms ; moyenne 45 à 46 images/s pour la branche, 47 à 49 pour `main`).
+>
+> **Écarts** :
+> - l'espace Agents IA demande `ai:use`, le droit de la page 2D, et non `ai:read` : un lecteur y verrait un espace qu'il ne peut pas ouvrir ;
+> - un membre voit l'activité de ses propres exécutions, le propriétaire et les managers celle de toute l'équipe, comme dans Agents IA ;
+> - les 60 images/s n'ont pas été mesurées dans le navigateur de l'application : seule la comparaison avec `main` dans les mêmes conditions l'a été.
+
 Deux entrées dans `features/hq/zones.ts` (touches 9 et 0), plateforme agrandie, compositions dans `scene/zones.tsx`. On y voit les agents à leur poste avec leur activité en direct, la file « À valider » et les maquettes récentes ; les modules s'ouvrent dans les fenêtres 3D. Les personnages des agents sont générés avec Meshy **après confirmation du coût**.
 - **Critères** : aucune régression de la 3D (60 images/s sur la machine de référence) ni de la 2D.
 
@@ -990,5 +1020,5 @@ E1 peut démarrer en parallèle d'E0 ; E5 peut commencer dès que E3 fixe le mod
 8. *(E17, E20)* Créer la clé Vercel AI Gateway (compte Vercel) et la clé gratuite Google PageSpeed Insights.
 9. *(E23)* Ajouter l'enregistrement DNS de `apercu.cleads.fr` vers Netlify.
 10. *(E19)* Vérifier puis activer les offres du catalogue V1 dans Agents IA › Offres, où elles attendent en brouillon (prix indicatifs, [AGENTS-IA.md](AGENTS-IA.md), section 14).
-11. *(E26)* Confirmer les crédits Meshy pour les personnages des agents, le moment venu.
+11. ~~*(E26)* Confirmer les crédits Meshy pour les personnages des agents, le moment venu.~~ Fait le 2 novembre 2026 : un androïde, 50 crédits.
 12. Accepter les DPA des fournisseurs IA, puis compléter la politique de confidentialité et le registre des traitements.

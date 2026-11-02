@@ -1,6 +1,7 @@
 "use client"
 
 import { createContext, useContext, useSyncExternalStore } from "react"
+import { isAgentId, type AgentId } from "@/features/ai/agents"
 import type { Ambience, AmbienceMode } from "@/features/hq/ambience"
 import type { HqOverview } from "@/features/hq/types"
 import type { ZoneId } from "@/features/hq/zones"
@@ -10,7 +11,7 @@ import type { PeriodDays } from "@/features/metrics/definitions"
  * State shared by the 3D scene and its HUD. A tiny external store rather than a library: React reads it with
  * useSyncExternalStore, the Canvas (another React root) gets it through the context bridge of React Three Fiber.
  */
-export type Selection = { kind: "zone"; id: ZoneId } | { kind: "member"; id: string } | { kind: "lead"; id: string } | { kind: "hq" } | null
+export type Selection = { kind: "zone"; id: ZoneId } | { kind: "member"; id: string } | { kind: "lead"; id: string } | { kind: "agent"; id: AgentId } | { kind: "hq" } | null
 export type CameraCommand = "zoomIn" | "zoomOut" | "rotateLeft" | "rotateRight" | "reset"
 
 export interface HqState {
@@ -74,4 +75,14 @@ export function selectZone(store: HqStore, id: ZoneId) {
 }
 export function clearSelection(store: HqStore) {
   store.set({ selection: null, focus: null, tour: false })
+}
+/** The agent under the pointer or selected (E26): hovered agents are keyed "agent:<id>". */
+export function shownAgent(s: HqState): AgentId | null {
+  const id = s.selection?.kind === "agent" ? s.selection.id : s.hovered?.startsWith("agent:") ? s.hovered.slice(6) : null
+  return id && isAgentId(id) ? id : null
+}
+
+/** An agent of the AI wing (E26): the camera frames its space, the panel shows the agent. */
+export function selectAgent(store: HqStore, id: AgentId, zone: ZoneId) {
+  store.set({ selection: { kind: "agent", id }, focus: zone, tour: false })
 }

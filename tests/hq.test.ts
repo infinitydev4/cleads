@@ -3,7 +3,10 @@ import { ambienceAt, mix, sunAt } from "@/features/hq/ambience"
 import { CHARACTER_IDS, characterFor } from "@/features/hq/characters"
 import { JOURNEY, ZONES, ZONE_IDS, assignStations, HQ_SEATS, isZoneId, zoneById } from "@/features/hq/zones"
 import { deltaPct, deltaPts, formatDeltaPct, formatDeltaPts, formatRate, INDICATORS, parsePeriod, rate } from "@/features/metrics/definitions"
-import { PLATFORM_HALF, PLOT_HALF, RING, SEATS, onRing, spurs } from "@/components/crm/hq/scene/layout"
+import { AGENT_IDS } from "@/features/ai/agents"
+import { AGENCY_ORDER, CONTROL_ROOM, agencySummaries, agentStateOf, postOf } from "@/features/hq/agency"
+import type { AgencyPulse, AgentPulse } from "@/features/hq/types"
+import { CONSOLE, CONTROL_ROOM_SEATS, DESIGNER_SEAT, GALLERY_FRAMES, PLATFORM, PLOT_HALF, RING, SEATS, TOTEM, TREES, WING, agentAnchor, doorOf, onPlatform, onRing, spurs } from "@/components/crm/hq/scene/layout"
 import { windowPath } from "@/lib/crm/hq-window"
 
 const at = (iso: string) => new Date(iso)
@@ -51,18 +54,32 @@ describe("day and night (E16)", () => {
 })
 
 describe("spaces of the 3D view", () => {
-  it("declares the eight modules once, with keys 1 to 8", () => {
+  it("declares the ten spaces once, with keys 1 to 9 then 0", () => {
     expect(ZONES.map((z) => z.id).sort()).toEqual([...ZONE_IDS].sort())
-    expect(ZONES.map((z) => z.key).sort()).toEqual(["1", "2", "3", "4", "5", "6", "7", "8"])
+    expect(ZONES.map((z) => z.key)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"])
     expect(new Set(ZONES.map((z) => z.position.join())).size).toBe(ZONES.length)
     for (const z of ZONES) {
       expect(z.description.length).toBeGreaterThan(20)
       expect(z.href.startsWith("/app")).toBe(true)
-      expect(Math.abs(z.position[0]) + PLOT_HALF).toBeLessThanOrEqual(PLATFORM_HALF)
-      expect(Math.abs(z.position[1]) + PLOT_HALF).toBeLessThanOrEqual(PLATFORM_HALF)
+      const [x, zz] = z.position
+      expect(onPlatform(x - PLOT_HALF, zz - PLOT_HALF) && onPlatform(x + PLOT_HALF, zz + PLOT_HALF)).toBe(true)
     }
     expect(isZoneId("pipeline")).toBe(true)
-    expect(isZoneId("agents")).toBe(false)
+    expect(isZoneId("agents")).toBe(true)
+    expect(isZoneId("robots")).toBe(false)
+    // The AI spaces open the 2D modules with the rights of those pages.
+    expect(zoneById("agents")).toMatchObject({ href: "/app/agents", permission: "ai:use", key: "9", seats: 0 })
+    expect(zoneById("studio")).toMatchObject({ href: "/app/studio", permission: "studio:generate", key: "0", seats: 0 })
+  })
+
+  it("keeps the plots apart, with room for the paths between them", () => {
+    for (const a of ZONES) {
+      for (const b of ZONES) {
+        if (a.id >= b.id) continue
+        const gap = Math.max(Math.abs(a.position[0] - b.position[0]), Math.abs(a.position[1] - b.position[1])) - 2 * PLOT_HALF
+        expect(gap, `${a.id} / ${b.id}`).toBeGreaterThanOrEqual(3)
+      }
+    }
   })
 
   it("maps every step of the journey to a space and to a defined indicator", () => {
@@ -84,6 +101,35 @@ describe("spaces of the 3D view", () => {
     expect(onRing(0)).toEqual([-RING, -RING])
     expect(onRing(0.25)).toEqual([RING, -RING])
     expect(spurs()).toHaveLength(ZONES.length + 4)
+    expect(spurs(true)).toHaveLength(WING.length)
+    expect(spurs(false)).toHaveLength(ZONES.length - WING.length + 4)
+  })
+
+  it("opens each door on the edge of its plot, and leads the avenues of the AI wing between the plots", () => {
+    for (const z of ZONES) {
+      const { door } = doorOf(z.id)
+      const [cx, cz] = z.position
+      // On the edge: as far as the plot's half-width along one axis at least, never beyond it.
+      expect(Math.max(Math.abs(door[0] - cx), Math.abs(door[1] - cz))).toBeCloseTo(PLOT_HALF, 5)
+    }
+    for (const [[x1, z1], [x2, z2]] of spurs(true)) {
+      expect(z1).toBe(z2)
+      expect(x1).toBe(-RING)
+      // An avenue runs along a street: it crosses no plot of the grid on its way.
+      for (const z of ZONES.filter((zz) => !WING.includes(zz.id))) {
+        const [cx, cz] = z.position
+        const crossesX = Math.min(x1, x2) < cx + PLOT_HALF && Math.max(x1, x2) > cx - PLOT_HALF
+        expect(crossesX && Math.abs(z1 - cz) < PLOT_HALF, z.id).toBe(false)
+      }
+    }
+  })
+
+  it("keeps the trees off the plots and the paths", () => {
+    for (const [x, z] of TREES) {
+      for (const zone of ZONES) expect(Math.max(Math.abs(x - zone.position[0]), Math.abs(z - zone.position[1])), zone.id).toBeGreaterThan(PLOT_HALF + 0.5)
+    }
+    expect(onPlatform(TOTEM[0], TOTEM[1])).toBe(true)
+    expect(PLATFORM.minX).toBeLessThan(-24 - PLOT_HALF)
   })
 
   it("seats members by role, then in the central building when the desks are full", () => {
@@ -96,6 +142,60 @@ describe("spaces of the 3D view", () => {
     expect(seated.slice(6, 8).map((m) => m.station)).toEqual(["sources", "sources"])
     expect(seated.slice(8).map((m) => m.station)).toEqual(["hq", "hq"])
     expect(seated.slice(8).map((m) => m.seat)).toEqual([0, 1])
+  })
+})
+
+describe("the AI agency of the 3D view (E26)", () => {
+  const pulse = (over: Partial<AgentPulse> & { id: AgentPulse["id"] }): AgentPulse => ({ state: "idle", running: 0, queued: 0, waiting: 0, current: null, lastDone: null, today: { runs: 0, costEur: 0 }, ...over })
+  const agency = (agents: AgentPulse[], extra: Partial<AgencyPulse> = {}): AgencyPulse => ({ generatedAt: "", agents, approvals: 0, worker: { online: true, queued: 0 }, configured: true, studio: null, ...extra })
+
+  it("puts every agent at one place: the core, a post of the control room, or the Studio's desk", () => {
+    expect(postOf("copilot")).toEqual({ zone: "agents", kind: "core" })
+    expect(postOf("designer")).toEqual({ zone: "studio", kind: "desk" })
+    expect(CONTROL_ROOM.map((id) => postOf(id))).toEqual(CONTROL_ROOM.map((_, index) => ({ zone: "agents", kind: "station", index })))
+    expect([...AGENCY_ORDER].sort()).toEqual([...AGENT_IDS].sort())
+    for (const id of AGENT_IDS) expect(agentAnchor(id)[1]).toBeGreaterThan(1)
+  })
+
+  it("seats the agents round the core, facing it, never between the camera and the core", () => {
+    for (const seat of CONTROL_ROOM_SEATS) {
+      expect(Math.hypot(seat.x, seat.z)).toBeLessThan(PLOT_HALF - 0.8)
+      expect(Math.hypot(seat.x, seat.z)).toBeGreaterThan(CONSOLE.outer)
+      // Facing (sin rot, cos rot) points at the centre.
+      const facing = [Math.sin(seat.rot), Math.cos(seat.rot)]
+      expect(facing[0] * -seat.x + facing[1] * -seat.z).toBeCloseTo(Math.hypot(seat.x, seat.z), 5)
+      // The camera looks from +x +z: no post within 25° of that line.
+      const towardsCamera = (seat.x + seat.z) / Math.SQRT2 / Math.hypot(seat.x, seat.z)
+      expect(towardsCamera).toBeLessThan(Math.cos((25 * Math.PI) / 180))
+    }
+    expect(Math.abs(DESIGNER_SEAT.x)).toBeLessThan(PLOT_HALF)
+    for (const [x, z] of GALLERY_FRAMES) expect(Math.max(Math.abs(x), Math.abs(z))).toBeLessThan(PLOT_HALF)
+  })
+
+  it("says first what waits for a person, then what moves", () => {
+    expect(agentStateOf({ enabled: true, running: 1, queued: 2, waiting: 1 })).toBe("waiting")
+    expect(agentStateOf({ enabled: true, running: 1, queued: 2, waiting: 0 })).toBe("working")
+    expect(agentStateOf({ enabled: false, running: 0, queued: 1, waiting: 0 })).toBe("queued")
+    expect(agentStateOf({ enabled: false, running: 0, queued: 0, waiting: 0 })).toBe("off")
+    expect(agentStateOf({ enabled: true, running: 0, queued: 0, waiting: 0 })).toBe("idle")
+  })
+
+  it("gives the AI spaces live badges, and none to a role that cannot open them", () => {
+    const open = { agents: false, studio: false }
+    const studio = { latest: [], building: 0, briefs: 0, ready: 3 }
+    expect(agencySummaries(agency([pulse({ id: "auditor", running: 1 })], { approvals: 1 }), open).agents).toEqual({ badge: "1 à valider", tone: "attention", locked: false })
+    expect(agencySummaries(agency([pulse({ id: "auditor", running: 1 }), pulse({ id: "writer", running: 2 })]), open).agents).toEqual({ badge: "2 agents au travail", tone: "active", locked: false })
+    expect(agencySummaries(agency([pulse({ id: "qualifier", queued: 3 })]), open).agents.badge).toBe("3 exécutions en file")
+    expect(agencySummaries(agency([pulse({ id: "auditor", today: { runs: 4, costEur: 0.4 } })]), open).agents.badge).toBe("4 exécutions aujourd’hui")
+    expect(agencySummaries(agency([pulse({ id: "auditor" })]), open).agents.badge).toBe("Au repos")
+    expect(agencySummaries(agency([], { studio: { ...studio, briefs: 1, building: 1 } }), open).studio).toEqual({ badge: "1 brief à relire", tone: "attention", locked: false })
+    expect(agencySummaries(agency([], { studio: { ...studio, building: 2 } }), open).studio.badge).toBe("2 maquettes en cours")
+    expect(agencySummaries(agency([], { studio }), open).studio.badge).toBe("3 maquettes prêtes")
+    expect(agencySummaries(agency([], { studio: { ...studio, ready: 0 } }), open).studio.badge).toBe("Aucune maquette")
+    // No pulse (no AI right), a locked space, or no Studio right: no figure at all.
+    expect(agencySummaries(null, open)).toEqual({ agents: { badge: null, tone: "neutral", locked: true }, studio: { badge: null, tone: "neutral", locked: true } })
+    expect(agencySummaries(agency([], { studio }), { agents: true, studio: false }).agents.locked).toBe(true)
+    expect(agencySummaries(agency([]), open).studio.locked).toBe(true)
   })
 })
 
@@ -149,6 +249,9 @@ describe("windows of the 3D view (E16)", () => {
     expect(windowPath("/app/leads?status=REPLIED&owner=me")).toBe("/app/leads?status=REPLIED&owner=me")
     expect(windowPath("/app/campaigns?new=1", origin)).toBe("/app/campaigns?new=1")
     expect(windowPath(`${origin}/app/pipeline`, origin)).toBe("/app/pipeline")
+    // The AI wing's links (E26): a mock-up, the approvals tab.
+    expect(windowPath("/app/studio/cmabc123")).toBe("/app/studio/cmabc123")
+    expect(windowPath("/app/agents?tab=approvals")).toBe("/app/agents?tab=approvals")
   })
 
   it("never opens the 3D view inside itself", () => {

@@ -49,7 +49,7 @@ export function SceneControls() {
       <span className="my-0.5 h-px w-6 bg-border" aria-hidden="true" />
       <IconButton label="Tourner à gauche" onClick={() => send("rotateLeft")}><RotateCcw className="h-4 w-4" aria-hidden="true" /></IconButton>
       <IconButton label="Tourner à droite" onClick={() => send("rotateRight")}><RotateCw className="h-4 w-4" aria-hidden="true" /></IconButton>
-      <IconButton label="Vue d’ensemble (0)" onClick={() => { clearSelection(store); send("reset") }}><Home className="h-4 w-4" aria-hidden="true" /></IconButton>
+      <IconButton label="Vue d’ensemble (Échap, Début)" onClick={() => { clearSelection(store); send("reset") }}><Home className="h-4 w-4" aria-hidden="true" /></IconButton>
       <span className="my-0.5 h-px w-6 bg-border" aria-hidden="true" />
       <IconButton
         label={tour ? "Arrêter la visite" : "Visite guidée des espaces"}

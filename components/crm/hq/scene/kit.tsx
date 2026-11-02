@@ -1,7 +1,7 @@
 "use client"
 
-import { useLayoutEffect, useMemo, useRef } from "react"
-import { useFrame } from "@react-three/fiber"
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react"
+import { useFrame, type ThreeEvent } from "@react-three/fiber"
 import * as THREE from "three"
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js"
 import { materials, PALETTE } from "./materials"
@@ -21,9 +21,26 @@ function cached(key: string, make: () => THREE.BufferGeometry) {
   return g
 }
 export const rounded = (w: number, h: number, d: number, r = 0.04) => cached(`rb:${w}:${h}:${d}:${r}`, () => new RoundedBoxGeometry(w, h, d, 3, Math.min(r, w / 2, h / 2, d / 2)))
-export const cylinder = (rt: number, rb: number, h: number, s = 24) => cached(`cy:${rt}:${rb}:${h}:${s}`, () => new THREE.CylinderGeometry(rt, rb, h, s))
+export const cylinder = (rt: number, rb: number, h: number, s = 24, open = false) => cached(`cy:${rt}:${rb}:${h}:${s}:${open}`, () => new THREE.CylinderGeometry(rt, rb, h, s, 1, open))
 const sphere = (r: number, detail = 2) => cached(`ico:${r}:${detail}`, () => new THREE.IcosahedronGeometry(r, detail))
 const plane = (w: number, h: number) => cached(`pl:${w}:${h}`, () => new THREE.PlaneGeometry(w, h))
+
+/** A texture rebuilt only when its data key changes, and freed when replaced. */
+export function useCanvasTexture(make: () => THREE.Texture, key: string) {
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` is the data the picture depends on
+  const texture = useMemo(() => make(), [key])
+  useEffect(() => () => texture.dispose(), [texture])
+  return texture
+}
+
+/** A click on an object of the scene, unless it ended a drag of the camera. */
+export function clickHandler(onClick: () => void) {
+  return (e: ThreeEvent<MouseEvent>) => {
+    if (e.delta > 4) return
+    e.stopPropagation()
+    onClick()
+  }
+}
 
 type Vec3 = [number, number, number]
 interface Placed {

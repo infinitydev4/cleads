@@ -87,7 +87,8 @@ function linkView(site: { id: string; linkNonce: string | null; tokenHash: strin
   return { url, createdAt: site.linkCreatedAt.toISOString(), expiresAt: site.linkExpiresAt.toISOString(), expired: site.linkExpiresAt <= now, createdBy: site.linkCreatedById ? (people.get(site.linkCreatedById) ?? null) : null }
 }
 
-const renderPath = (siteId: string, number: number, kind: "desktop" | "mobile" | "thumb") => `/api/studio/sites/${siteId}/versions/${number}/${kind}`
+/** Where a render of a version is served (the route checks the right to see its fiche). */
+export const renderPath = (siteId: string, number: number, kind: "desktop" | "mobile" | "thumb") => `/api/studio/sites/${siteId}/versions/${number}/${kind}`
 
 async function toSiteView(actor: CurrentUser, site: Prisma.GeneratedSiteGetPayload<{ include: { lead: { select: { id: true; ownerId: true } } } }>): Promise<SiteView> {
   const now = new Date()

@@ -1,6 +1,6 @@
 "use client"
 
-import { useLayoutEffect, useMemo, useRef } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react"
 import { useFrame } from "@react-three/fiber"
 import * as THREE from "three"
 import { useHq } from "../store"
@@ -21,7 +21,7 @@ interface Trace {
   width: number
 }
 
-/** The ring (clockwise, continuous distance) and the spurs (from the ring out to each door). */
+/** The ring (clockwise, continuous distance) and the spurs (from the ring out to each door of the grid and building). */
 export function traces(): Trace[] {
   const out: Trace[] = []
   let d = 0
@@ -31,9 +31,12 @@ export function traces(): Trace[] {
     out.push({ from: a, to: b, start: d, width: 0.36 })
     d += Math.hypot(b[0] - a[0], b[1] - a[1])
   }
-  for (const [a, b] of spurs()) out.push({ from: a, to: b, start: 0, width: 0.26 })
+  for (const [a, b] of spurs(false)) out.push({ from: a, to: b, start: 0, width: 0.26 })
   return out
 }
+
+/** The two avenues of the AI wing (E26): a little wider, their own light, which follows the agents at work. */
+export const avenues = (): Trace[] => spurs(true).map(([from, to]) => ({ from, to, start: 0, width: 0.32 }))
 
 /** Quads along each trace, with the distance along it and the side across it as attributes. */
 function stripGeometry(list: Trace[], widen = 1) {
@@ -137,11 +140,19 @@ function tick(material: THREE.ShaderMaterial, dt: number, intensity: number) {
   material.uniforms.uIntensity.value = intensity
 }
 
-/** Moves the pulses and sets their brightness from the night factor (still when motion is reduced). */
-export function useFlow(material: THREE.ShaderMaterial, dayIntensity = 1.4, nightIntensity = 3.4) {
+/** Moves the pulses and sets their brightness from the night factor (still when motion is reduced); `boost` brightens. */
+export function useFlow(material: THREE.ShaderMaterial, dayIntensity = 1.4, nightIntensity = 3.4, boost = 1) {
   const night = useHq((s) => s.light.night)
   const reducedMotion = useHq((s) => s.reducedMotion)
-  useFrame((_, dt) => tick(material, reducedMotion ? 0 : dt, dayIntensity + (nightIntensity - dayIntensity) * night))
+  useFrame((_, dt) => tick(material, reducedMotion ? 0 : dt, (dayIntensity + (nightIntensity - dayIntensity) * night) * boost))
+}
+
+/** Agents at work now (E26): the wing's avenues and the core speed up and brighten with them. */
+export const useAgentsAtWork = () => useHq((s) => s.overview.agency?.agents.filter((a) => a.running > 0).length ?? 0)
+
+/** Sets a uniform once per change; kept out of the hook because it writes to a shader material. */
+function setUniform(material: THREE.ShaderMaterial, name: string, value: number) {
+  material.uniforms[name].value = value
 }
 
 /** Light running round the ring: one packet per few emails sent this week (between 6 and 28). */
@@ -201,10 +212,16 @@ function Via({ x, z, phase }: { x: number; z: number; phase: number }) {
 
 export function Circuits() {
   const list = useMemo(() => traces(), [])
-  const groove = useMemo(() => stripGeometry(list, 2.1), [list])
+  const wing = useMemo(() => avenues(), [])
+  const groove = useMemo(() => stripGeometry([...list, ...wing], 2.1), [list, wing])
   const core = useMemo(() => stripGeometry(list, 1), [list])
+  const avenue = useMemo(() => stripGeometry(wing, 1), [wing])
   const flow = useNeonFlowMaterial()
   useFlow(flow)
+  const working = useAgentsAtWork()
+  const wingFlow = useNeonFlowMaterial()
+  useFlow(wingFlow, 1.4, 3.4, 1 + 0.22 * Math.min(working, 4))
+  useEffect(() => setUniform(wingFlow, "uSpeed", 0.55 + 0.3 * Math.min(working, 4)), [wingFlow, working])
   const m = materials()
   const vias: [number, number][] = [[-RING, -RING], [RING, -RING], [RING, RING], [-RING, RING], [RING, 0], [-RING, 0], [0, RING], [0, -RING]]
   return (
@@ -212,6 +229,7 @@ export function Circuits() {
       {/* The ivory groove the light runs in, a hair above the floor. */}
       <mesh geometry={groove} material={m.sand} position-y={FLOOR_Y + 0.004} receiveShadow />
       <mesh geometry={core} material={flow} position-y={FLOOR_Y + 0.014} renderOrder={2} />
+      <mesh geometry={avenue} material={wingFlow} position-y={FLOOR_Y + 0.014} renderOrder={2} />
       {vias.map(([x, z], i) => <Via key={i} x={x} z={z} phase={i * 0.9} />)}
       <Packets />
     </group>

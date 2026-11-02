@@ -9,6 +9,9 @@
  * (see features/hq/characters.ts); shrinks the texture to 1024 px WebP and compresses geometry and animation
  * (EXT_meshopt_compression, decoded in the browser by three-stdlib, no CDN). Source files are not kept in the repo:
  * the Meshy task ids are in docs/crm-v1/VUE-3D.md.
+ *
+ * The agents' android (E26, key "android") also gets its light strips repainted: Meshy paints them a pale lime, too
+ * close to the ivory shell for the scene's lime shader to tell them apart.
  */
 import { readdir } from "node:fs/promises"
 import path from "node:path"
@@ -24,6 +27,34 @@ const CLIP_NAMES = {
   Chair_Sit_Idle_M: "sit",
   Stand_and_Chat: "stand_talk",
   Sitting_Answering_Questions: "sit_talk",
+  // The agents' android (E26): a seated thumbs-up when a run succeeds.
+  Sit_Thumbs_Up_Right: "sit_done",
+}
+
+/** Characters whose pale lime strips become the scene's neon green (PALETTE.neon in components/crm/hq/scene/materials.ts). */
+const NEON_STRIPS = new Set(["android"])
+const NEON = [157, 255, 42]
+
+const smooth = (a, b, x) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
+  return t * t * (3 - 2 * t)
+}
+
+/** Repaints in neon the pixels greener than the ivory (g above r) and well above blue: the strips, eyes and lights. */
+async function repaintStrips(doc) {
+  for (const texture of doc.getRoot().listTextures()) {
+    const { data, info } = await sharp(Buffer.from(texture.getImage())).removeAlpha().raw().toBuffer({ resolveWithObject: true })
+    let painted = 0
+    for (let i = 0; i < data.length; i += 3) {
+      const [r, g, b] = [data[i], data[i + 1], data[i + 2]]
+      const k = smooth(6, 16, g - r) * smooth(48, 72, g - b) * 0.9
+      if (k <= 0) continue
+      painted++
+      for (let c = 0; c < 3; c++) data[i + c] = Math.round(data[i + c] + (NEON[c] - data[i + c]) * k)
+    }
+    texture.setImage(await sharp(data, { raw: info }).png().toBuffer()).setMimeType("image/png")
+    process.stdout.write(`  ${painted} pixels repainted in neon\n`)
+  }
 }
 
 const source = process.argv[2]
@@ -75,6 +106,7 @@ for (const file of files) {
 
   const walk = await io.read(path.join(source, `${key}-walk.glb`))
   const skipped = copyClip(doc, walk.getRoot().listAnimations()[0], "walk")
+  if (NEON_STRIPS.has(key)) await repaintStrips(doc)
 
   await doc.transform(
     dedup(),

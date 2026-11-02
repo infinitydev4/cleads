@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react"
 import { CameraControls, CameraControlsImpl } from "@react-three/drei"
 import * as THREE from "three"
 import { useHq, useHqStore } from "../store"
-import { FOCUS_DISTANCE, LIMITS, OVERVIEW, PLATFORM_HALF, PLOT_Y, zoneCenter } from "./layout"
+import { FOCUS_DISTANCE, LIMITS, OVERVIEW, PLATFORM, PLOT_Y, zoneCenter } from "./layout"
 
 const { ACTION } = CameraControlsImpl
 const OVERVIEW_DISTANCE = new THREE.Vector3(...OVERVIEW.position).sub(new THREE.Vector3(...OVERVIEW.target)).length()
@@ -24,7 +24,7 @@ export function CameraRig() {
     const c = ref.current
     if (!c) return
     c.setLookAt(...OVERVIEW.position, ...OVERVIEW.target, false)
-    c.setBoundary(new THREE.Box3(new THREE.Vector3(-PLATFORM_HALF - 4, -1, -PLATFORM_HALF - 4), new THREE.Vector3(PLATFORM_HALF + 4, 8, PLATFORM_HALF + 4)))
+    c.setBoundary(new THREE.Box3(new THREE.Vector3(PLATFORM.minX - 4, -1, PLATFORM.minZ - 4), new THREE.Vector3(PLATFORM.maxX + 4, 8, PLATFORM.maxZ + 4)))
   }, [])
 
   useEffect(() => {

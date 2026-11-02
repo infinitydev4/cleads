@@ -10,10 +10,13 @@ import { Chair, cylinder, rounded } from "./kit"
 import { materials } from "./materials"
 import { Prop, hasProp, measureOf } from "./props"
 
+/** The agents' android (E26): not a character members pick, so it is not in features/hq/characters.ts. */
+export const ANDROID_FILE = "/3d/characters/android.glb"
+
 /** Meshopt-compressed files (scripts/build-characters.mjs); no Draco, so no decoder fetched from a CDN. */
-const useCharacterModel = (id: CharacterId) => useGLTF(CHARACTERS[id].file, false, true)
 export function preloadCharacters() {
   for (const id of CHARACTER_IDS) useGLTF.preload(CHARACTERS[id].file, false, true)
+  useGLTF.preload(ANDROID_FILE, false, true)
 }
 
 export type Pose = "sit" | "talk"
@@ -55,6 +58,23 @@ function hipsOf(model: THREE.Object3D, clip: THREE.AnimationClip | undefined) {
   return p
 }
 
+/**
+ * Starts a clip at `time`, fading from the one playing (a cut when motion is reduced). Kept out of the component:
+ * three.js animation actions are mutable engine objects, made to be driven like this.
+ */
+function play(next: THREE.AnimationAction, previous: THREE.AnimationAction | null, time: number, still: boolean) {
+  next.reset()
+  next.time = time
+  next.timeScale = still ? 0 : 1
+  if (previous && previous !== next && !still) {
+    next.fadeIn(0.35).play()
+    previous.fadeOut(0.35)
+  } else {
+    if (previous && previous !== next) previous.stop()
+    next.play()
+  }
+}
+
 /** Turn applied to the Meshy chair so its backrest is behind a person facing +z (set from the generated model). */
 export const CHAIR_YAW = 0
 
@@ -66,15 +86,23 @@ export function SeatChair({ seat }: { seat: number }) {
 }
 
 interface ModelProps {
-  character: CharacterId
-  pose: Pose
+  file: string
+  /** The clip to play; a change fades from the previous one. */
+  clip: string
+  /** The clip whose hips place the person on the seat (default: the one played), so a gesture does not move them. */
+  fitClip?: string
+  /** Start the clip from its beginning (a gesture) rather than at a point of its loop that depends on `phase`. */
+  restart?: boolean
   seated: boolean
   phase: number
   reducedMotion: boolean
+  /** Runs once on this person's own copy of the model (the android lights its neon there). Must be stable. */
+  prepare?: (model: THREE.Object3D) => void
 }
 
-function Model({ character, pose, seated, phase, reducedMotion }: ModelProps) {
-  const gltf = useCharacterModel(character)
+/** A rigged model (a member's character or the agents' android) at its place, playing one of its clips. */
+export function SkinnedModel({ file, clip: name, fitClip, restart, seated, phase, reducedMotion, prepare }: ModelProps) {
+  const gltf = useGLTF(file, false, true)
   const root = useRef<THREE.Group>(null)
   // One skeleton per person: a shared one would make everybody move the same bones.
   const model = useMemo(() => {
@@ -97,32 +125,36 @@ function Model({ character, pose, seated, phase, reducedMotion }: ModelProps) {
       const top = head.getWorldPosition(new THREE.Vector3()).y
       if (top > 0 && Math.abs(top - HEIGHT) / HEIGHT > 0.25) c.scale.multiplyScalar(HEIGHT / top)
     }
+    prepare?.(c)
     return c
-  }, [gltf.scene])
-  const name = clipFor(character, pose, seated)
-  const clip = gltf.animations.find((a) => a.name === name) ?? gltf.animations.find((a) => a.name === "sit")
+  }, [gltf.scene, prepare])
+  const byName = (n: string | undefined) => (n ? gltf.animations.find((a) => a.name === n) : undefined)
+  const clip = byName(name) ?? byName("sit")
+  const fitWith = byName(fitClip) ?? clip
 
   // Put the hips over the origin (the middle of the seat, or the person's spot when standing), at seat height.
   const fit = useMemo(() => {
-    const hips = hipsOf(model, clip)
+    const hips = hipsOf(model, fitWith)
     if (!hips) return { x: 0, y: 0, z: 0, seat: SEAT_TARGET }
     const y = seated ? Math.min(MAX_RAISE, Math.max(-MAX_LOWER, SEAT_TARGET + HIP_TO_SEAT - hips.y)) : 0
     return { x: -hips.x, y, z: -hips.z, seat: hips.y + y - HIP_TO_SEAT }
-  }, [model, clip, seated])
+  }, [model, fitWith, seated])
 
   const { actions } = useAnimations(gltf.animations, root)
+  // The action playing now: a new clip fades in over it rather than cutting.
+  const playing = useRef<THREE.AnimationAction | null>(null)
   useEffect(() => {
     const action = (clip && actions[clip.name]) ?? Object.values(actions)[0]
     if (!action) return
-    action.reset().play()
-    // three.js animation actions are mutable engine objects, made to be driven like this.
-    // eslint-disable-next-line react-hooks/immutability
-    action.time = (phase * 7.3) % Math.max(0.1, action.getClip().duration)
-    action.timeScale = reducedMotion ? 0 : 1
+    play(action, playing.current, restart ? 0 : (phase * 7.3) % Math.max(0.1, action.getClip().duration), reducedMotion)
+    playing.current = action
+  }, [actions, clip, phase, restart, reducedMotion])
+  useEffect(() => {
+    const action = playing
     return () => {
-      action.stop()
+      action.current?.stop()
     }
-  }, [actions, clip, phase, reducedMotion])
+  }, [])
 
   return (
     <>
@@ -148,7 +180,7 @@ function Placeholder({ seated }: { seated: boolean }) {
   )
 }
 
-class LoadBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+export class LoadBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
   state = { failed: false }
   static getDerivedStateFromError() {
     return { failed: true }
@@ -162,7 +194,7 @@ class LoadBoundary extends Component<{ fallback: ReactNode; children: ReactNode 
 }
 
 /** What the pointer hits: an invisible box the size of a seated or standing person (cheap and reliable to pick). */
-function HitBox({ seated }: { seated: boolean }) {
+export function HitBox({ seated }: { seated: boolean }) {
   const h = seated ? 1.45 : 1.85
   return (
     <mesh position={[0, h / 2, 0]}>
@@ -217,7 +249,7 @@ export function Character({ character, pose, seated, position, rotation, phase, 
       {onSelect && <HitBox seated={seated} />}
       <LoadBoundary fallback={<Placeholder seated={seated} />}>
         <Suspense fallback={<Placeholder seated={seated} />}>
-          <Model character={character} pose={pose} seated={seated} phase={phase} reducedMotion={reducedMotion} />
+          <SkinnedModel file={CHARACTERS[character].file} clip={clipFor(character, pose, seated)} seated={seated} phase={phase} reducedMotion={reducedMotion} />
         </Suspense>
       </LoadBoundary>
       {dotColor && (

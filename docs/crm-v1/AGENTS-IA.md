@@ -2,7 +2,7 @@
 
 > Architecture de référence décidée le 2 novembre 2026 (décisions D13 à D27 de [PLAN.md](PLAN.md)). Elle sert de spécification aux epics E17 à E27.
 >
-> **État** : le socle (E17), le worker (E18), les agents, skills et catalogue d'offres (E19), l'audit des prospects (E20), les offres argumentées (E21), la rédaction et le classement des réponses (E22), le Studio Web (E23), le copilote (E24), le Stratège et le tri des fiches importées (E25) sont implémentés : `lib/ai/`, `features/ai/`, `features/offers/`, `features/prospect-audit/`, `features/offer-pitch/`, `features/email-draft/`, `features/reply-triage/`, `features/studio/`, `features/copilot/`, `features/strategy/`, `features/relevance/`, `worker/`, Réglages › IA, Agents IA (`/app/agents`), Studio Web (`/app/studio`), les onglets « Audit IA », « Offres suggérées » et « Maquette » des fiches, le Brouillon IA, les suggestions de la boîte, le panneau du copilote (⌘J), le Stratège de la page Campagnes et la pertinence des fiches d'une campagne. Les sections 4 à 17 décrivent ce qui existe. Le reste (QG, évaluations) est la spécification des epics E26 et E27.
+> **État** : le socle (E17), le worker (E18), les agents, skills et catalogue d'offres (E19), l'audit des prospects (E20), les offres argumentées (E21), la rédaction et le classement des réponses (E22), le Studio Web (E23), le copilote (E24), le Stratège et le tri des fiches importées (E25) et l'aile « Agence IA » du QG 3D (E26) sont implémentés : `lib/ai/`, `features/ai/`, `features/offers/`, `features/prospect-audit/`, `features/offer-pitch/`, `features/email-draft/`, `features/reply-triage/`, `features/studio/`, `features/copilot/`, `features/strategy/`, `features/relevance/`, `worker/`, Réglages › IA, Agents IA (`/app/agents`), Studio Web (`/app/studio`), les onglets « Audit IA », « Offres suggérées » et « Maquette » des fiches, le Brouillon IA, les suggestions de la boîte, le panneau du copilote (⌘J), le Stratège de la page Campagnes, la pertinence des fiches d'une campagne et les espaces « Agents IA » et « Studio Web » du QG 3D (`features/hq/agency.ts`, `components/crm/hq/scene/agency.tsx`). Les sections 4 à 18 décrivent ce qui existe. Le reste (évaluations) est la spécification de l'epic E27.
 
 ## 1. Objet
 
@@ -609,14 +609,21 @@ Cache-Control: private, no-store
 | Prospects (`/app/leads`) | filtre « Pertinence » pour une campagne | E25 |
 | Partout | copilote ⌘J, bouton des barres 2D et 3D | E24 |
 
-**QG 3D (E26).**
-- **Deux nouveaux espaces** dans `features/hq/zones.ts` :
-  - « Agents IA » : touche 9, ouvre `/app/agents`, droit `ai:read` ;
-  - « Studio Web » : touche 0, ouvre `/app/studio`, droit `studio:generate`.
-- **Scène** : plateforme agrandie (`components/crm/hq/scene/layout.ts`), compositions dans `scene/zones.tsx`.
-- **Contenu** : « Agents IA » montre les agents à leur poste et leur activité en direct, avec la file « À valider » dans le panneau ; « Studio Web » montre les dernières maquettes.
-- **Personnages** : générés avec Meshy, après confirmation du coût.
-- **Au passage** : le commentaire de `zones.ts` qui cite encore E13 sera mis à jour.
+**QG 3D (E26).** Détails : [VUE-3D.md](VUE-3D.md).
+- **Deux espaces** dans `features/hq/zones.ts`, sur une aile « Agence IA » qui agrandit la plateforme sur sa face gauche :
+  - « Agents IA » : touche 9, ouvre `/app/agents`, droit `ai:use`, celui de la page 2D (la spécification disait `ai:read` : un lecteur aurait vu un espace qu'il ne peut pas ouvrir) ;
+  - « Studio Web » : touche 0, ouvre `/app/studio`, droit `studio:generate`. La vue d'ensemble, qui était sur 0, passe sur Échap et Début.
+- **Agents IA** : une salle de contrôle.
+  - Le noyau holographique du copilote est au centre ; un clic l'ouvre.
+  - Les six spécialistes sont autour, dans l'ordre du parcours, chacun avec son androïde (Meshy), son panneau holographique et la lumière de son état.
+  - Le panneau montre les agents en direct, la file « À valider » (approuver ou refuser, par la route de la page 2D), les dernières exécutions avec leurs étapes et la dépense du mois.
+- **Studio Web** : l'atelier du Designer.
+  - Le mur galerie montre les quatre dernières maquettes, leurs vraies captures servies par la route protégée.
+  - Un cadre ouvre la maquette dans une fenêtre de la vue ; la page en cours de génération se construit sur une toile holographique.
+- **Règles** : celles de la 2D.
+  - Exécutions et validations : celles de toute l'équipe pour le propriétaire et les managers, les siennes pour les autres.
+  - Maquettes : celles des fiches visibles.
+- **En direct** : `GET /api/hq/agency`, relu à chaque événement `ai-run` du canal privé de la personne, et toutes les 8 s tant qu'un agent travaille ; aucun canal nouveau, aucun changement du worker.
 
 ## 19. Sécurité et RGPD
 
@@ -678,7 +685,6 @@ Cache-Control: private, no-store
 | `DATABASE_URL` du worker (base Railway, rôle dédié recommandé) à saisir avec `scripts/set-ai-worker-env.sh` | le propriétaire | mise en service du worker |
 | Clé Vercel AI Gateway (compte Vercel) et clé gratuite Google PageSpeed Insights | le propriétaire | E17, E20 |
 | Vérifier puis activer les offres du catalogue V1 dans Agents IA › Offres (prix indicatifs) | le propriétaire | E21 |
-| Crédits Meshy pour les personnages des agents | confirmation au moment venu | E26 |
 | DPA des fournisseurs, politique de confidentialité, registre des traitements | le propriétaire | ouverture à l'équipe |
 
-**Prochaine étape : E26 (QG 3D : espaces « Agents IA » et « Studio Web »).**
+**Prochaine étape : E27 (qualité de l'IA : jeux d'évaluation et tableau de bord).**
