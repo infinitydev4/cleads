@@ -15,7 +15,9 @@ import { formatDate } from "@/lib/crm/format"
 import { CAMPAIGN_INDICATORS, INDICATORS, formatCount, formatRate } from "@/features/metrics/definitions"
 import type { CampaignDetail } from "@/features/campaigns/service"
 import { api } from "../../leads/api"
+import type { RelevanceView } from "@/features/relevance/service"
 import { CampaignDialog, type Person } from "../campaign-dialog"
+import { RelevanceCard } from "./relevance-card"
 import { Goal } from "../campaigns-view"
 
 /** Eight weeks of fiches created and meetings booked, as plain bars (values are also in the accessible table). */
@@ -58,7 +60,22 @@ function Figure({ k, value, sub }: { k: keyof typeof CAMPAIGN_INDICATORS; value:
   )
 }
 
-export function CampaignDetailView({ campaign: c, people, currentUserId, canSearch }: { campaign: CampaignDetail; people: Person[]; currentUserId: string; canSearch: boolean }) {
+export function CampaignDetailView({
+  campaign: c,
+  people,
+  offers = [],
+  relevance = null,
+  currentUserId,
+  canSearch,
+}: {
+  campaign: CampaignDetail
+  people: Person[]
+  offers?: { id: string; name: string }[]
+  /** E25: Jev's sorting of the campaign's fiches, for those who may read it. */
+  relevance?: RelevanceView | null
+  currentUserId: string
+  canSearch: boolean
+}) {
   const router = useRouter()
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -86,6 +103,7 @@ export function CampaignDetailView({ campaign: c, people, currentUserId, canSear
         {target && <span className="text-sm text-muted-foreground">{target}</span>}
         {(c.startsOn || c.endsOn) && <span className="text-sm text-muted-foreground">· {c.startsOn ? formatDate(c.startsOn) : "…"} → {c.endsOn ? formatDate(c.endsOn) : "…"}</span>}
         {c.ownerName && <span className="text-sm text-muted-foreground">· Responsable : {c.ownerName}</span>}
+        {c.offer && <span className="text-sm text-muted-foreground">· Offre phare : {c.offer.name}</span>}
         <div className="ml-auto flex flex-wrap gap-2">
           <Button asChild variant="outline" size="sm"><Link href={`/app/leads?campaign=${c.id}`}><Users className="h-4 w-4" aria-hidden="true" /> Voir les fiches</Link></Button>
           {canSearch && c.can.manage && !c.archived && <Button asChild variant="outline" size="sm"><Link href={`/app/search?campaign=${c.id}`}><Search className="h-4 w-4" aria-hidden="true" /> Nouvelle recherche</Link></Button>}
@@ -112,6 +130,8 @@ export function CampaignDetailView({ campaign: c, people, currentUserId, canSear
         <Figure k="meetings" value={formatCount(s.meetings)} sub={`Conversion ${formatRate(s.conversion)}`} />
         <Figure k="won" value={formatCount(s.won)} />
       </div>
+
+      {relevance && <RelevanceCard view={relevance} campaignId={c.id} userId={currentUserId} />}
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
         <Card className="space-y-4 p-5">
@@ -172,7 +192,7 @@ export function CampaignDetailView({ campaign: c, people, currentUserId, canSear
         </Card>
       </div>
 
-      {editing && <CampaignDialog campaign={c} people={people} currentUserId={currentUserId} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); router.refresh() }} />}
+      {editing && <CampaignDialog campaign={c} people={people} offers={offers} currentUserId={currentUserId} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); router.refresh() }} />}
     </div>
   )
 }

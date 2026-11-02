@@ -69,6 +69,7 @@ model User {
   /// E17: AI runs the member asked for, and the approvals they requested or decided.
   agentRuns              AgentRun[]              @relation("AgentRunRequester")
   aiConversations        AiConversation[]
+  strategyProposals      StrategyProposal[]
   approvalsRequested     AgentApproval[]         @relation("ApprovalRequester")
   approvalsDecided       AgentApproval[]         @relation("ApprovalDecider")
 }
@@ -604,6 +605,8 @@ model Workspace {
   replyTriages           ReplyTriage[]
   generatedSites         GeneratedSite[]
   aiConversations        AiConversation[]
+  strategyProposals      StrategyProposal[]
+  leadRelevances         LeadRelevance[]
 }
 
 enum LeadSource {
@@ -828,6 +831,7 @@ model Lead {
   offerPitches        OfferPitch[]
   emailDrafts         EmailDraft[]
   generatedSites      GeneratedSite[]
+  relevances          LeadRelevance[]
 
   @@unique([workspaceId, companyId])
   @@index([workspaceId, status])
@@ -1058,6 +1062,8 @@ model ExtractionSearch {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   finishedAt     DateTime?
+
+  strategyTargets StrategyTarget[]
 
   @@index([workspaceId, createdAt])
   @@index([createdById, status])
@@ -1401,6 +1407,9 @@ model Campaign {
   /// Optional goals, shown as progress next to the measured figures.
   goalLeads    Int?
   goalMeetings Int?
+  /// E25: the offer the campaign leads with; Jev judges its fiches against it.
+  offerId      String?
+  offer        Offer?         @relation(fields: [offerId], references: [id], onDelete: SetNull)
   createdById  String?
   createdBy    User?          @relation("CampaignCreator", fields: [createdById], references: [id], onDelete: SetNull)
   /// Archived campaigns keep their fiches and figures but are no longer offered.
@@ -1408,9 +1417,11 @@ model Campaign {
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
-  leads     Lead[]
-  searches  ExtractionSearch[]
-  agentRuns AgentRun[]
+  leads           Lead[]
+  searches        ExtractionSearch[]
+  agentRuns       AgentRun[]
+  strategyTargets StrategyTarget[]
+  relevances      LeadRelevance[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId, status])
@@ -1541,6 +1552,8 @@ model AgentRun {
   triages     ReplyTriage[]
   siteVersion GeneratedSiteVersion?
   aiMessages  AiMessage[]
+  strategy    StrategyProposal?
+  relevances  LeadRelevance[]
 
   @@index([workspaceId, createdAt])
   @@index([workspaceId, status])
@@ -1780,6 +1793,8 @@ model Offer {
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
   recommendations OfferRecommendation[]
+  campaigns       Campaign[]
+  strategyTargets StrategyTarget[]
 
   @@unique([workspaceId, slug])
   @@index([workspaceId, status])
@@ -2219,4 +2234,112 @@ model AiMessage {
   @@unique([conversationId, uiId])
   @@unique([conversationId, seq])
   @@index([runId])
+}
+
+// E25: the Stratège and the sorting of imported fiches (docs/crm-v1/AGENTS-IA.md §17).
+
+enum StrategyTargetStatus {
+  PROPOSED
+  CAMPAIGN
+  LAUNCHED
+  DISMISSED
+}
+
+enum RelevanceVerdict {
+  RELEVANT
+  MAYBE
+  NOT_RELEVANT
+}
+
+/// What a Stratège run proposes: a few targets, each argued. It creates and launches nothing: a person turns a target
+/// into a draft campaign, then launches its search through the CRM's search service.
+model StrategyProposal {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  /// The run writing it; its status says whether the proposal is ready.
+  runId         String?   @unique
+  run           AgentRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+  requestedById String?
+  requestedBy   User?     @relation(fields: [requestedById], references: [id], onDelete: SetNull)
+  /// What the person asked: { zone, focus, offerSlug }.
+  brief         Json
+  /// Its reading of the situation, in a few sentences.
+  summary       String?
+  /// Where its sectors came from: "extractor" (its taxonomy) or "crm" (when the Extractor did not answer).
+  sectorsFrom   String?
+  model         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  targets StrategyTarget[]
+
+  @@index([workspaceId, createdAt])
+}
+
+/// One target of a proposal: a sector and its zones, its pains, the offer to lead with and the angle, why, and the
+/// campaign and search it suggests. Its status follows what the person did with it.
+model StrategyTarget {
+  id           String               @id @default(cuid())
+  proposalId   String
+  proposal     StrategyProposal     @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  rank         Int
+  sector       String
+  /// The Extractor's key for the sector, when the target names one of its sectors.
+  sectorKey    String?
+  zones        String[]
+  pains        String[]
+  offerId      String?
+  offer        Offer?               @relation(fields: [offerId], references: [id], onDelete: SetNull)
+  /// Copied: the target stays readable if the offer is renamed or archived.
+  offerName    String
+  angle        String
+  /// Each point with what it rests on: [{ text, basis: "crm" | "extractor" | "catalogue" | "hypothesis" }].
+  rationale    Json
+  campaignName String
+  /// The search it suggests.
+  activity     String
+  location     String
+  maxResults   Int
+  /// Businesses the Extractor already knows for this sector and zone, when it said.
+  knownCount   Int?
+  status       StrategyTargetStatus @default(PROPOSED)
+  campaignId   String?
+  campaign     Campaign?            @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  searchId     String?
+  search       ExtractionSearch?    @relation(fields: [searchId], references: [id], onDelete: SetNull)
+  decidedById  String?
+  decidedAt    DateTime?
+  createdAt    DateTime             @default(now())
+
+  @@unique([proposalId, rank])
+}
+
+/// Jev's reading of a fiche for its campaign: relevant, maybe or not, with its confidence. Above the high threshold it
+/// orders the campaign's fiches; below, a person decides. Nothing else changes on the fiche without them.
+model LeadRelevance {
+  id          String            @id @default(cuid())
+  workspaceId String
+  workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  leadId      String
+  lead        Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  campaignId  String
+  campaign    Campaign          @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  /// The offer it was judged for, copied by name.
+  offerName   String?
+  runId       String?
+  run         AgentRun?         @relation(fields: [runId], references: [id], onDelete: SetNull)
+  /// Null when Jev declined to answer: a person decides.
+  verdict     RelevanceVerdict?
+  confidence  Float?
+  outcome     TriageOutcome
+  model       String
+  /// What a person decided, when they did.
+  decision    RelevanceVerdict?
+  decidedById String?
+  decidedAt   DateTime?
+  createdAt   DateTime          @default(now())
+
+  @@unique([leadId, campaignId])
+  @@index([campaignId, outcome])
 }

@@ -206,11 +206,11 @@ export const AGENTS: Record<AgentId, Readonly<AgentDef>> = {
     modelRole: "writer",
     modelRoles: ["writer", "designer"],
     epic: "E25",
-    available: false,
-    tools: ["list_offers", "campaign_metrics", "list_sectors", "propose_campaign", "launch_search", "read_skill"],
+    available: true,
+    tools: ["list_offers", "campaign_metrics", "list_sectors", "search_prospect_base", "read_skill"],
     skills: [{ name: "offres-cleads", mode: "always" }, ...onDemand(...PLAYBOOKS)],
-    output: "Secteurs argumentés, campagne et recherche en brouillon",
-    approval: "Le lancement de la campagne ou de la recherche",
+    output: "Cibles argumentées : secteur, zones, douleurs, offre phare, angle, campagne et recherche proposées",
+    approval: "Chaque campagne et chaque recherche, d'un clic : il ne lance rien lui-même",
     limits: { maxSteps: 10, maxCostEur: 0.3 },
   }),
   qualifier: defineAgent({
@@ -222,12 +222,13 @@ export const AGENTS: Record<AgentId, Readonly<AgentDef>> = {
     modelRole: "decision",
     modelRoles: ["decision"],
     epic: "E25",
-    available: false,
-    tools: ["score_import", "next_action"],
+    available: true,
+    tools: [],
     skills: [],
-    output: "Pertinence et probabilité",
+    output: "Pertinence de chaque fiche importée pour sa campagne, avec sa probabilité",
     approval: "Sous le seuil de confiance, une personne tranche",
-    limits: { maxSteps: 1, maxCostEur: 0.01 },
+    // One decision per fiche, a batch of 40 per run: a few hundredths of a cent each.
+    limits: { maxSteps: 40, maxCostEur: 0.05 },
   }),
 }
 

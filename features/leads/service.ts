@@ -15,7 +15,7 @@ import { MATCH_LABELS, cleanCompany, cleanContact, matchCompany, normalizeTags }
 import { scoreLead } from "./scoring"
 import { stopForLead } from "@/features/outreach/stops"
 import { assertCampaign, setLeadCampaign } from "@/features/campaigns/filing"
-import type { BulkInput, CreateLeadInput, LeadFilters, LeadSort, UpdateLeadInput } from "./schemas"
+import type { BulkInput, CreateLeadInput, LeadFilters, LeadSort, RelevanceFilter, UpdateLeadInput } from "./schemas"
 import type { LeadDetail, LeadList, LeadRow } from "./types"
 import { leadAiReason } from "@/features/prospect-audit/latest"
 import { latestPitchSummary } from "@/features/offer-pitch/latest"
@@ -78,7 +78,22 @@ function filterWhere(user: CurrentUser, f: LeadFilters): Prisma.LeadWhereInput {
   if (f.batch) and.push({ importBatchId: f.batch })
   if (f.campaign === "none") and.push({ campaignId: null })
   else if (f.campaign) and.push({ campaignId: f.campaign })
+  if (f.relevance) and.push(relevanceWhere(f.relevance, f.campaign && f.campaign !== "none" ? f.campaign : null))
   return { AND: and }
+}
+
+const VERDICT_OF = { relevant: "RELEVANT", maybe: "MAYBE", not: "NOT_RELEVANT" } as const
+
+/**
+ * E25: Jev's sorting, for one campaign or any. What counts is the person's decision, else Jev's answer when it was sure
+ * enough; "pending" are the fiches it left to a person.
+ */
+function relevanceWhere(filter: RelevanceFilter, campaignId: string | null): Prisma.LeadWhereInput {
+  const scope = campaignId ? { campaignId } : {}
+  if (filter === "unsorted") return { relevances: { none: scope } }
+  if (filter === "pending") return { relevances: { some: { ...scope, decision: null, outcome: { in: ["REVIEW", "HUMAN"] } } } }
+  const verdict = VERDICT_OF[filter]
+  return { relevances: { some: { ...scope, OR: [{ decision: verdict }, { decision: null, outcome: "AUTO", verdict }] } } }
 }
 
 function orderBy(sort: LeadSort, dir: "asc" | "desc"): Prisma.LeadOrderByWithRelationInput[] {

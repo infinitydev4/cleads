@@ -91,6 +91,36 @@ export async function campaignCohorts(user: CurrentUser, campaignIds: string[]):
   return out
 }
 
+/**
+ * How far the fiches matching `extra` went, whole life (the campaigns' definitions): what the Stratège reads for a
+ * sector (E25). Limited to the fiches the person sees.
+ */
+export async function cohortOf(user: CurrentUser, extra: Prisma.LeadWhereInput): Promise<CohortCounts> {
+  const base = visibleLeads(user, extra)
+  const count = (more: Prisma.LeadWhereInput) => prisma.lead.count({ where: { AND: [base, more] } })
+  const [leads, contacted, replied, qualified, meetings, won] = await Promise.all([
+    count({}),
+    count(contactedWhere()),
+    count({ emails: { some: humanReply() } }),
+    count({ deals: { some: {} } }),
+    count({ meetings: { some: heldMeeting } }),
+    count({ deals: { some: { stage: "WON" } } }),
+  ])
+  return { leads, contacted, replied, qualified, meetings, won, replyRate: rate(replied, contacted), conversion: rate(meetings, leads) }
+}
+
+/** The sectors the person's fiches come from, most frequent first (the companies' sector as imported). */
+export async function topSectors(user: CurrentUser, limit = 10): Promise<{ sector: string; leads: number }[]> {
+  const rows = await prisma.company.groupBy({
+    by: ["sector"],
+    where: { workspaceId: user.workspaceId, sector: { not: null }, leads: { some: visibleLeads(user) } },
+    _count: { _all: true },
+    orderBy: { _count: { sector: "desc" } },
+    take: limit,
+  })
+  return rows.filter((r) => r.sector).map((r) => ({ sector: r.sector!, leads: r._count._all }))
+}
+
 /** Weekly series (oldest first) of fiches created and meetings booked, for the small charts. */
 export async function weeklySeries(user: CurrentUser, weeks = 8, now = new Date(), extra: Prisma.LeadWhereInput = {}) {
   const leads = visibleLeads(user, extra)

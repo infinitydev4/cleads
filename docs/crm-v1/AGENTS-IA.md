@@ -2,7 +2,7 @@
 
 > Architecture de référence décidée le 2 novembre 2026 (décisions D13 à D27 de [PLAN.md](PLAN.md)). Elle sert de spécification aux epics E17 à E27.
 >
-> **État** : le socle (E17), le worker (E18), les agents, skills et catalogue d'offres (E19), l'audit des prospects (E20), les offres argumentées (E21), la rédaction et le classement des réponses (E22), le Studio Web (E23) et le copilote (E24) sont implémentés : `lib/ai/`, `features/ai/`, `features/offers/`, `features/prospect-audit/`, `features/offer-pitch/`, `features/email-draft/`, `features/reply-triage/`, `features/studio/`, `features/copilot/`, `worker/`, Réglages › IA, Agents IA (`/app/agents`), Studio Web (`/app/studio`), les onglets « Audit IA », « Offres suggérées » et « Maquette » des fiches, le Brouillon IA, les suggestions de la boîte et le panneau du copilote (⌘J). Les sections 4 à 17 décrivent ce qui existe, sauf le Stratège. Le reste (stratège, QG, évaluations) est la spécification des epics E25 à E27.
+> **État** : le socle (E17), le worker (E18), les agents, skills et catalogue d'offres (E19), l'audit des prospects (E20), les offres argumentées (E21), la rédaction et le classement des réponses (E22), le Studio Web (E23), le copilote (E24), le Stratège et le tri des fiches importées (E25) sont implémentés : `lib/ai/`, `features/ai/`, `features/offers/`, `features/prospect-audit/`, `features/offer-pitch/`, `features/email-draft/`, `features/reply-triage/`, `features/studio/`, `features/copilot/`, `features/strategy/`, `features/relevance/`, `worker/`, Réglages › IA, Agents IA (`/app/agents`), Studio Web (`/app/studio`), les onglets « Audit IA », « Offres suggérées » et « Maquette » des fiches, le Brouillon IA, les suggestions de la boîte, le panneau du copilote (⌘J), le Stratège de la page Campagnes et la pertinence des fiches d'une campagne. Les sections 4 à 17 décrivent ce qui existe. Le reste (QG, évaluations) est la spécification des epics E26 et E27.
 
 ## 1. Objet
 
@@ -158,8 +158,8 @@ Exemple de mois (ordre de grandeur, à mesurer en E20 et E23) :
 | Analyste réponses | — | `decision` | `classify_reply` | `ReplyClass`, urgence, probabilité | sous le seuil |
 | Designer web | Directeur artistique et intégrateur : pages modernes, accessibles, rapides, fidèles à l'identité du prospect | `designer` (`writer` pour la critique) | `collect_site`, `build_page`, `render_preview`, `critique_page`, `publish_preview` | `GeneratedSite` | le partage du lien |
 | Copilote | Chef d'agence : répond sur les données que la personne voit, délègue aux spécialistes | `writer` (`decision` pour l'aiguillage) | outils de lecture, `start_audit`, `start_studio`, `draft_email`, `create_task` | réponses, actions proposées | toute action externe |
-| Stratège marché | Stratège growth : secteurs, douleurs par métier, offre phare, angle | `writer` | `list_offers`, `campaign_metrics`, MCP `list_sectors`, `propose_campaign`, `launch_search` | campagne brouillon, recherche | le lancement |
-| Analyste qualification | — | `decision` | `score_import`, `next_action` | pertinence, probabilité | sous le seuil |
+| Stratège marché | Stratège growth : secteurs, douleurs par métier, offre phare, angle | `writer` | `list_offers`, `campaign_metrics`, MCP `list_sectors` et `search_prospect_base`, `read_skill` | cibles argumentées, campagne et recherche proposées | chaque campagne et chaque recherche, d'un clic |
+| Analyste qualification | — | `decision` | décision `score_import` par fiche | pertinence, probabilité | sous le seuil |
 
 **Définition dans le code** (`features/ai/agents.ts`), versionnée et testée. Depuis E19, chaque agent y a son rôle d'expert (`persona`), les rôles de modèle permis, ses outils, ses skills V1, ce qu'il produit, ce qu'une personne valide et ses limites. Son epic métier y branchera son comportement :
 ```ts
@@ -299,6 +299,8 @@ Migrations additives uniquement ; chaque table porte `workspaceId`.
 | `GeneratedSiteVersion` | E23 | maquette, numéro, instruction, exécution, page publiée, captures (ordinateur, téléphone, premier écran), contrôles, scores PageSpeed avant / après, jeton PageSpeed (empreinte), modèle, coût |
 | `GeneratedSiteAsset` | E23 | maquette, nom, type (logo, image, police), données, dimensions, source |
 | `GeneratedSiteVisit` | E23 | maquette, version, date (ni cookie ni adresse IP) |
+| `StrategyProposal`, `StrategyTarget` | E25 | proposition du Stratège (demande, lecture d'ensemble, exécution) ; chaque cible : secteur et clé de l'Extractor, zones, douleurs, offre (nom copié), angle, arguments avec leur base, campagne et recherche proposées, volume connu, statut (proposée, campagne créée, recherche lancée, écartée), campagne et recherche créées |
+| `LeadRelevance` | E25 | fiche, campagne, offre (nom copié), exécution, verdict de Jev et sa probabilité, place par rapport aux seuils, décision d'une personne |
 | `AiConversation` | E24 | personne, titre, page de départ, fiches lues (la conversation les suit à l'effacement), coût, tour en cours |
 | `AiMessage` | E24 | conversation, ordre, rôle, contenu au format de l'AI SDK (texte, appels d'outils, validations, résultats), métadonnées (page et date d'une question ; exécutions, coût et arrêt d'une réponse), dernière exécution |
 
@@ -349,6 +351,11 @@ Peut valider l'action d'un agent : la personne qui a lancé l'exécution, ou un 
   - `POST /api/studio/sites/[id]/versions/[n]` (remettre une version en ligne) ;
   - `GET /api/studio/sites/[id]/preview?v=n`, `/versions/[n]/[desktop|mobile|thumb]`, `/assets/[name]` (aperçu interne, captures, images) ;
   - public, sur l'hôte d'aperçu seulement : `/<jeton>`, `/<jeton>/a/<nom>`, `/<jeton>/vu` (`app/apercu/[...path]`).
+
+**Stratège et tri des fiches** (E25) :
+- **Accès** : demander une proposition, créer la campagne d'une cible ou l'écarter demandent `ai:use` et `campaign:manage` ; lancer sa recherche demande aussi `search:run`. Les propositions se lisent avec `campaign:read` et `ai:read` : les siennes, toutes pour les managers et le propriétaire.
+- **Tri** : le lancer demande `ai:use` et `campaign:manage` ; il ne juge que les fiches que la personne voit. Trancher une fiche demande `ai:use` et, sans `campaign:manage`, de pouvoir modifier la fiche.
+- **Routes** : `GET` et `POST /api/ai/strategy` ; `POST /api/ai/strategy/targets/[id]` (`campaign`, `search` avec la recherche confirmée, `dismiss`) ; `GET` et `POST /api/campaigns/[id]/relevance` ; `PATCH /api/campaigns/[id]/relevance/[relevanceId]`.
 
 **Copilote** (E24) :
 - **Accès** : `ai:use`. Ses outils sont ceux que le rôle permet, et chacun passe par le service habituel au nom de la personne : il voit et fait exactement ce qu'elle peut. Un lecteur n'a pas de copilote (chaque tour coûte).
@@ -557,11 +564,34 @@ Cache-Control: private, no-store
   - Un tour à la fois par conversation. Un tour coupé sans le dire libère la conversation au bout de 3 minutes, et son exécution est marquée en échec au bout de 10.
 - **Délégation** : les spécialistes travaillent dans le worker. La carte suit leur exécution en direct (Pusher, sinon toutes les 5 s) et ouvre le résultat : l'audit ou les offres sur la fiche, la maquette dans le Studio, le brouillon dans la fenêtre d'email de la fiche (`?brouillon=<exécution>`), que la personne relit et envoie elle-même.
 - **Conversations** : privées, listées dans le panneau avec leur coût, effaçables une à une ou toutes. Supprimées avec toute fiche qu'elles ont lue (dans la transaction de suppression) et 90 jours après leur dernier message (maintenance du worker).
-- **Stratège** :
-  - il part du catalogue d'offres, des résultats des campagnes (`features/metrics`) et de la taxonomie de l'Extractor (`list_sectors`) ;
-  - il propose les secteurs à cibler, les douleurs de chaque métier, l'offre phare, l'angle et les zones ;
-  - il prépare une campagne brouillon (E15) et une recherche ; le lancement est validé, puis passe par `launch_search` ;
-  - après l'import, Jev trie les fiches selon leur pertinence pour la campagne et l'offre.
+**Stratège (E25, `features/strategy/`).**
+- **Demande** : depuis la page Campagnes, « Proposer des cibles », avec en option une zone, une offre à pousser et des précisions. L'exécution part dans le worker (plafond 0,30 €, 10 étapes) ; une seule à la fois par personne.
+- **Agent** : un `ToolLoopAgent` du worker, rôle `writer`, avec le skill `offres-cleads` et les playbooks à la demande. Il lit :
+  - `campaign_metrics` : les résultats des campagnes et des secteurs d'où viennent les fiches, avec les définitions de la page Campagnes, sur les fiches que la personne voit ;
+  - `list_offers` : seules les offres actives ;
+  - le MCP de l'Extractor en lecture : `list_sectors` (sa taxonomie) et `search_prospect_base` (ce que sa base connaît déjà). Sans Extractor, il travaille à partir du CRM et la proposition le dit.
+- **Réponse** : deux à quatre cibles en sortie structurée. Chacune donne le secteur et ses zones, les douleurs du métier, l'offre phare et l'angle, des arguments avec leur base (« Chiffres du CRM », « Extractor », « Catalogue » ou « Hypothèse »), le nom de campagne et la recherche à lancer. Le code recadre tout :
+  - une cible sans argument, sans recherche ou avec une offre inactive est retirée, et l'exécution dit pourquoi ;
+  - une clé de secteur inconnue de l'Extractor est oubliée ;
+  - les nombres sont bornés.
+- **Il ne lance rien** : l'agent n'a aucun outil d'écriture. Sur chaque cible, la personne peut :
+  - « Créer la campagne » : un brouillon avec l'offre phare, le secteur, les zones et l'angle ;
+  - « Lancer la recherche… » : elle relit l'activité, le lieu et le nombre de résultats, et la recherche part par `features/search/service.ts` (D27) ; la campagne est créée d'abord si besoin ;
+  - « Écarter ».
+
+  Chaque cible ne passe qu'une fois à l'étape suivante, même avec deux clics simultanés.
+
+**Tri des fiches importées (E25, `features/relevance/`).**
+- **Offre phare** : une campagne peut porter une offre active du catalogue (formulaire de la campagne, ou la cible du Stratège).
+- **Jev** juge chaque fiche de la campagne : bonne cible, possible ou mauvaise, avec une probabilité. Il lit l'entreprise (nom balisé comme contenu externe, métier, ville, site, note et nombre d'avis Google, présence d'un téléphone et d'un email de l'entreprise), jamais la personne de contact. L'étape de l'exécution ne garde que l'identifiant de la fiche.
+- **Seuils** :
+  - au-dessus du seuil haut, le verdict range la fiche ;
+  - entre les deux, il attend une confirmation d'un clic ;
+  - en dessous, ou si Jev refuse, une personne tranche.
+
+  Rien d'autre ne change sur la fiche.
+- **Déclenchement** : un import de l'Extractor dans une campagne le lance seul, pour la personne qui importe, sans jamais faire échouer l'import. « Trier les fiches » prend les fiches restantes. Une exécution juge 40 fiches et enchaîne la suivante, dix au plus (plafond 0,05 € chacune, environ 0,0001 € par fiche).
+- **Affichage** : sur la campagne, les fiches pertinentes, possibles, non pertinentes, à trancher et pas encore triées, par où commencer et les fiches à trancher. Dans la liste des fiches, un filtre « Pertinence » quand une campagne est choisie, gardé dans les vues enregistrées.
 
 ## 18. Interfaces 2D et 3D
 
@@ -574,6 +604,9 @@ Cache-Control: private, no-store
 | `/app/studio` | maquettes, versions, visites | E23 |
 | Réglages › IA (`/app/settings/ai`) | modèles par rôle, plafonds, quotas, consommation | E17 |
 | Palette ⌘K | « Ouvrir le copilote », « Demander au copilote : … » (l'audit et la maquette se lancent depuis la fiche, ou en le demandant au copilote) | E24 |
+| Campagnes (`/app/campaigns`) | Stratège : propositions, cibles argumentées, « Créer la campagne », « Lancer la recherche… », « Écarter » | E25 |
+| Campagne (`/app/campaigns/[id]`) | offre phare, « Pertinence des fiches (Jev) », « Trier les fiches », fiches à trancher | E25 |
+| Prospects (`/app/leads`) | filtre « Pertinence » pour une campagne | E25 |
 | Partout | copilote ⌘J, bouton des barres 2D et 3D | E24 |
 
 **QG 3D (E26).**
@@ -648,4 +681,4 @@ Cache-Control: private, no-store
 | Crédits Meshy pour les personnages des agents | confirmation au moment venu | E26 |
 | DPA des fournisseurs, politique de confidentialité, registre des traitements | le propriétaire | ouverture à l'équipe |
 
-**Prochaine étape : E25 (stratège et sourcing).**
+**Prochaine étape : E26 (QG 3D : espaces « Agents IA » et « Studio Web »).**

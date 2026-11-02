@@ -9,6 +9,8 @@ import { runOfferPitch } from "@/features/offer-pitch/handler"
 import { runReplyTriage } from "@/features/reply-triage/handler"
 import { runAudit } from "@/features/prospect-audit/handler"
 import { runDesigner } from "@/features/studio/handler"
+import { runStrategist } from "@/features/strategy/handler"
+import { runQualifier } from "@/features/relevance/handler"
 import { browserRenderer } from "./browser"
 import { AgentWorker, DEFAULT_PER_AGENT } from "./runner"
 import { errorFields, log } from "./log"
@@ -20,6 +22,8 @@ registerAgentHandler("replies", (job) => runReplyTriage(job))
 // E23: the Designer web renders its pages in the image's Chromium (worker/browser.ts).
 const renderer = browserRenderer()
 registerAgentHandler("designer", (job) => runDesigner(job, { renderer }))
+registerAgentHandler("strategist", (job) => runStrategist(job))
+registerAgentHandler("qualifier", (job) => runQualifier(job))
 registerTaskHandler(SKILL_TEST, (job) => runSkillTest(job))
 
 /** Entry point of the AI worker container (docs/crm-v1/WORKER-IA.md). */
