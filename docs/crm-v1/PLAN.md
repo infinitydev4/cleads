@@ -860,14 +860,15 @@ Le Designer génère une landing de démonstration en **code libre** à partir d
 >   - le serveur garde la conversation : du navigateur, il ne prend que le texte d'une question ou la réponse aux validations qu'il a lui-même demandées. Une validation forgée, rejouée ou venue d'une autre personne ne fait rien ;
 >   - un tour est une exécution : son plafond (0,10 €) est réservé avant d'écrire quoi que ce soit, chaque étape est payée avant la suivante, et le tour s'arrête quand une réponse courte ne tiendrait plus. Refuser une action ne coûte rien (aucun appel au modèle) ;
 >   - un tour à la fois par conversation ; une validation laissée sans réponse est refusée à la question suivante ;
->   - au-delà de 50 s, le tour s'arrête et garde ce qui est écrit ; la réponse est enregistrée après chaque étape et à la fin, même si le panneau s'est fermé ;
+>   - au-delà de 50 s depuis l'arrivée de la requête, le tour s'arrête et garde ce qui est écrit. La réponse est enregistrée après chaque étape et à la fin, même si le panneau s'est fermé ;
 > - **Conversations** : privées (ni les managers ni le propriétaire ne les lisent), effaçables une par une ou toutes, supprimées avec toute fiche qu'elles ont lue et 90 jours après leur dernier message (maintenance du worker) ;
 > - **Interface** : panneau à droite, ouvert par ⌘J, par le bouton des barres 2D et 3D ou par la palette ⌘K (« Ouvrir le copilote », « Demander au copilote : … ») ; suggestions selon la page, historique, coût de la conversation ; fiches citées en liens. Dans la 3D, ⌘J marche aussi depuis une fenêtre, et les liens du copilote s'ouvrent dans les fenêtres de la vue.
 >
 > **Vérifié** :
 > - `tests/copilot.test.ts` (16 tests : pages et filtres, validations fusionnées, historique envoyé au modèle, rendu sans HTML ni lien, outils par rôle) ;
 > - `tests/copilot.integration.test.ts` (8 tests, base jetable, modèle simulé en streaming) : réponse sur la fiche de la page, coût par étape, visibilité d'un closer, action validée puis exécutée une seule fois, validation forgée ou d'une autre personne refusée, refus gratuit, délégation au Rédacteur, un tour à la fois, quota du jour, tour coupé par le temps, conversations privées, effacées avec la fiche et après 90 jours ;
-> - suite complète verte (844 tests), `tsc`, lint des fichiers touchés, build, paquet du worker.
+> - suite complète verte (844 tests), `tsc`, lint des fichiers touchés, build, paquet du worker ;
+> - **préalable mesuré** le 2 novembre 2026 sur la prévisualisation de la PR, avec une route temporaire retirée ensuite. Le flux arrive bien en continu, puis Netlify le ferme net à 60,3 s, que l'on demande 120 ou 330 s, sans erreur. Le copilote s'arrête donc à 50 s.
 >
 > **Écarts** :
 > - pas d'aiguillage par Jev : le copilote choisit lui-même ses outils, et son rôle peut passer de Sonnet à Haiku dans Agents IA. Un aiguillage se décidera sur les évaluations d'E27 ;
@@ -875,7 +876,7 @@ Le Designer génère une landing de démonstration en **code libre** à partir d
 > - les validations du copilote restent dans la conversation et n'apparaissent pas dans « À valider » : la personne est là, et rien ne sort du CRM par le copilote.
 
 Panneau ⌘J contextuel (page, fiche sélectionnée), en streaming : questions sur les données du CRM avec les droits de la personne, délégation aux agents spécialisés, actions proposées puis validées (`toolApproval`). Les tâches longues partent dans le worker et s'affichent en carte d'exécution. Les conversations sont conservées (`AiConversation`, `AiMessage`). Dans la 3D, les modules s'ouvrent dans les fenêtres existantes.
-- **Préalable** : mesurer la durée de streaming réellement permise par les fonctions Netlify.
+- **Préalable** (fait) : mesurer la durée de streaming réellement permise par les fonctions Netlify. Résultat : 60 s depuis le début de la requête.
 - **Critères** : le copilote ne voit que ce que la personne voit ; aucune action sans validation.
 
 ### E25 — Stratège et sourcing · **M**

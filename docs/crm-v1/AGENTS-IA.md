@@ -551,7 +551,10 @@ Cache-Control: private, no-store
 - **Validation** : `toolApproval` de l'AI SDK. Le serveur écrit la carte (« Créer la tâche « Rappeler Jean » sur la fiche Plomberie Dupont, pour le mardi 10 novembre. », « … 0,30 € au plus ») ; un appel impossible est refusé avant de demander, et le modèle en lit la raison. La personne valide ou refuse ; une validation laissée en attente est refusée à la question suivante. Refuser n'appelle pas le modèle.
 - **Le serveur garde la conversation** : du navigateur, il ne prend que le texte d'une question, ou la réponse aux validations du dernier message, appariée à ce qu'il a lui-même demandé (appel, identifiant de validation, état). Un historique forgé, une validation inventée, rejouée ou venue d'une autre personne n'atteignent ni le modèle ni les outils.
 - **Budget** : un tour est une exécution du copilote, qui réserve son plafond (0,10 €) avant d'écrire quoi que ce soit. Chaque étape est facturée avant la suivante, sa sortie est bornée par ce qui reste au pire prix du modèle et de ses secours, et le tour s'arrête quand une réponse courte ne tiendrait plus. L'historique envoyé au modèle se limite aux 24 derniers messages, et les résultats d'outils des réponses plus anciennes que les deux dernières y sont résumés : le modèle relance l'outil s'il en a besoin.
-- **Durée** : un tour s'arrête à 50 s, garde ce qui est écrit et le dit (« demandez la suite ») ; la réponse est enregistrée après chaque étape et à la fin, même si le panneau s'est fermé (`after` de Next). Un tour à la fois par conversation ; un tour mort sans le dire libère la conversation au bout de 3 minutes.
+- **Durée** : Netlify coupe une réponse en streaming 60 s après le début de la requête. Mesuré le 2 novembre 2026 sur une prévisualisation : une ligne par seconde arrive bien en continu, puis le flux est fermé net à 60,3 s, que l'on demande 120 ou 330 s, sans erreur ni ligne finale.
+  - Un tour s'arrête donc 50 s après l'arrivée de la requête, préparation comprise. Il garde ce qui est écrit et le dit (« demandez la suite »).
+  - La réponse est enregistrée après chaque étape et à la fin, même si le panneau s'est fermé (`after` de Next).
+  - Un tour à la fois par conversation. Un tour coupé sans le dire libère la conversation au bout de 3 minutes, et son exécution est marquée en échec au bout de 10.
 - **Délégation** : les spécialistes travaillent dans le worker. La carte suit leur exécution en direct (Pusher, sinon toutes les 5 s) et ouvre le résultat : l'audit ou les offres sur la fiche, la maquette dans le Studio, le brouillon dans la fenêtre d'email de la fiche (`?brouillon=<exécution>`), que la personne relit et envoie elle-même.
 - **Conversations** : privées, listées dans le panneau avec leur coût, effaçables une à une ou toutes. Supprimées avec toute fiche qu'elles ont lue (dans la transaction de suppression) et 90 jours après leur dernier message (maintenance du worker).
 - **Stratège** :
@@ -644,6 +647,5 @@ Cache-Control: private, no-store
 | Vérifier puis activer les offres du catalogue V1 dans Agents IA › Offres (prix indicatifs) | le propriétaire | E21 |
 | Crédits Meshy pour les personnages des agents | confirmation au moment venu | E26 |
 | DPA des fournisseurs, politique de confidentialité, registre des traitements | le propriétaire | ouverture à l'équipe |
-| Durée de streaming réellement permise par les fonctions Netlify | à mesurer | E24 |
 
 **Prochaine étape : E25 (stratège et sourcing).**

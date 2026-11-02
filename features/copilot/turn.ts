@@ -24,8 +24,14 @@ import { answersSchema, applyAnswers, forModel, pendingApprovals, questionSchema
  * TURN_DEADLINE_MS, says so, and keeps what was written.
  */
 
-/** Longest a turn streams. Netlify cuts a function at its own limit (docs/crm-v1/AGENTS-IA.md §17): this stays under it. */
+/**
+ * Longest a turn lasts, counted from the request's arrival. Netlify cuts a streamed response 60 s after the request
+ * started (measured on 2 November 2026 on a deploy preview, docs/crm-v1/AGENTS-IA.md §17): the turn stops before, with
+ * time left to save its answer.
+ */
 export const TURN_DEADLINE_MS = 50_000
+/** A turn that starts late still gets this long to answer. */
+const MIN_TURN_MS = 5_000
 
 /** Tells the panel which conversation a new one became. */
 export const CONVERSATION_HEADER = "x-copilot-conversation"
@@ -41,6 +47,8 @@ export interface TurnDeps extends ModelDeps {
   /** Keeps the request alive until the answer is saved (Next's `after`). */
   keepAlive?: (task: Promise<unknown>) => void
   deadlineMs?: number
+  /** When the request arrived (ms): the turn's deadline counts from there. */
+  startedAt?: number
 }
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error))
@@ -57,6 +65,7 @@ function keepAlive(task: Promise<unknown>) {
 }
 
 export async function copilotTurn(user: CurrentUser, body: unknown, signal: AbortSignal | undefined, deps: TurnDeps = {}): Promise<Response> {
+  deps = { ...deps, startedAt: deps.startedAt ?? Date.now() }
   if (!can(user.role, "ai:use")) throw new LeadError("forbidden", "Votre rôle ne permet pas d'utiliser le copilote.", 403)
   if (!deps.languageModel && !aiConfigured()) throw new LeadError("unavailable", "L'IA n'est pas configurée sur ce serveur : la clé AI_GATEWAY_API_KEY manque.", 503)
   const req = turnRequestSchema.parse(body)
@@ -161,7 +170,9 @@ function failureText(error: unknown, setup: CopilotSetup): string {
 
 async function stream(user: CurrentUser, run: RunContext, conversationId: string, history: CopilotMessage[], signal: AbortSignal | undefined, deps: TurnDeps): Promise<Response> {
   const setup = await copilotAgent(user, run, deps)
-  const deadline = AbortSignal.timeout(deps.deadlineMs ?? TURN_DEADLINE_MS)
+  // The time already spent preparing the turn (rights, conversation, instructions) counts against the platform's limit.
+  const spent = Date.now() - (deps.startedAt ?? Date.now())
+  const deadline = AbortSignal.timeout(Math.max((deps.deadlineMs ?? TURN_DEADLINE_MS) - spent, Math.min(MIN_TURN_MS, deps.deadlineMs ?? MIN_TURN_MS)))
   const abortSignal = signal ? AbortSignal.any([signal, deadline]) : deadline
   const previous = history.at(-1)?.role === "assistant" ? history.at(-1)!.metadata : undefined
   const runIds = [...(previous?.runIds ?? []), run.id]

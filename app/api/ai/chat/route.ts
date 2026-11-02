@@ -9,9 +9,10 @@ export const dynamic = "force-dynamic"
  * approvals of the last answer; the server keeps the conversation and takes nothing else from the browser.
  */
 export async function POST(request: Request) {
+  const startedAt = Date.now()
   try {
     const { user } = await requirePermission("ai:use")
-    return await copilotTurn(user, await request.json(), request.signal)
+    return await copilotTurn(user, await request.json(), request.signal, { startedAt })
   } catch (error) {
     return handleError(error)
   }
