@@ -56,6 +56,8 @@ const matrix = {
   "skill:manage": { OWNER: "all", MANAGER: "all" },
   /** E19: the offers catalogue agents recommend from. */
   "offer:manage": { OWNER: "all", MANAGER: "all" },
+  /** E23: demonstration landing pages of the Studio Web, on the fiches the person may edit (same scope as lead:write). */
+  "studio:generate": { OWNER: "all", MANAGER: "all", SDR: "pool", CLOSER: "own" },
   // Administration
   "team:read": { OWNER: "all", MANAGER: "all" },
   "team:manage": { OWNER: "all" },

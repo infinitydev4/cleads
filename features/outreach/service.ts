@@ -17,6 +17,7 @@ import { visibleReply } from "./replies"
 import { consumeDraft } from "@/features/email-draft/consume"
 import { NO_AUDIT_FOR_DRAFT } from "@/features/email-draft/labels"
 import { latestFor } from "@/features/prospect-audit/latest"
+import { activeShareLink } from "@/features/studio/service"
 import { can, canAccessRecord } from "@/lib/rbac"
 
 type Tx = Prisma.TransactionClient
@@ -61,18 +62,21 @@ export interface ComposeContext {
   recent: EmailView[]
   /** E22: the « Brouillon IA » button, shown to those who use AI and usable once the fiche has an audit. */
   ai: { available: boolean; canDraft: boolean; reason: string | null }
+  /** E23: the fiche's live mock-up link, which the person may insert in the message. */
+  studio: { url: string; expiresAt: string } | null
 }
 
 export async function composeContext(user: CurrentUser, leadId: string): Promise<ComposeContext> {
   const lead = await loadLead(user, leadId)
   const usesAi = can(user.role, "ai:use")
-  const [{ recipient, blockers }, boxes, templates, recent, audit] = await Promise.all([
+  const [{ recipient, blockers }, boxes, templates, recent, audit, studio] = await Promise.all([
     checkLead(user, lead),
     usableMailboxes(user),
     listTemplates(user),
     // What was already sent to the fiche: its replies are in the mailbox, not in this list.
     listEmails(user, { leadId, take: 5, direction: "OUTBOUND" }).then((r) => r.items),
     usesAi ? latestFor(user.workspaceId, lead) : null,
+    activeShareLink(user, leadId),
   ])
   const writable = canAccessRecord(user, "lead:write", lead.ownerId)
   return {
@@ -87,6 +91,7 @@ export async function composeContext(user: CurrentUser, leadId: string): Promise
     origin: originText(lead.source),
     recent,
     ai: { available: usesAi, canDraft: usesAi && writable && !!audit, reason: !usesAi ? null : !audit ? NO_AUDIT_FOR_DRAFT : !writable ? "Cette fiche ne vous est pas attribuée : l’IA ne peut pas y écrire pour vous." : null },
+    studio,
   }
 }
 

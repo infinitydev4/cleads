@@ -1,5 +1,5 @@
 // Bundles the AI worker into worker/dist (docs/crm-v1/WORKER-IA.md). Prisma stays external: the image generates its
-// client for its own platform.
+// client for its own platform. Playwright and axe-core too (E23): the image installs them, with Chromium.
 import { execSync } from "node:child_process"
 import { build } from "esbuild"
 
@@ -16,7 +16,7 @@ await build({
   sourcemap: true,
   legalComments: "none",
   tsconfig: "tsconfig.json",
-  external: ["@prisma/client", ".prisma/client"],
+  external: ["@prisma/client", ".prisma/client", "playwright-core", "axe-core"],
   define: { "process.env.WORKER_VERSION": JSON.stringify(version) },
   // Some bundled CommonJS dependencies call require() on Node built-ins.
   banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" },

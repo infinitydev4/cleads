@@ -8,6 +8,8 @@ import { runWriter } from "@/features/email-draft/handler"
 import { runOfferPitch } from "@/features/offer-pitch/handler"
 import { runReplyTriage } from "@/features/reply-triage/handler"
 import { runAudit } from "@/features/prospect-audit/handler"
+import { runDesigner } from "@/features/studio/handler"
+import { browserRenderer } from "./browser"
 import { AgentWorker, DEFAULT_PER_AGENT } from "./runner"
 import { errorFields, log } from "./log"
 // Agents register their handler here as their epic ships (E20 to E25).
@@ -15,6 +17,9 @@ registerAgentHandler("auditor", (job) => runAudit(job))
 registerAgentHandler("offers", (job) => runOfferPitch(job))
 registerAgentHandler("writer", (job) => runWriter(job))
 registerAgentHandler("replies", (job) => runReplyTriage(job))
+// E23: the Designer web renders its pages in the image's Chromium (worker/browser.ts).
+const renderer = browserRenderer()
+registerAgentHandler("designer", (job) => runDesigner(job, { renderer }))
 registerTaskHandler(SKILL_TEST, (job) => runSkillTest(job))
 
 /** Entry point of the AI worker container (docs/crm-v1/WORKER-IA.md). */

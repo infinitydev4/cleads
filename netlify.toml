@@ -18,4 +18,12 @@
 
 [[cron]]
   schedule = "0 * * * *"
-  command = "curl -X POST https://cleads.fr/api/cron/meeting-reminders -H 'Authorization: Bearer ${CRON_SECRET}'" 
+  command = "curl -X POST https://cleads.fr/api/cron/meeting-reminders -H 'Authorization: Bearer ${CRON_SECRET}'"
+
+# E23 Studio Web: every address of the preview host is a preview (app/apercu). next.config.mjs does the same inside
+# Next; app/apercu accepts an address rewritten by both.
+[[redirects]]
+  from = "https://apercu.cleads.fr/*"
+  to = "/apercu/:splat"
+  status = 200
+  force = true

@@ -601,6 +601,7 @@ model Workspace {
   offerRecommendations   OfferRecommendation[]
   emailDrafts            EmailDraft[]
   replyTriages           ReplyTriage[]
+  generatedSites         GeneratedSite[]
 }
 
 enum LeadSource {
@@ -824,6 +825,7 @@ model Lead {
   audits              ProspectAudit[]
   offerPitches        OfferPitch[]
   emailDrafts         EmailDraft[]
+  generatedSites      GeneratedSite[]
 
   @@unique([workspaceId, companyId])
   @@index([workspaceId, status])
@@ -1529,12 +1531,13 @@ model AgentRun {
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
-  steps     AgentStep[]
-  approvals AgentApproval[]
-  audit     ProspectAudit?
-  pitch     OfferPitch?
-  draft     EmailDraft?
-  triages   ReplyTriage[]
+  steps       AgentStep[]
+  approvals   AgentApproval[]
+  audit       ProspectAudit?
+  pitch       OfferPitch?
+  draft       EmailDraft?
+  triages     ReplyTriage[]
+  siteVersion GeneratedSiteVersion?
 
   @@index([workspaceId, createdAt])
   @@index([workspaceId, status])
@@ -1820,6 +1823,7 @@ model ProspectAudit {
   captures    ProspectAuditCapture[]
   pitches     OfferPitch[]
   drafts      EmailDraft[]
+  sites       GeneratedSite[]
 
   @@index([workspaceId, domain, createdAt])
   @@index([leadId, createdAt])
@@ -2024,4 +2028,131 @@ model ReplyTriage {
   createdAt         DateTime      @default(now())
 
   @@index([workspaceId, createdAt])
+}
+
+// E23: Studio Web (docs/crm-v1/AGENTS-IA.md §16).
+
+/// Where a site stands. A run that fails leaves the status as it was: the run's own status and error say what happened.
+enum StudioSiteStatus {
+  /// The Designer collects the site and writes the brief.
+  BRIEFING
+  /// The brief waits for a person, who may edit it before the page is generated.
+  BRIEF_READY
+  /// A version is being generated, from the brief or from an instruction.
+  BUILDING
+  /// At least one version is published.
+  READY
+  /// Its content was deleted after 90 days: only the record remains.
+  PURGED
+}
+
+/// A demonstration landing page the Designer web made for one fiche, from its site, its audit and its brand.
+model GeneratedSite {
+  id              String           @id @default(cuid())
+  workspaceId     String
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  leadId          String
+  lead            Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  /// The audit it starts from; the brief copies what it uses, so the site stays readable without it.
+  auditId         String?
+  audit           ProspectAudit?   @relation(fields: [auditId], references: [id], onDelete: SetNull)
+  status          StudioSiteStatus @default(BRIEFING)
+  /// The company's name when the site was made: the banner and the lists keep it.
+  companyName     String
+  /// What the collector found: colours, fonts, images, contact details (features/studio/schemas.ts, collectedSchema).
+  collected       Json?
+  /// The brief as the Designer wrote it, then as the person last edited it (briefSchema).
+  brief           Json?
+  briefEditedById String?
+  briefEditedAt   DateTime?
+  /// The run working on the site, or the last one: its status and error say how it went.
+  lastRunId       String?
+  /// The version the link shows; null until the first one is built.
+  currentVersion  Int?
+  /// Share link: the token is derived from this nonce with a server secret (features/studio/link.ts); only its hash is kept.
+  linkNonce       String?
+  tokenHash       String?          @unique
+  linkCreatedById String?
+  linkCreatedAt   DateTime?
+  linkExpiresAt   DateTime?
+  visitCount      Int              @default(0)
+  lastVisitAt     DateTime?
+  createdById     String?
+  /// The content is deleted after this date: 90 days after the last version or link renewal. The record stays.
+  purgeAfter      DateTime
+  purgedAt        DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  versions GeneratedSiteVersion[]
+  assets   GeneratedSiteAsset[]
+  visits   GeneratedSiteVisit[]
+
+  @@index([workspaceId, createdAt])
+  @@index([leadId, createdAt])
+  @@index([purgeAfter])
+}
+
+/// One version of a site: the page as published, its renders, its checks and what it cost.
+model GeneratedSiteVersion {
+  id             String        @id @default(cuid())
+  siteId         String
+  site           GeneratedSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  number         Int
+  /// The person's instruction this version answers; null when it was built from the brief.
+  instruction    String?
+  runId          String?       @unique
+  run            AgentRun?     @relation(fields: [runId], references: [id], onDelete: SetNull)
+  /// The page: sanitised, Tailwind compiled in, images referenced as cleads-asset:<name>. Null once purged.
+  html           String?
+  /// JPEG renders: the full page on a computer (1440 px) and on a phone (390 px), and the first screen on a computer.
+  desktop        Bytes?
+  mobile         Bytes?
+  thumb          Bytes?
+  /// Sanitiser notes, axe-core violations, the critique grid and the correction rounds (checksSchema).
+  checks         Json
+  /// PageSpeed of the published page, { mobile, desktop }; null until measured, or when it could not be.
+  scores         Json?
+  /// The short-lived token PageSpeed reads the page with (hash only).
+  probeHash      String?       @unique
+  probeExpiresAt DateTime?
+  model          String?
+  costMicros     Int           @default(0)
+  createdById    String?
+  createdAt      DateTime      @default(now())
+
+  @@unique([siteId, number])
+}
+
+/// Images and fonts of a site, hosted by us: a published page loads nothing from anywhere else.
+model GeneratedSiteAsset {
+  id        String        @id @default(cuid())
+  siteId    String
+  site      GeneratedSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  /// The name pages use (asset:<name>): logo, image-1…, font-…
+  name      String
+  /// "logo", "image" or "font".
+  kind      String
+  mediaType String
+  data      Bytes
+  width     Int?
+  height    Int?
+  /// The prospect's page or the font service it came from.
+  sourceUrl String?
+  /// The text alternative found on the site, or the font family.
+  label     String?
+  createdAt DateTime      @default(now())
+
+  @@unique([siteId, name])
+}
+
+/// A browser displayed the shared page (D25): the date only, with no cookie and no IP address.
+model GeneratedSiteVisit {
+  id        String        @id @default(cuid())
+  siteId    String
+  site      GeneratedSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  version   Int
+  createdAt DateTime      @default(now())
+
+  @@index([siteId, createdAt])
 }

@@ -1,13 +1,14 @@
-import { withAuth } from "next-auth/middleware"
+import { withAuth, type NextRequestWithAuth } from "next-auth/middleware"
 import { NextResponse } from "next/server"
 import { getToken } from "next-auth/jwt"
-import type { NextRequest } from "next/server"
+import type { NextFetchEvent, NextRequest } from "next/server"
 import { isStaffRole, toCrmRole } from "@/lib/crm/roles"
+import { onPreviewHost } from "@/features/studio/host"
 
 // Opt-in for local work on the component catalogue; ignored in production builds.
 const designPreviewEnabled = process.env.NODE_ENV !== "production" && process.env.CRM_DESIGN_PREVIEW === "1"
 
-export default withAuth(
+const crm = withAuth(
   async function proxy(request: NextRequest) {
     const token = await getToken({ req: request })
     const isChangePasswordPage = request.nextUrl.pathname === "/auth/change-password"
@@ -52,6 +53,17 @@ export default withAuth(
     },
   }
 )
+
+/**
+ * E23: the Studio's preview host serves previews only. Its other addresses are rewritten to /apercu by next.config;
+ * the CRM's own paths, which this proxy sees first, are rewritten here, so the CRM never answers on that host.
+ */
+export default function proxy(request: NextRequest, event: NextFetchEvent) {
+  if (process.env.NODE_ENV === "production" || process.env.STUDIO_PREVIEW_HOST) {
+    if (onPreviewHost(request.headers.get("host"))) return NextResponse.rewrite(new URL(`/apercu${request.nextUrl.pathname}`, request.url))
+  }
+  return crm(request as NextRequestWithAuth, event)
+}
 
 export const config = {
   matcher: [

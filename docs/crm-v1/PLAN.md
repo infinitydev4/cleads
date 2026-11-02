@@ -349,7 +349,7 @@ app/
   (public)/            page.tsx (landing), mentions-legales, politique-de-confidentialite, cgv, cookies, rdv/[closer]
   (auth)/auth/         login, invitation, reset
   (crm)/app/           layout (shell), today, leads, companies, deals, meetings, mailbox, sequences, reports, agents, studio, settings/* (dont settings/ai)
-  (apercu)/            maquettes du Studio Web, servies sur apercu.cleads.fr (routage par hôte dans proxy.ts, E23)
+  apercu/[...path]     maquettes du Studio Web, servies sur apercu.cleads.fr (réécriture par hôte : netlify.toml, next.config, proxy.ts ; E23)
   api/v1/              REST du CRM (clé de service pour agents, plus tard)
   api/ai/chat          copilote en streaming (E24)
   robots.ts · sitemap.ts · llms.txt/route.ts
@@ -546,7 +546,7 @@ Seconde vue du CRM, isométrique et interactive, à côté de la vue 2D qui rest
 - **Critères** : aucune régression de la vue 2D (tests et parcours dans le navigateur) ; aucun chiffre sans définition ; fluide sur un portable récent.
 
 ### Couche agentique IA (E17 à E27, décidée le 2 novembre 2026)
-Décisions D13 à D27 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17 à E22 sont faits ; E23 à E27 restent à faire.
+Décisions D13 à D27 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17 à E23 sont faits ; E24 à E27 restent à faire.
 
 ### E17 — Socle IA · **M** *(absorbe E13)*
 > **Avancement (branche `feat/e17-socle-ia`)** — fait :
@@ -786,6 +786,46 @@ L'Auditeur digital produit une fiche enrichie et sourcée, à la demande, depuis
 - **Critères** : aucun envoi sans relecture ; aucun statut changé sans confirmation sous le seuil.
 
 ### E23 — Studio Web · **L**
+> **Avancement (branche `feat/e23-studio-web`)** — fait :
+> - migration additive `20261108090000_studio_web` : `GeneratedSite` (maquette d'une fiche : brief, lien, visites, purge), `GeneratedSiteVersion` (page publiée, captures, contrôles, scores PageSpeed), `GeneratedSiteAsset` (images et polices hébergées avec la page) et `GeneratedSiteVisit` ;
+> - **Designer web** (`features/studio/`, agent `designer`, Opus 5.5), en deux temps :
+>   - **brief** : lecture du site par le collecteur de l'audit (robots.txt, adresses publiques seulement), feuilles de style, couleurs (site et logo), polices, logo et photos préparés par le navigateur du worker (WebP, 1 600 px au plus) ; puis un brief dont chaque point cite sa source (page, fiche ou constat de l'audit). Un point sans source est retiré. La personne relit et modifie le brief avant la génération ;
+>   - **page** : code libre en HTML et classes Tailwind, écrit en flux continu, puis nettoyé par liste blanche, compilé, rendu par Chromium sur ordinateur (1 440 px) et téléphone (390 px), contrôlé par axe-core et critiqué sur une grille de six critères par Sonnet. Une ou deux corrections si la grille n'est pas atteinte, dans le plafond de 2 € ; la meilleure version est publiée, puis mesurée par PageSpeed ;
+>   - « Modifier par instruction » crée une nouvelle version ; une version précédente peut être remise en ligne ;
+> - **Aperçu** `https://apercu.cleads.fr/<jeton>` : `Content-Security-Policy: sandbox` (ni script ni cookie), `noindex`, aucune ressource extérieure, bandeau « maquette non contractuelle », page d'expiration après 30 jours ;
+>   - le jeton (128 bits) est dérivé d'un aléa et d'un secret serveur : la base n'en garde que l'empreinte, mais le CRM peut réafficher le lien ;
+>   - PageSpeed lit la page par un jeton de 15 minutes, distinct du lien partagé ;
+> - **Visites** (D25) : comptées quand un navigateur affiche la page (balise de suivi), une fois par demi-heure, sans cookie ni adresse IP. La personne qui a partagé le lien et le responsable de la fiche sont notifiés, et l'historique de la fiche le note ;
+> - **Interface** :
+>   - onglet « Maquette » de la fiche : générer, relire, suivre la progression, voir la page et ses scores, copier le lien ;
+>   - module **Studio Web** (`/app/studio`) : aperçu sur ordinateur et téléphone, brief, contrôles, versions comparées, instruction, partage et visites ;
+>   - « Insérer le lien de la maquette » dans la fenêtre d'email : l'envoi reste l'email habituel, relu par la personne ;
+> - **Purge** : le contenu d'une maquette (pages, captures, images, brief) est supprimé 90 jours après sa dernière version ou la dernière prolongation de son lien, par la maintenance du worker. La suppression de la fiche emporte ses maquettes ;
+> - **Worker** : Chromium (headless shell de Playwright 1.64) et axe-core dans l'image, limites portées à 1 Go et 512 processus.
+>
+> **Vérifié** :
+> - `tests/studio.test.ts` (18 tests : nettoyage, couleurs, polices, CSS, document, hôte, liens, en-têtes) ;
+> - `tests/studio.integration.test.ts` (7 tests, base jetable, modèles et navigateur simulés) : brief sourcé, droits, correction après critique, page coupée non publiée, lien, visites et notifications, révision, purge ;
+> - suite complète verte, build, paquet du worker ;
+> - rendu réel avec Chrome : images préparées, captures, axe-core, paquet du worker compris ;
+> - parcours dans le navigateur sur la base de prévisualisation, avec le vrai pipeline (Chrome local) et des modèles simulés :
+>   - onglet « Maquette » ;
+>   - Studio, avec aperçu, brief et partage ;
+>   - page publique sur téléphone ;
+>   - visite comptée et notifiée ;
+>   - lien inséré dans un email.
+>
+> **Pas encore** :
+> - une maquette réelle (Opus, environ 1 €) ;
+> - **le préalable reste à faire** : le domaine `apercu.cleads.fr` doit être ajouté au site Netlify (Domain management › Add a domain alias). Le DNS de cleads.fr est chez Netlify, qui crée l'enregistrement et le certificat. Sans lui, les liens ne s'ouvrent pas et PageSpeed ne peut pas mesurer la maquette ; le Studio le signale.
+>
+> **Écarts** :
+> - les pages, captures et images sont gardées en base, comme les captures de l'audit, et non sur S3 : le worker n'a pas de clé AWS, et une maquette pèse environ 1 à 2 Mo ;
+> - pas de Lighthouse dans le worker : les scores « votre site → maquette » viennent tous deux de PageSpeed Insights, le même outil que l'audit ;
+> - l'aperçu interne du CRM inclut ses images dans la page au lieu de passer par une route signée : un cadre isolé n'envoie pas de cookie pour ses images ;
+> - partager le lien n'ouvre pas de validation séparée : il part dans l'email que la personne relit et envoie elle-même ;
+> - pas de commande « Générer une landing » dans la palette ⌘K, comme pour l'audit : la palette ouvre le Studio, et la maquette se lance depuis l'onglet « Maquette » de la fiche.
+
 Le Designer génère une landing de démonstration en **code libre** à partir du site du prospect, de son audit et de sa charte, pour que le closer puisse la montrer.
 - Collecte (textes, images, logo, couleurs, typographies), brief relisible, puis page HTML + Tailwind générée, compilée et nettoyée (aucun script, aucun formulaire externe, appels à l'action en `tel:` ou `mailto:`).
 - Boucle de qualité : rendu Playwright sur ordinateur et mobile, critique visuelle sur une grille, axe-core, Lighthouse ; une ou deux corrections. Les scores « votre site → maquette » servent au pitch.
