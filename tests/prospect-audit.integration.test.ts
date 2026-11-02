@@ -237,6 +237,28 @@ suite("Prospect audits (database)", () => {
     expect(a.report.notes.join(" ")).toMatch(/s'oppose à l'usage commercial/)
   })
 
+  it("stops at once, and says why, when the AI account cannot use the model", async () => {
+    const refused = new MockLanguageModelV4({
+      doGenerate: async (options) => {
+        const system = (options.prompt as { role: string; content: unknown }[]).filter((m) => m.role === "system").map((m) => String(m.content)).join("\n")
+        if (system.includes("Tu lis les pages du site")) return model.doGenerate(options)
+        throw Object.assign(new Error("Free tier users do not have access to this model. Upgrade to paid credits"), { type: "forbidden", statusCode: 403 })
+      },
+    })
+    handlers.registerAgentHandler("auditor", (job) => audit.runAudit(job, { ...deps(), languageModel: () => refused }))
+    const started = await service.requestAudit(u.sdr, leadId)
+    const w = worker()
+    expect(await w.tick()).toBe(1)
+    await w.idle()
+    const run = await prisma.agentRun.findUniqueOrThrow({ where: { id: (started as { runId: string }).runId } })
+    // Not a passing failure: no second try, the budget is released, the reason is plain.
+    expect(run).toMatchObject({ status: "FAILED", attempts: 1, reservedMicros: 0 })
+    expect(run.error).toMatch(/offre gratuite ou crédits épuisés/)
+    const view = await service.getLeadAudit(u.sdr, leadId)
+    expect(view).toMatchObject({ audit: null, run: null, lastFailure: { error: run.error } })
+    expect(await prisma.prospectAudit.count()).toBe(0)
+  })
+
   it("gives an explicit partial audit when the site cannot be reached", async () => {
     siteDown = true
     psiCalls = 0

@@ -157,6 +157,14 @@ export function AuditCard({ leadId, canRun, compact = false, onChanged, onOpenFu
     )
   }
 
+  const failure = !running && data.lastFailure && (
+    <p role="status" className="flex items-start gap-2 rounded-lg bg-warning-subtle p-3 text-sm text-warning">
+      <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+      <span>
+        Le dernier audit n’a pas abouti ({day.format(new Date(data.lastFailure.at))}) : {data.lastFailure.error}
+      </span>
+    </p>
+  )
   const progress = running && (
     <div className="space-y-1 rounded-lg bg-muted p-3 text-sm">
       <p className="flex items-center gap-2 font-medium">
@@ -174,6 +182,7 @@ export function AuditCard({ leadId, canRun, compact = false, onChanged, onOpenFu
       <Card className="space-y-3 p-4">
         {header}
         {progress}
+        {failure}
         {!running && (
           <p className="text-sm text-muted-foreground">
             {canRun || data.canRun
@@ -191,6 +200,7 @@ export function AuditCard({ leadId, canRun, compact = false, onChanged, onOpenFu
     <Card className="space-y-4 p-4">
       {header}
       {progress}
+      {failure}
       <div className="flex flex-wrap items-end gap-x-4 gap-y-1">
         <p>
           <span className="text-3xl font-extrabold tabular-nums">{audit.score ?? "—"}</span>
