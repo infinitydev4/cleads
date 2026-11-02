@@ -1,12 +1,16 @@
 // E23 Studio Web. Needs a disposable PostgreSQL with the migrations applied (never your development database):
 //   TEST_DATABASE_URL=postgresql://… npx vitest run tests/studio.integration.test.ts
 // The site, the fonts, PageSpeed, the models and the browser are fakes: nothing leaves the machine.
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { MockLanguageModelV4, simulateReadableStream } from "ai/test"
 import type { FetchResult } from "@/features/prospect-audit/net"
 import type { AuditReport } from "@/features/prospect-audit/schemas"
 import type { RenderSession } from "@/features/studio/render"
+import { publishNotifications } from "@/lib/ai/realtime"
 import { resetDatabase } from "./helpers/reset-db"
+
+// What would reach the bells live is recorded: Pusher itself is never set up in tests.
+vi.mock("@/lib/ai/realtime", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/ai/realtime")>()), publishNotifications: vi.fn(async () => {}) }))
 
 const url = process.env.TEST_DATABASE_URL
 const suite = url ? describe : describe.skip
@@ -402,6 +406,7 @@ suite("Studio Web (database)", () => {
 
     const chrome = "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Chrome/130 Safari/537.36"
     const t0 = new Date()
+    vi.mocked(publishNotifications).mockClear()
     await preview.recordVisit(token, chrome, t0)
     await preview.recordVisit(token, chrome, new Date(t0.getTime() + 5 * 60_000))
     await preview.recordVisit(token, "Mozilla/5.0 (compatible; Googlebot/2.1)", new Date(t0.getTime() + 40 * 60_000))
@@ -411,6 +416,8 @@ suite("Studio Web (database)", () => {
     const notes = await prisma.notification.findMany({ where: { title: "Maquette ouverte" } })
     expect(notes.map((n) => n.userId)).toEqual([u.sdr.id, u.sdr.id])
     expect(notes[1].message).toContain("2ᵉ visite")
+    // Each counted visit also reaches the bell live.
+    expect(vi.mocked(publishNotifications).mock.calls.map(([sent]) => sent.map((n) => n.id))).toEqual([[notes[0].id], [notes[1].id]])
     expect(await prisma.generatedSiteVisit.count({ where: { siteId } })).toBe(2)
 
     // Extended: same address. Revoked: gone at once. Created again: another address. Expired: says so.

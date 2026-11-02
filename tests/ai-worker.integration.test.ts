@@ -1,8 +1,12 @@
 // E18 AI worker. Needs a disposable PostgreSQL with the migrations applied (never your development database):
 //   TEST_DATABASE_URL=postgresql://… npx vitest run tests/ai-worker.integration.test.ts
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { z } from "zod"
+import { publishNotifications } from "@/lib/ai/realtime"
 import { resetDatabase } from "./helpers/reset-db"
+
+// What would reach the bells live is recorded: Pusher itself is never set up in tests.
+vi.mock("@/lib/ai/realtime", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/ai/realtime")>()), publishNotifications: vi.fn(async () => {}) }))
 
 const url = process.env.TEST_DATABASE_URL
 const suite = url ? describe : describe.skip
@@ -293,10 +297,12 @@ suite("AI worker (database)", () => {
       const w = worker()
       await w.tick()
       await w.idle()
+      vi.mocked(publishNotifications).mockClear()
       expect((await maintenance.runMaintenance())?.alerts).toBe(1)
       expect((await maintenance.runMaintenance())?.alerts).toBe(0)
       expect(await prisma.notification.count({ where: { userId: u.owner.id, title: "Agents IA : exécutions en échec" } })).toBe(1)
       expect(await prisma.notification.count({ where: { userId: u.manager.id } })).toBe(0)
+      expect(vi.mocked(publishNotifications).mock.calls.flatMap(([sent]) => sent.map((n) => n.userId))).toEqual([u.owner.id])
     })
   })
 

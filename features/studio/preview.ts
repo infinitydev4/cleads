@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma"
+import { publishNotifications } from "@/lib/ai/realtime"
 import { VISIT_MARKER, withAssets } from "./document"
 import { onPreviewHost } from "./host"
 import { hashToken, TOKEN } from "./link"
@@ -132,11 +133,12 @@ export async function recordVisit(token: string, userAgent: string | null, now =
   const people = [...new Set([site.linkCreatedById ?? site.createdById, site.lead.ownerId].filter((id): id is string => !!id))]
   const active = await prisma.user.findMany({ where: { id: { in: people }, workspaceId: site.workspaceId, active: true }, select: { id: true } })
   const again = site.visitCount > 1 ? ` (${site.visitCount}ᵉ visite)` : ""
-  await prisma.$transaction([
+  const [, , notes] = await prisma.$transaction([
     prisma.generatedSiteVisit.create({ data: { siteId: target.siteId, version: target.version, createdAt: now } }),
     prisma.activity.create({ data: { workspaceId: site.workspaceId, leadId: site.leadId, actorKind: "SYSTEM", kind: "SYSTEM", body: `Maquette du Studio Web ouverte depuis le lien partagé${again}`, data: { siteId: target.siteId, version: target.version }, occurredAt: now } }),
-    prisma.notification.createMany({ data: active.map((u) => ({ userId: u.id, type: "SYSTEM", title: "Maquette ouverte", message: `La maquette de ${target.companyName} vient d’être ouverte${again}.` })) }),
+    prisma.notification.createManyAndReturn({ data: active.map((u) => ({ userId: u.id, type: "SYSTEM", title: "Maquette ouverte", message: `La maquette de ${target.companyName} vient d’être ouverte${again}.` })) }),
   ])
+  await publishNotifications(notes)
   return gif()
 }
 

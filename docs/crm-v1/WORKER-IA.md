@@ -67,6 +67,9 @@ La file est la **table `AgentRun`** elle-même :
 
 - **Temps réel** : le worker annonce chaque changement d'une exécution sur le canal Pusher privé de la personne. Réglages › IA se recharge alors ; sans Pusher, la page interroge toutes les 10 s.
 - **Correctif de sécurité** : la route `/api/pusher/auth` n'autorise plus que le canal de la personne connectée. Avant, n'importe quel membre pouvait s'abonner au canal d'un autre.
+- **Notifications** : la cloche écoute le même canal (événement `notification`).
+  - Le CRM et le worker y publient chaque notification une fois enregistrée : visite d'une maquette, fin d'une recherche, alertes de budget et d'échecs du worker, formulaire de contact. Sans Pusher, elle apparaît au prochain chargement de la page.
+  - Correctif du 2 novembre 2026 : la cloche écoutait un canal nommé d'après l'email, que `/api/pusher/auth` refusait (403 sur chaque page), et rien n'y était publié. Les notifications n'apparaissaient qu'après un rechargement.
 - **MCP de l'Extractor** (`features/ai/extractor-mcp.ts`) :
   - outils en lecture seulement : `list_sectors`, `search_prospect_base`, `get_business`, `get_job`, `get_job_results`, `get_system_health` ;
   - réservés aux personnes qui ont le droit `search:run` ;

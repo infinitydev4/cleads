@@ -5,6 +5,7 @@ import { LeadError } from "@/features/leads/errors"
 import { parseRoleModels, type RoleModels } from "./models"
 import { utc } from "./sql"
 import type { TokenUsage } from "./pricing"
+import { publishNotifications } from "./realtime"
 
 /**
  * AI spending caps (D22, docs/crm-v1/AGENTS-IA.md §6). A run holds its own cap while it is active; the month's commitment
@@ -157,20 +158,20 @@ const sentAlerts = (alerts: unknown, key: string): number[] => {
 export async function checkBudgetAlerts(workspaceId: string, now = new Date()): Promise<number[]> {
   try {
     const key = monthKey(now)
-    return await prisma.$transaction(async (tx) => {
+    const sent = await prisma.$transaction(async (tx) => {
       const [row] = await tx.$queryRaw<{ monthlyCapMicros: number; alerts: unknown }[]>`
         SELECT "monthlyCapMicros", "alerts" FROM "AiSetting" WHERE "workspaceId" = ${workspaceId} FOR UPDATE`
-      if (!row || row.monthlyCapMicros <= 0) return []
+      if (!row || row.monthlyCapMicros <= 0) return null
       const spent = (await tx.aiUsage.aggregate({ where: { workspaceId, day: { gte: monthStart(now) } }, _sum: { costMicros: true } }))._sum.costMicros ?? 0
       const percent = (spent / row.monthlyCapMicros) * 100
       const already = sentAlerts(row.alerts, key)
       const crossed = ALERT_THRESHOLDS.filter((t) => percent >= t && !already.includes(t))
-      if (!crossed.length) return []
+      if (!crossed.length) return null
       const top = crossed[crossed.length - 1]
       // Only the current month is kept: older keys are dropped.
       await tx.aiSetting.update({ where: { workspaceId }, data: { alerts: { [key]: [...already, ...crossed] } } })
       const owners = await tx.user.findMany({ where: { workspaceId, role: "OWNER", active: true }, select: { id: true } })
-      await tx.notification.createMany({
+      const notes = await tx.notification.createManyAndReturn({
         data: owners.map((o) => ({
           userId: o.id,
           type: "SYSTEM",
@@ -181,8 +182,11 @@ export async function checkBudgetAlerts(workspaceId: string, now = new Date()): 
               : `${eur(spent)} dépensés sur ${eur(row.monthlyCapMicros)} ce mois-ci. Détail dans Réglages › IA.`,
         })),
       })
-      return crossed
+      return { crossed, notes }
     })
+    if (!sent) return []
+    await publishNotifications(sent.notes)
+    return sent.crossed
   } catch (error) {
     console.error("[AI_BUDGET_ALERT]", error)
     return []

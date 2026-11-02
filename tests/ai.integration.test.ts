@@ -1,10 +1,14 @@
 // E17 AI foundation. Needs a disposable PostgreSQL with the migrations applied (never your development database):
 //   TEST_DATABASE_URL=postgresql://… npx vitest run tests/ai.integration.test.ts
 // Models are mocks: no call ever leaves the machine.
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { MockLanguageModelV4, Experimental_DecisionMockModelV4 } from "ai/test"
 import { z } from "zod"
+import { publishNotifications } from "@/lib/ai/realtime"
 import { resetDatabase } from "./helpers/reset-db"
+
+// What would reach the bells live is recorded: Pusher itself is never set up in tests.
+vi.mock("@/lib/ai/realtime", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/ai/realtime")>()), publishNotifications: vi.fn(async () => {}) }))
 
 const url = process.env.TEST_DATABASE_URL
 const suite = url ? describe : describe.skip
@@ -211,6 +215,7 @@ suite("AI foundation (database)", () => {
 
   describe("budget alerts", () => {
     it("tells the owners once per threshold and per month", async () => {
+      vi.mocked(publishNotifications).mockClear()
       await caps(1, 10)
       const day = budget.dayStart(new Date())
       await prisma.aiUsage.create({ data: { workspaceId: ws, day, userKey: u.sdr.id, agentId: "auditor", model: "anthropic/claude-sonnet-5.5", calls: 3, costMicros: 600_000 } })
@@ -221,6 +226,8 @@ suite("AI foundation (database)", () => {
       const notes = await prisma.notification.findMany({ orderBy: { createdAt: "asc" } })
       expect(notes.map((n) => n.userId)).toEqual([u.owner.id, u.owner.id])
       expect(notes[1].title).toBe("Budget IA épuisé")
+      // Each alert also reaches the bell live; a check that crosses nothing publishes nothing.
+      expect(vi.mocked(publishNotifications).mock.calls.map(([sent]) => sent.map((n) => n.id))).toEqual([[notes[0].id], [notes[1].id]])
       await expect(runs.startRun(u.owner, { agentId: "replies" })).rejects.toMatchObject({ code: "budget_exceeded", extra: { scope: "month" } })
     })
   })

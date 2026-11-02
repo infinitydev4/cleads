@@ -1,5 +1,6 @@
 import type { Prisma, SearchStatus } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
+import { publishNotifications } from "@/lib/ai/realtime"
 import { audit } from "@/lib/audit"
 import type { CurrentUser } from "@/lib/auth/guard"
 import { ExtractorError, getExtractorClient, extractorConfig, type ExtractorClient } from "@/lib/extractor/client"
@@ -309,7 +310,7 @@ export async function handleExtractorWebhook(rawBody: string, headers: Headers, 
     const claimed = await prisma.extractionSearch.updateMany({ where: { id: search.id, notifiedAt: null }, data: { notifiedAt: new Date() } })
     if (claimed.count === 1 && search.createdById) {
       const c = toCounters(event.job.counters)
-      await prisma.notification.create({
+      const note = await prisma.notification.create({
         data: {
           userId: search.createdById,
           type: "SYSTEM",
@@ -317,6 +318,7 @@ export async function handleExtractorWebhook(rawBody: string, headers: Headers, 
           message: row.status === "COMPLETED" ? `« ${search.label} » : ${c.unique} entreprise${c.unique > 1 ? "s" : ""} trouvée${c.unique > 1 ? "s" : ""}, dont ${c.crmUseful} joignable${c.crmUseful > 1 ? "s" : ""}. Vérifiez l’import.` : `« ${search.label} » : ${event.job.error ?? "voir le détail de la recherche"}.`,
         },
       })
+      await publishNotifications([note])
     }
   }
   return { status: 200, body: { ok: true } }
