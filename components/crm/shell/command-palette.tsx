@@ -1,22 +1,27 @@
 "use client"
 
 import { useCallback, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { Command } from "cmdk"
 import { Search } from "lucide-react"
 import type { NavItem } from "@/lib/crm/nav"
+import { HQ_PATH, openHqWindow, windowPath } from "@/lib/crm/hq-window"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 
 /** ⌘K / Ctrl+K palette. Today it jumps between modules; entities and actions plug in with their epics. */
 export function CommandPalette({ items, open, onOpenChange }: { items: NavItem[]; open: boolean; onOpenChange: (open: boolean) => void }) {
   const router = useRouter()
+  const pathname = usePathname()
 
   const go = useCallback(
     (href: string) => {
       onOpenChange(false)
-      router.push(href)
+      // From the 3D view, a module opens in a window over the scene.
+      const path = pathname === HQ_PATH ? windowPath(href, window.location.origin) : null
+      if (path) openHqWindow(path)
+      else router.push(href)
     },
-    [onOpenChange, router]
+    [onOpenChange, router, pathname]
   )
 
   return (

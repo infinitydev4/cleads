@@ -9,6 +9,8 @@ export const startSearchSchema = z.object({
   country: z.string().trim().length(2).toUpperCase().optional().or(z.literal("").transform(() => undefined)),
   enrich: z.boolean().default(true),
   maxResults: z.number().int().min(10).max(MAX_SEARCH_RESULTS).default(DEFAULT_SEARCH_RESULTS),
+  /** E15: the campaign this search feeds; its imports file the fiches there. */
+  campaignId: z.string().min(1).nullish(),
 })
 export type StartSearchInput = z.infer<typeof startSearchSchema>
 

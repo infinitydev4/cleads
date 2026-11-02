@@ -14,6 +14,7 @@ import { mayEmailLead } from "@/features/outreach/rules"
 import { MATCH_LABELS, cleanCompany, cleanContact, matchCompany, normalizeTags } from "./keys"
 import { scoreLead } from "./scoring"
 import { stopForLead } from "@/features/outreach/stops"
+import { assertCampaign, setLeadCampaign } from "@/features/campaigns/filing"
 import type { BulkInput, CreateLeadInput, LeadFilters, LeadSort, UpdateLeadInput } from "./schemas"
 import type { LeadDetail, LeadList, LeadRow } from "./types"
 
@@ -72,6 +73,8 @@ function filterWhere(user: CurrentUser, f: LeadFilters): Prisma.LeadWhereInput {
   if (f.hasPhone) and.push({ OR: [{ contact: { phone: { not: null } } }, { company: { phone: { not: null } } }] })
   if (f.minScore) and.push({ score: { gte: f.minScore } })
   if (f.batch) and.push({ importBatchId: f.batch })
+  if (f.campaign === "none") and.push({ campaignId: null })
+  else if (f.campaign) and.push({ campaignId: f.campaign })
   return { AND: and }
 }
 
@@ -182,6 +185,7 @@ export async function getLead(user: CurrentUser, id: string): Promise<LeadDetail
       company: true,
       contact: true,
       owner: { select: { name: true, email: true } },
+      campaign: { select: { id: true, name: true, archivedAt: true } },
       activities: { orderBy: [{ occurredAt: "desc" }, { id: "desc" }], take: 30, include: { actor: { select: { name: true, email: true } } } },
       deals: { include: { owner: { select: { name: true, email: true } } }, orderBy: { createdAt: "desc" } },
       meetings: { include: { host: { select: { name: true, email: true } } }, orderBy: { startsAt: "desc" }, take: 20 },
@@ -204,6 +208,7 @@ export async function getLead(user: CurrentUser, id: string): Promise<LeadDetail
     ownerName: who(lead.owner),
     lastContactedAt: iso(lead.lastContactedAt),
     createdAt: lead.createdAt.toISOString(),
+    campaign: lead.campaign && { id: lead.campaign.id, name: lead.campaign.name, archived: !!lead.campaign.archivedAt },
     company: c && {
       id: c.id, name: c.name, website: c.website, domain: c.domain, phone: c.phone, email: c.email, address: c.address, city: c.city,
       postalCode: c.postalCode, country: c.country, sector: c.sector, siret: c.siret, rating: c.rating, reviewCount: c.reviewCount, completeness: c.completeness,
@@ -226,6 +231,7 @@ export async function getLead(user: CurrentUser, id: string): Promise<LeadDetail
       meet: can(user.role, "meeting:book") && lead.status !== "DO_NOT_CONTACT",
       meetAnywhere: user.role === "OWNER" || user.role === "MANAGER",
       email: can(user.role, "email:send") && mayEmailLead(user, lead),
+      campaign: canAccessRecord(user, "lead:write", lead.ownerId) && can(user.role, "campaign:manage"),
     },
   }
 }
@@ -348,6 +354,8 @@ export async function updateLead(user: CurrentUser, id: string, patch: UpdateLea
     if (!takingIt) throw new LeadError("forbidden", "Cette fiche ne vous est pas attribuée.", 403)
   }
   if (patch.ownerId !== undefined) await checkAssignee(user, patch.ownerId, lead.ownerId)
+  if (patch.campaignId !== undefined && !can(user.role, "campaign:manage")) throw new LeadError("forbidden", "Vous ne pouvez pas ranger de fiche dans une campagne.", 403)
+  const campaign = patch.campaignId ? await assertCampaign(prisma, user.workspaceId, patch.campaignId) : null
 
   // Only what was typed is validated; the derived keys use the final name, city, website and email.
   const companyPatch = patch.company
@@ -435,6 +443,7 @@ export async function updateLead(user: CurrentUser, id: string, patch: UpdateLea
       await log(tx, user, lead.id, "SYSTEM", patch.ownerId ? `Attribuée à ${target?.name ?? target?.email}` : "Rendue au pool", { from: lead.ownerId, to: patch.ownerId })
     }
     if (patch.status && patch.status !== lead.status) await changeStatus(tx, user, lead, patch.status)
+    if (patch.campaignId !== undefined) await setLeadCampaign(tx, user, lead, campaign)
     if (Object.keys(leadData).length) await tx.lead.update({ where: { id: lead.id }, data: leadData })
     if (changed.length) await log(tx, user, lead.id, "SYSTEM", `Fiche modifiée : ${changed.join(", ")}`, { fields: changed })
     await rescore(tx, lead.id)
@@ -519,6 +528,9 @@ export async function bulkUpdate(user: CurrentUser, input: BulkInput, ip?: strin
   })
   let updated = 0
   const failures: { id: string; message: string }[] = []
+  // Filing in a campaign: checked once for the whole batch, before touching any fiche.
+  if (input.action.type === "campaign" && !can(user.role, "campaign:manage")) throw new LeadError("forbidden", "Vous ne pouvez pas ranger de fiche dans une campagne.", 403)
+  const target = input.action.type === "campaign" && input.action.campaignId ? await assertCampaign(prisma, user.workspaceId, input.action.campaignId) : null
   for (const lead of leads) {
     try {
       const a = input.action
@@ -532,6 +544,8 @@ export async function bulkUpdate(user: CurrentUser, input: BulkInput, ip?: strin
         }
       } else if (a.type === "status") {
         if (a.status !== lead.status) await prisma.$transaction((tx) => changeStatus(tx, user, lead, a.status))
+      } else if (a.type === "campaign") {
+        await prisma.$transaction((tx) => setLeadCampaign(tx, user, lead, target ?? null, "action groupée"))
       } else {
         const tag = normalizeTags([a.tag])[0]
         if (!tag) throw new LeadError("invalid", "Étiquette invalide.")

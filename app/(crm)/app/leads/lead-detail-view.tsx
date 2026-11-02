@@ -31,6 +31,7 @@ import { EmailDialog } from "./email-dialog"
 import { SequenceCard } from "./sequence-card"
 import { TasksCard } from "./tasks-card"
 import { CALL_OUTCOMES } from "@/features/activity/rules"
+import { CampaignField } from "./campaign-field"
 
 interface Props {
   lead: LeadDetail
@@ -161,6 +162,8 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
             </Select>
           </label>
         </div>
+
+        <CampaignField lead={lead} onChange={(campaignId) => patch({ campaignId }, campaignId ? "Fiche rangée dans la campagne" : "Fiche retirée de la campagne")} />
 
         <TagEditor tags={lead.tags} disabled={!mineOrPool} onChange={(tags) => patch({ tags })} />
 

@@ -42,6 +42,8 @@ export interface LeadDetail {
   ownerName: string | null
   lastContactedAt: string | null
   createdAt: string
+  /** E15: the campaign the fiche is worked in. */
+  campaign: { id: string; name: string; archived: boolean } | null
   company: {
     id: string
     name: string
@@ -88,5 +90,5 @@ export interface LeadDetail {
   meetings: { id: string; startsAt: string; endsAt: string; status: string; type: string; hostName: string | null }[]
   tasks: { id: string; title: string; dueAt: string | null; doneAt: string | null; assigneeId: string | null; assigneeName: string | null; canChange: boolean }[]
   /** What the signed-in person may do with this fiche, computed on the server. */
-  can: { write: boolean; log: boolean; assignOthers: boolean; delete: boolean; qualify: boolean; meet: boolean; meetAnywhere: boolean; email: boolean }
+  can: { write: boolean; log: boolean; assignOthers: boolean; delete: boolean; qualify: boolean; meet: boolean; meetAnywhere: boolean; email: boolean; campaign: boolean }
 }

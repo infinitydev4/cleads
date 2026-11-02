@@ -17,6 +17,7 @@ interface Props {
   list: LeadList
   filters: LeadFilters
   assignees: Assignee[]
+  campaigns: { id: string; name: string }[]
   views: SavedViewDto[]
   currentUserId: string
   canWrite: boolean
@@ -24,12 +25,13 @@ interface Props {
   canShareViews: boolean
   canImport: boolean
   canSequence: boolean
+  canCampaign: boolean
 }
 
 const EMPTY: Set<string> = new Set()
 
 /** Filters, sorting and paging live in the URL: a link or a saved view reproduces exactly what you see. */
-export function LeadsView({ list, filters, assignees, views, currentUserId, canWrite, canAssignOthers, canShareViews, canImport, canSequence }: Props) {
+export function LeadsView({ list, filters, assignees, campaigns, views, currentUserId, canWrite, canAssignOthers, canShareViews, canImport, canSequence, canCampaign }: Props) {
   const router = useRouter()
   const pathname = usePathname()
   const params = useSearchParams()
@@ -71,7 +73,7 @@ export function LeadsView({ list, filters, assignees, views, currentUserId, canW
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start gap-2">
-        <div className="min-w-0 flex-1"><FilterBar filters={filters} assignees={assignees} canSeeOthers={canAssignOthers} onChange={update} searchRef={searchRef} /></div>
+        <div className="min-w-0 flex-1"><FilterBar filters={filters} assignees={assignees} campaigns={campaigns} canSeeOthers={canAssignOthers} onChange={update} searchRef={searchRef} /></div>
         <ViewsMenu views={views} current={filters} canShare={canShareViews} />
       </div>
 
@@ -101,7 +103,7 @@ export function LeadsView({ list, filters, assignees, views, currentUserId, canW
       )}
 
       {canWrite && selected.size > 0 && (
-        <BulkBar ids={[...selected]} assignees={assignees} currentUserId={currentUserId} canAssignOthers={canAssignOthers} canSequence={canSequence} onDone={() => setSelected(new Set())} />
+        <BulkBar ids={[...selected]} assignees={assignees} campaigns={campaigns} currentUserId={currentUserId} canAssignOthers={canAssignOthers} canSequence={canSequence} canCampaign={canCampaign} onDone={() => setSelected(new Set())} />
       )}
       <LeadPanel id={openId} assignees={assignees} currentUserId={currentUserId} onClose={() => setOpenId(null)} />
     </div>

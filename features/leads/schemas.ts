@@ -20,6 +20,8 @@ export interface LeadFilters {
   hasPhone?: boolean
   minScore?: number
   batch?: string
+  /** A campaign id, or "none" for fiches outside every campaign (E15). */
+  campaign?: string
   sort: LeadSort
   dir: "asc" | "desc"
   page: number
@@ -54,6 +56,7 @@ export function parseLeadFilters(params: Params): LeadFilters {
     hasPhone: one("hasPhone") === "1" || undefined,
     minScore: Number.isFinite(minScore) && minScore > 0 ? Math.min(100, minScore) : undefined,
     batch: one("batch"),
+    campaign: one("campaign"),
     sort,
     dir: one("dir") === "asc" ? "asc" : one("dir") === "desc" ? "desc" : sort === "name" ? "asc" : "desc",
     page: page >= 1 ? page : 1,
@@ -73,6 +76,7 @@ export const viewFiltersSchema = z.object({
   hasEmail: z.boolean().optional(),
   hasPhone: z.boolean().optional(),
   minScore: z.number().int().min(0).max(100).optional(),
+  campaign: optionalText(100),
   sort: z.enum(SORTS).default("score"),
   dir: z.enum(["asc", "desc"]).default("desc"),
 })
@@ -108,6 +112,8 @@ export const updateLeadSchema = z
     status: z.enum(LEAD_STATUSES).optional(),
     ownerId: z.string().min(1).nullable().optional(),
     tags: z.array(z.string().max(40)).max(20).optional(),
+    /** E15: file the fiche in a campaign, or take it out (null). */
+    campaignId: z.string().min(1).nullable().optional(),
     company: z.object(companyFields).partial().optional(),
     contact: z.object(contactFields).partial().optional(),
   })
@@ -122,6 +128,7 @@ export const bulkSchema = z.object({
     z.object({ type: z.literal("status"), status: z.enum(LEAD_STATUSES) }),
     z.object({ type: z.literal("tag"), tag: z.string().min(1).max(40) }),
     z.object({ type: z.literal("untag"), tag: z.string().min(1).max(40) }),
+    z.object({ type: z.literal("campaign"), campaignId: z.string().min(1).nullable() }),
   ]),
 })
 

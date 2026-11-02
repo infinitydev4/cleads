@@ -33,6 +33,10 @@ TEST_DATABASE_URL=postgresql://… npm test
 
 Les emails de prospection partent de boîtes dédiées sur des domaines secondaires, jamais de SES ni de Resend : voir [docs/crm-v1/EMAILING.md](docs/crm-v1/EMAILING.md) (variable `MAILBOX_SECRET_KEY`, boîtes, plafonds, désinscription).
 
+## Campagnes et vue 3D
+
+Les campagnes (cible, fiches, résultats mesurés) sont décrites dans [docs/crm-v1/CAMPAGNES.md](docs/crm-v1/CAMPAGNES.md). La vue 3D isométrique du CRM (`/app/3d`, sélecteur 2D / 3D de la barre du haut) dans [docs/crm-v1/VUE-3D.md](docs/crm-v1/VUE-3D.md) ; ses personnages se reconstruisent avec `node scripts/build-characters.mjs <dossier Meshy>`.
+
 ## Cleads Extractor
 
 La recherche d'entreprises (`/app/search`) s'appuie sur Cleads Extractor : voir [docs/crm-v1/EXTRACTOR.md](docs/crm-v1/EXTRACTOR.md) pour les variables `EXTRACTOR_*` et le fonctionnement.

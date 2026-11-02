@@ -17,7 +17,10 @@ const MAX_ROWS = 5000
 const IGNORE = "__ignore__"
 type Raw = Record<string, string>
 
-export function ImportWizard() {
+const NO_CAMPAIGN = "__none__"
+
+export function ImportWizard({ campaigns = [] }: { campaigns?: { id: string; name: string }[] }) {
+  const [campaignId, setCampaignId] = useState(NO_CAMPAIGN)
   const [file, setFile] = useState<File | null>(null)
   const [encoding, setEncoding] = useState("UTF-8")
   const [headers, setHeaders] = useState<string[]>([])
@@ -56,7 +59,7 @@ export function ImportWizard() {
     setBusy(true)
     setError(undefined)
     try {
-      const result = await api<ImportResult>("/api/leads/import", { method: "POST", body: JSON.stringify({ rows, fileName: file?.name, commit }) })
+      const result = await api<ImportResult>("/api/leads/import", { method: "POST", body: JSON.stringify({ rows, fileName: file?.name, commit, campaignId: campaignId === NO_CAMPAIGN ? null : campaignId }) })
       if (commit) {
         setDone(result)
         toast.success(`${result.summary.created} prospect(s) importé(s)`)
@@ -121,6 +124,18 @@ export function ImportWizard() {
             </table>
           </div>
           {!nameMapped && <p role="alert" className="text-sm font-medium text-destructive-text">Associez une colonne au « Nom de l’entreprise ».</p>}
+          {campaigns.length > 0 && (
+            <label className="flex flex-wrap items-center gap-3 text-sm font-medium">Ranger les fiches dans une campagne
+              <Select value={campaignId} onValueChange={(v) => { setPreview(null); setCampaignId(v) }}>
+                <SelectTrigger className="h-9 w-64" aria-label="Campagne des fiches importées"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_CAMPAIGN}>Aucune campagne</SelectItem>
+                  {campaigns.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <span className="text-xs font-normal text-muted-foreground">Une fiche déjà rangée dans une autre campagne y reste.</span>
+            </label>
+          )}
           <div className="flex justify-end"><Button onClick={() => run(false)} loading={busy} disabled={!nameMapped}>Vérifier avant d’importer</Button></div>
         </Card>
       )}
@@ -131,10 +146,11 @@ export function ImportWizard() {
           title="Vérification"
           action={
             <div className="flex flex-wrap items-center gap-3">
-              <Button onClick={() => run(true)} loading={busy} disabled={preview.summary.created + preview.summary.enriched === 0}>
+              <Button onClick={() => run(true)} loading={busy} disabled={preview.summary.created + preview.summary.enriched + (preview.summary.campaign?.filed ?? 0) === 0}>
                 Importer {preview.summary.created} prospect{preview.summary.created > 1 ? "s" : ""}
               </Button>
-              {preview.summary.created + preview.summary.enriched === 0 && <span className="text-sm text-muted-foreground">Rien de nouveau à importer.</span>}
+              {preview.summary.created + preview.summary.enriched + (preview.summary.campaign?.filed ?? 0) === 0 && <span className="text-sm text-muted-foreground">Rien de nouveau à importer.</span>}
+              {preview.summary.campaign && <span className="text-sm text-muted-foreground">{preview.summary.campaign.filed} fiche(s) rangée(s) dans la campagne{preview.summary.campaign.keptElsewhere ? `, ${preview.summary.campaign.keptElsewhere} laissée(s) dans leur campagne actuelle` : ""}.</span>}
             </div>
           }
         />

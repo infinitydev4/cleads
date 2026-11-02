@@ -28,6 +28,10 @@ const matrix = {
   // Prospecting tools
   "search:run": { OWNER: "all", MANAGER: "all", SDR: "all" },
   "sequence:manage": { OWNER: "all", MANAGER: "all", SDR: "all" },
+  /** Campaigns (E15): everyone reads them, figures limited to the fiches the person sees (lead:read). */
+  "campaign:read": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "all", VIEWER: "all" },
+  /** Create, edit, change the status; filing a fiche also needs lead:write on it. */
+  "campaign:manage": { OWNER: "all", MANAGER: "all", SDR: "all" },
   "email:send": { OWNER: "all", MANAGER: "all", SDR: "own", CLOSER: "own" },
   "mailbox:manage": { OWNER: "all" },
   // Meetings

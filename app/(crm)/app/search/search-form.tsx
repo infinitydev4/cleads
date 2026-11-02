@@ -12,11 +12,22 @@ import { api } from "../leads/api"
 
 const SIZES = [50, 100, 250, 500, 1000]
 
-export function SearchForm({ disabled, sectors, canImport }: { disabled: boolean; sectors: string[]; canImport: boolean }) {
+const NO_CAMPAIGN = "__none__"
+
+interface CampaignOption {
+  id: string
+  name: string
+  sector: string | null
+  area: string | null
+}
+
+export function SearchForm({ disabled, sectors, canImport, campaigns = [], initialCampaign }: { disabled: boolean; sectors: string[]; canImport: boolean; campaigns?: CampaignOption[]; initialCampaign?: string }) {
   const router = useRouter()
   const list = useId()
-  const [activity, setActivity] = useState("")
-  const [location, setLocation] = useState("")
+  const preset = campaigns.find((c) => c.id === initialCampaign)
+  const [campaignId, setCampaignId] = useState(preset?.id ?? NO_CAMPAIGN)
+  const [activity, setActivity] = useState(preset?.sector ?? "")
+  const [location, setLocation] = useState(preset?.area ?? "")
   const [enrich, setEnrich] = useState(true)
   const [maxResults, setMaxResults] = useState(100)
   const [error, setError] = useState<string>()
@@ -27,7 +38,7 @@ export function SearchForm({ disabled, sectors, canImport }: { disabled: boolean
     setBusy(true)
     setError(undefined)
     try {
-      const { id } = await api<{ id: string }>("/api/searches", { method: "POST", body: JSON.stringify({ activity, location, enrich, maxResults }) })
+      const { id } = await api<{ id: string }>("/api/searches", { method: "POST", body: JSON.stringify({ activity, location, enrich, maxResults, campaignId: campaignId === NO_CAMPAIGN ? null : campaignId }) })
       router.push(`/app/search/${id}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Échec")
@@ -55,6 +66,25 @@ export function SearchForm({ disabled, sectors, canImport }: { disabled: boolean
               </Select>
             )}
           </FormField>
+          {campaigns.length > 0 && (
+            <FormField label="Campagne" hint="Les fiches importées depuis cette recherche y seront rangées.">
+              {(field) => (
+                <Select value={campaignId} onValueChange={(v) => {
+                  setCampaignId(v)
+                  const c = campaigns.find((x) => x.id === v)
+                  // A campaign brings its target, unless something was already typed.
+                  if (c?.sector && !activity) setActivity(c.sector)
+                  if (c?.area && !location) setLocation(c.area)
+                }} disabled={disabled}>
+                  <SelectTrigger {...field}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_CAMPAIGN}>Aucune campagne</SelectItem>
+                    {campaigns.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
+            </FormField>
+          )}
           <div className="space-y-1.5">
             <p className="text-sm font-medium">Emails</p>
             <label className="flex items-start gap-3 rounded-lg border p-3 text-sm">

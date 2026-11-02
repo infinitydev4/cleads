@@ -42,4 +42,11 @@ export const searchStatus = {
   CANCELLED: { label: "Annulée", tone: "outline" },
 } as const satisfies Record<string, StatusMeta>
 
+export const campaignStatus = {
+  DRAFT: { label: "Brouillon", tone: "outline" },
+  ACTIVE: { label: "Active", tone: "success" },
+  PAUSED: { label: "En pause", tone: "warning" },
+  COMPLETED: { label: "Terminée", tone: "neutral" },
+} as const satisfies Record<string, StatusMeta>
+
 export type StatusMap = Record<string, StatusMeta>

@@ -1,0 +1,84 @@
+{
+  "plant": {
+    "size": [
+      0.5806,
+      0.9517,
+      0.6089
+    ],
+    "triangles": 7162,
+    "meshes": 1
+  },
+  "tree": {
+    "size": [
+      0.6978,
+      0.9517,
+      0.6196
+    ],
+    "triangles": 9498,
+    "meshes": 1
+  },
+  "chair": {
+    "size": [
+      0.7241,
+      0.9507,
+      0.7441
+    ],
+    "seat": 0.5884,
+    "triangles": 6145,
+    "meshes": 1
+  },
+  "desk": {
+    "size": [
+      0.9531,
+      0.8477,
+      0.4849
+    ],
+    "triangles": 8033,
+    "meshes": 1
+  },
+  "lamp": {
+    "size": [
+      0.271,
+      0.9502,
+      0.1724
+    ],
+    "triangles": 3050,
+    "meshes": 1
+  },
+  "rack": {
+    "size": [
+      0.5073,
+      0.9512,
+      0.4463
+    ],
+    "triangles": 5001,
+    "meshes": 1
+  },
+  "reception": {
+    "size": [
+      0.9512,
+      0.5518,
+      0.4932
+    ],
+    "triangles": 5270,
+    "meshes": 1
+  },
+  "table": {
+    "size": [
+      0.9507,
+      0.3628,
+      0.5229
+    ],
+    "triangles": 4199,
+    "meshes": 1
+  },
+  "sofa": {
+    "size": [
+      0.9565,
+      0.3872,
+      0.4082
+    ],
+    "triangles": 6293,
+    "meshes": 1
+  }
+}

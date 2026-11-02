@@ -127,6 +127,8 @@ Entonnoir par semaine : prospects importés → contactés → réponses → qua
 | Lancer une recherche Extractor / importer | ✓ | ✓ | ✓ | — | — |
 | Envoyer un email depuis une boîte | ✓ | ✓ | sa boîte | sa boîte | — |
 | Créer / lancer une séquence | ✓ | ✓ | ✓ | — | — |
+| Voir les campagnes (chiffres limités aux fiches visibles) *(E15)* | ✓ | ✓ | ✓ | ✓ | ✓ lecture |
+| Créer / modifier une campagne, y ranger des fiches *(E15)* | ✓ | ✓ | ✓ | — | — |
 | Déplacer une opportunité | ✓ | ✓ | jusqu'à « Qualifié » | siennes | — |
 | Réserver / attribuer un rendez-vous | ✓ | ✓ | ✓ | siens | — |
 | Voir les rapports | ✓ | ✓ | siens | siens | ✓ |
@@ -469,6 +471,30 @@ Section 9 : redirections, `robots.ts`, `sitemap.ts`, `llms.txt`, JSON-LD, métad
 Tests de bout en bout sur 5 parcours (connexion, recherche → import, qualification, réservation, envoi), Sentry, journaux structurés, sauvegardes de la base, export et effacement d'un contact, registre des traitements, déploiement automatisé avec retour arrière.
 - **Critères** : pipeline vert obligatoire pour déployer ; restauration d'une sauvegarde testée une fois.
 
+### E15 — Campagnes · **M** *(ajout, après E9)*
+> **Avancement (branche `refactor/e0-cleanup`)** — fait : table `Campaign` et rangement des fiches et des recherches (migration additive `20261101120000_campaigns_and_hq`), droits `campaign:read` / `campaign:manage`, liste et page de campagne, action groupée, champ sur la fiche, filtre « campagne » et « hors campagne », campagne au lancement d'une recherche et à l'import CSV, indicateurs définis une fois (`features/metrics`) et limités aux fiches visibles. Détails : [CAMPAGNES.md](CAMPAGNES.md).
+> **Vérifié** : `tests/campaigns.integration.test.ts` (base jetable) et dans le navigateur (liste, page, filtre). **Écarts** : une fiche appartient à une seule campagne ; les séquences ne sont pas rattachées à une campagne (on voit celles où ses fiches sont inscrites).
+Une campagne est un ciblage (secteur × zone, une offre) travaillé sur une période. Elle regroupe des fiches (une fiche appartient au plus à une campagne) et les recherches Extractor lancées pour elle, dont les imports y rangent les fiches. Ses résultats sont **calculés** à partir de ce qui existe déjà (fiches, emails, appels, opportunités, rendez-vous) : rien n'est stocké en double.
+- Modèle `Campaign` (nom unique, statut brouillon / active / en pause / terminée, secteur, zone, responsable, dates, objectifs facultatifs de fiches et de rendez-vous, archivage), `Lead.campaignId`, `ExtractionSearch.campaignId`.
+- Droits : `campaign:read` pour tous les membres, chiffres limités aux fiches que la personne voit (`lead:read`) ; `campaign:manage` pour propriétaire, manager et SDR ; ranger une fiche demande en plus le droit d'écrire sur la fiche.
+- Indicateurs définis une fois (`features/metrics`), affichés avec leur définition, réutilisés par E10 : prospects, contactés, réponses, taux de réponse, qualifiés, RDV, gagnés, conversion. **Pas de taux d'ouverture ni de clic** : le CRM ne pose pas de pixel (E9a).
+- Écrans : liste `/app/campaigns`, page de campagne, action groupée « Ranger dans une campagne », filtre de la liste des prospects, campagne au lancement d'une recherche et à l'import CSV, campagne sur la fiche.
+- **Critères** : chaque chiffre a sa définition ; une fiche invisible pour un SDR ne compte pas dans ses chiffres ; réimporter une recherche ne déplace jamais une fiche rangée dans une autre campagne.
+
+### E16 — Vue 3D isométrique « QG » · **L** *(ajout, après E9)*
+> **Avancement (branche `refactor/e0-cleanup`)** — fait : `/app/3d` et sélecteur 2D / 3D, huit espaces cliquables reliés aux vrais chiffres et aux actions du CRM (fiche, RDV, email), équipe réelle à ses postes avec statut et choix du personnage, HUD de la maquette, visite guidée, clavier, jour / nuit (auto, jour, nuit), personnages Meshy (188 crédits) compressés à 550 Ko, chargement séparé, rendu léger automatique. Détails : [VUE-3D.md](VUE-3D.md).
+> **Vérifié** : `tests/hq.test.ts`, `tests/hq.integration.test.ts`, navigateur (60 images/s sur Apple M4 en 2880 × 1688). **Pas encore** : téléphone réel, lecteur d'écran réel, poste peu puissant. **Écarts** : pas de redirection automatique vers la 3D ; personnages « opérateurs » dans les espaces sans membre ; pas de déplacement animé entre espaces (le clip de marche est prêt).
+Seconde vue du CRM, isométrique et interactive, à côté de la vue 2D qui reste intacte : sélecteur **2D / 3D** dans la barre du haut, qui ramène à la dernière page 2D. Huit espaces, un par module : Scraping / Sources, Qualification, Coordination, Campagnes, Prospection multicanale, Pipeline CRM, RDV & Planning, Analytics.
+- **Technique** : Three.js + React Three Fiber + Drei (caméra `CameraControls`, étiquettes `Html`, instanciation). Les transitions de caméra viennent de camera-controls, GSAP n'est pas nécessaire. Le code 3D est chargé à part : la vue 2D ne télécharge rien de plus.
+- **Fonctionnel, pas décoratif** : chaque espace est cliquable, la caméra s'en approche, un panneau donne les vrais chiffres et listes du module, avec les actions existantes (fiche en panneau, qualifier, planifier un RDV, écrire, ouvrir le module en 2D). Les personnages sont les membres de l'équipe, à un poste selon leur rôle ; chacun choisit son personnage.
+- **HUD** : indicateurs clés, parcours d'acquisition, performances des campagnes, derniers prospects, contrôles de caméra, visite guidée (← →, Échap).
+- **Jour / nuit** synchronisé sur l'heure locale, désactivable (Auto · Jour · Nuit), mémorisé dans le navigateur.
+- **Personnages** générés avec Meshy depuis l'illustration d'équipe de cleads.fr (squelette, animations), compressés ; personnages construits en code en secours.
+- **Performance** : géométries et matériaux partagés, instanciation, ombres limitées, résolution adaptative, rendu à la demande quand le mouvement est réduit, arrêt quand l'onglet est caché.
+- **Accessibilité** : ce que montre la scène est aussi dans le HUD (DOM), espaces au clavier (1 à 8, ← →, Échap), annonces vocales, `prefers-reduced-motion`, repli vers la 2D sans WebGL.
+- **Évolutif** : les espaces sont une liste (`features/hq/zones.ts`) ; un futur espace « Agents IA » (E13) = une entrée et une composition, sans toucher au reste. Aucun agent IA en V1.
+- **Critères** : aucune régression de la vue 2D (tests et parcours dans le navigateur) ; aucun chiffre sans définition ; fluide sur un portable récent.
+
 ### Ordre conseillé
 | Jalon | Epics | Résultat visible |
 |---|---|---|
@@ -477,6 +503,7 @@ Tests de bout en bout sur 5 parcours (connexion, recherche → import, qualifica
 | **M2 Prospection** | E4, E5, E7 | Rechercher, importer, traiter la file du jour |
 | **M3 Conversion** | E6, E8, E11, E10 | Qualifier, planifier, suivre l'entonnoir |
 | **M4 Outreach** | E9a → E9c | Envoyer et relancer avec garde-fous |
+| **M4b Pilotage visuel** | E15, E16 | Campagnes mesurées, QG en 3D |
 | **M5 Lancement** | E13, E14 | Prêt pour l'équipe et pour les agents |
 
 E1 peut démarrer en parallèle d'E0 ; E5 peut commencer dès que E3 fixe le modèle.

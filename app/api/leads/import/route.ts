@@ -14,13 +14,15 @@ const bodySchema = z.object({
   fileName: z.string().max(200).optional(),
   /** false = preview: nothing is written. */
   commit: z.boolean().default(false),
+  /** E15: campaign the fiches are filed in. */
+  campaignId: z.string().min(1).nullish(),
 })
 
 export async function POST(request: Request) {
   try {
     const { user } = await requirePermission("lead:import")
     const body = bodySchema.parse(await request.json())
-    return NextResponse.json(await runImport(user, body.rows, { commit: body.commit, source: "CSV", fileName: body.fileName, ip: clientIp(request.headers) }))
+    return NextResponse.json(await runImport(user, body.rows, { commit: body.commit, source: "CSV", fileName: body.fileName, campaignId: body.campaignId, ip: clientIp(request.headers) }))
   } catch (error) {
     return handleError(error)
   }

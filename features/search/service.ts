@@ -6,7 +6,9 @@ import { ExtractorError, getExtractorClient, extractorConfig, type ExtractorClie
 import { bestEmail, businessToImportRow } from "@/lib/extractor/mapping"
 import { webhookEventSchema, type ExtractorCounters, type ExtractorHealth, type ExtractorJob } from "@/lib/extractor/schemas"
 import { verifyWebhook } from "@/lib/extractor/webhook"
+import { can } from "@/lib/rbac"
 import { LeadError } from "@/features/leads/errors"
+import { assertCampaign } from "@/features/campaigns/filing"
 import { MAX_IMPORT_ROWS, runImport, type ImportResult, type ImportRow } from "@/features/leads/import"
 import { MAX_SEARCH_RESULTS, type ImportOptions, type StartSearchInput } from "./schemas"
 
@@ -38,6 +40,8 @@ export interface SearchView {
   importedCount: number
   lastImportAt: string | null
   active: boolean
+  /** E15: the campaign its imports file fiches in. */
+  campaign: { id: string; name: string } | null
 }
 
 const zero: SearchCounters = { rawFound: 0, unique: 0, complete: 0, crmUseful: 0, enriched: 0, tasksTotal: 0, tasksDone: 0, tasksFailed: 0 }
@@ -49,8 +53,8 @@ export function toCounters(c: ExtractorCounters | undefined): SearchCounters {
   }
 }
 
-type Row = Prisma.ExtractionSearchGetPayload<{ include: { createdBy: { select: { name: true; email: true } } } }>
-const include = { createdBy: { select: { name: true, email: true } } } as const
+const include = { createdBy: { select: { name: true, email: true } }, campaign: { select: { id: true, name: true, archivedAt: true } } } as const
+type Row = Prisma.ExtractionSearchGetPayload<{ include: typeof include }>
 
 function toView(s: Row): SearchView {
   return {
@@ -66,6 +70,7 @@ function toView(s: Row): SearchView {
     importedCount: s.importedCount,
     lastImportAt: s.lastImportAt?.toISOString() ?? null,
     active: !TERMINAL.includes(s.status),
+    campaign: s.campaign && { id: s.campaign.id, name: s.campaign.name },
   }
 }
 
@@ -94,9 +99,13 @@ export async function startSearch(user: CurrentUser, input: StartSearchInput, ip
     throw new LeadError("conflict", `Vous avez déjà ${MAX_ACTIVE_SEARCHES_PER_USER} recherches en cours : attendez la fin de l’une d’elles ou annulez-en une.`, 409)
   }
   const spec = { activity: input.activity, location: input.location, country: input.country, enrich: input.enrich, maxResults: Math.min(input.maxResults, MAX_SEARCH_RESULTS) }
+  if (input.campaignId) {
+    if (!can(user.role, "campaign:manage")) throw new LeadError("forbidden", "Vous ne pouvez pas lancer de recherche pour une campagne.", 403)
+    await assertCampaign(prisma, user.workspaceId, input.campaignId)
+  }
   // The row exists before the job: its id is the idempotency key, so a retry after a network error cannot start a second search.
   const row = await prisma.extractionSearch.create({
-    data: { workspaceId: user.workspaceId, createdById: user.id, label: `${input.activity} — ${input.location}`, spec },
+    data: { workspaceId: user.workspaceId, createdById: user.id, label: `${input.activity} — ${input.location}`, spec, campaignId: input.campaignId ?? null },
     include,
   })
   try {
@@ -262,7 +271,9 @@ export async function importSearch(user: CurrentUser, id: string, options: Impor
   }
   if (rows.length === 0) throw new LeadError("conflict", "Aucun résultat à importer avec ces critères pour l’instant.", 409)
 
-  const result = await runImport(user, rows, { commit: options.commit, source: "EXTRACTOR", fileName: `Extractor · ${s.label}`, extractorJobId: s.extractorJobId, ip })
+  // A search launched for a campaign files its fiches there, unless the campaign was archived since.
+  const campaignId = s.campaign && !s.campaign.archivedAt ? s.campaign.id : null
+  const result = await runImport(user, rows, { commit: options.commit, source: "EXTRACTOR", fileName: `Extractor · ${s.label}`, extractorJobId: s.extractorJobId, campaignId, ip })
   if (options.commit) {
     await prisma.extractionSearch.update({ where: { id }, data: { importedCount: { increment: result.summary.created }, lastImportAt: new Date() } })
   }

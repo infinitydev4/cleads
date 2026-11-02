@@ -62,6 +62,10 @@ model User {
   enrollmentsCreated     SequenceEnrollment[]    @relation("EnrollmentCreator")
   emailTemplates         EmailTemplate[]
   sentEmails             EmailMessage[]          @relation("EmailSender")
+  /// E16: the character this member appears as in the 3D view (see features/hq/characters.ts); null = chosen from the role.
+  hqCharacter            String?
+  campaignsOwned         Campaign[]              @relation("CampaignOwner")
+  campaignsCreated       Campaign[]              @relation("CampaignCreator")
 }
 
 /// LEGACY (blog, AI keys, NextAuth adapter): unused, dropped by prisma/pending/drop-legacy-blog.sql once a dump is taken.
@@ -579,6 +583,7 @@ model Workspace {
   emailMessages          EmailMessage[]
   sequences              Sequence[]
   sequenceEnrollments    SequenceEnrollment[]
+  campaigns              Campaign[]
 }
 
 enum LeadSource {
@@ -785,6 +790,9 @@ model Lead {
   lastContactedAt DateTime?
   /// Free labels, stored lower-case.
   tags            String[]     @default([])
+  /// E15: the campaign this fiche is worked in (at most one).
+  campaignId      String?
+  campaign        Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
@@ -801,6 +809,7 @@ model Lead {
   @@index([workspaceId, score])
   @@index([importBatchId])
   @@index([tags], type: Gin)
+  @@index([campaignId])
 }
 
 model Deal {
@@ -1017,6 +1026,9 @@ model ExtractionSearch {
   importedCount  Int          @default(0)
   lastImportAt   DateTime?
   notifiedAt     DateTime?
+  /// E15: imports of this search file their fiches in this campaign.
+  campaignId     String?
+  campaign       Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   finishedAt     DateTime?
@@ -1327,4 +1339,48 @@ model SequenceEnrollment {
   @@index([status, nextAt])
   @@index([leadId])
   @@index([sequenceId, status])
+}
+
+// ── Campaigns (E15): a target worked over a period; every figure is computed from leads, emails, deals, meetings ──
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+/// An acquisition campaign: one target (sector × area, an offer) worked over a period. Fiches and Extractor searches
+/// are filed in it; its results are always computed from them (features/metrics), never stored.
+model Campaign {
+  id           String         @id @default(cuid())
+  workspaceId  String
+  workspace    Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name         String
+  /// Offer, angle, who it is for. Free text.
+  description  String?
+  status       CampaignStatus @default(DRAFT)
+  /// Target as people describe it ("Assurance", "Suisse romande"): a reminder and a default for searches, never a rule.
+  sector       String?
+  area         String?
+  ownerId      String?
+  owner        User?          @relation("CampaignOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  /// Calendar days (UTC midnight); both optional.
+  startsOn     DateTime?      @db.Date
+  endsOn       DateTime?      @db.Date
+  /// Optional goals, shown as progress next to the measured figures.
+  goalLeads    Int?
+  goalMeetings Int?
+  createdById  String?
+  createdBy    User?          @relation("CampaignCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  /// Archived campaigns keep their fiches and figures but are no longer offered.
+  archivedAt   DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  leads    Lead[]
+  searches ExtractionSearch[]
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId, status])
 }
