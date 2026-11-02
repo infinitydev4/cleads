@@ -357,7 +357,7 @@ components/
   ui/                  primitives shadcn ré-habillées (jetons)
   crm/                 shell, data-table, kanban, timeline, filters, empty-state, command-palette, page-header…
 features/<domaine>/    components/ · actions.ts (serveur) · service.ts (règles métier) · schemas.ts (zod) · queries.ts
-features/ai/           agents · outils · skills · exécutions · validations (E17, E19) ; features/audit · offers · studio (E20, E21, E23)
+features/ai/           agents · outils · skills · exécutions · validations (E17, E19) ; features/prospect-audit · offers · offer-pitch · studio (E20, E19 et E21, E23)
 lib/                   rbac · audit · extractor-client · mail · ai (passerelle, modèles par rôle, coûts, budgets, décisions Jev) · time
 worker/                Node sur le VPS, file PostgreSQL : agents IA d'abord (E18), puis envois, relances, lecture des réponses, rappels
 evals/                 jeux d'évaluation des agents (E27)
@@ -546,7 +546,7 @@ Seconde vue du CRM, isométrique et interactive, à côté de la vue 2D qui rest
 - **Critères** : aucune régression de la vue 2D (tests et parcours dans le navigateur) ; aucun chiffre sans définition ; fluide sur un portable récent.
 
 ### Couche agentique IA (E17 à E27, décidée le 2 novembre 2026)
-Décisions D13 à D27 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17 à E20 sont faits ; E21 à E27 restent à faire.
+Décisions D13 à D27 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17 à E21 sont faits ; E22 à E27 restent à faire.
 
 ### E17 — Socle IA · **M** *(absorbe E13)*
 > **Avancement (branche `feat/e17-socle-ia`)** — fait :
@@ -695,6 +695,30 @@ L'Auditeur digital produit une fiche enrichie et sourcée, à la demande, depuis
 - **Critères** : chaque constat cite sa preuve ; un site injoignable donne un audit partiel explicite, pas une erreur ; coût moyen mesuré sous 0,30 €.
 
 ### E21 — Offres et pitch · **M**
+> **Avancement (branche `feat/e21-offres-pitch`)** — fait :
+> - migration additive `20261106090000_offer_pitches` : `OfferPitch` (le pitch d'une fiche) et `OfferRecommendation` (chaque offre, son rôle, son adéquation, son argumentaire, ses preuves et la décision de la personne). Des contraintes en base refusent une offre sans preuve, une adéquation hors de 0 à 100 et une raison de refus sur une offre retenue ;
+> - règles sans modèle (`features/offer-pitch/rules.ts`) : une offre active devient candidate quand l'audit a levé l'un de ses signaux avec une preuve existante. E21 ajoute « prospect à accompagner dans la durée » quand l'audit trouve trois volets faibles ou des besoins récurrents dans deux domaines, ce qui rend les formules Cleads atteignables ;
+> - Conseiller offres branché sur le worker : un workflow codé avec un seul appel de modèle sans outil, rôle de l'agent (Sonnet par défaut). Il reçoit l'audit encadré comme contenu externe, sans le nom des dirigeants, et les candidates. Ses consignes comprennent le skill `offres-cleads`, le script d'appel, le playbook du secteur et le skill publicité quand une offre de publicité est en jeu ;
+> - ce qui est gardé : chaque argument cite une preuve existante, sinon l'offre est retirée et la raison est notée. L'accroche sans preuve est remplacée par le premier constat de l'audit, l'angle d'email sans preuve est retiré. Le pack garde une offre principale, deux compléments au plus et une offre d'entrée au plus. Une offre désactivée pendant l'appel n'est pas enregistrée ;
+> - budget du pack additionné à partir des prix du catalogue, jamais écrit par le modèle ;
+> - onglets « Audit IA » et « Offres suggérées » sur la fiche 2D, avec l'onglet choisi gardé dans le navigateur, et carte compacte dans le panneau de la vue 3D ;
+> - le pitch tient en un écran : la phrase d'accroche, le pack et son budget, chaque offre avec sa preuve, ce que le prospect y gagne et l'objection probable, le script d'appel de 15 minutes minuté et l'angle du premier email, tous deux copiables ;
+> - « Retenir » ou « Écarter » chaque offre, avec une raison pour un refus et la possibilité d'annuler. Ces décisions sont journalisées, et chaque offre d'Agents IA › Offres affiche combien de fois elle a été suggérée, retenue et écartée (pertinence, E27) ;
+> - au passage : `Badge` rend un `span`, ce qui corrige des erreurs d'hydratation de la carte d'audit et d'Agents IA (un badge dans un paragraphe). Une note de prix qui répète le prix ne le double plus (« Sur devis »).
+>
+> **Vérifié** :
+> - `tests/offer-pitch.test.ts` (17 tests) : candidates, dérivation, budget, rôles, preuves, encadrement de l'audit, schéma de sortie ;
+> - `tests/offer-pitch.integration.test.ts` (6 tests, base jetable) : pitch pris par le worker avec un modèle simulé, candidates seulement, preuves toutes valides, reprise sans doublon, refus avant toute dépense (pas d'audit, aucune offre active, aucune candidate, droits), décisions et statistiques, offre retirée pendant l'appel, nouvel essai sans preuve, pitch d'un audit précédent ;
+> - suite complète verte (762 tests), build, paquet du worker ;
+> - parcours dans le navigateur sur la base de prévisualisation, avec un pitch produit par le vrai handler et un modèle simulé : onglets, candidates, pitch, retenir et écarter, file d'attente, statistiques d'Agents IA, carte de la vue 3D.
+>
+> **Pas encore** : un pitch réel de bout en bout (un appel Sonnet, environ 3 à 5 centimes) ; il demande des offres actives en production et le redéploiement du worker.
+>
+> **Écarts** :
+> - le script d'appel, les objections et l'angle d'email appartiennent au pitch (`OfferPitch`), une fois pour le pack, et non à chaque `OfferRecommendation` ;
+> - le pitch se prépare à la demande, après l'audit, et ne s'enchaîne pas tout seul (budget sous 100 € par mois) ; les candidates, calculées sans modèle, s'affichent dès l'audit ;
+> - les offres et leurs prix demandent `ai:use`, comme le module Agents IA : un lecteur ne voit que l'onglet d'audit.
+
 - Signaux de l'audit → offres candidates (règles), puis le Conseiller offres classe, argumente avec les preuves et compose un pack.
 - Script d'appel de 15 minutes, objections et réponses, angle d'email ; onglet « Offres suggérées » sur la fiche.
 - Acceptation ou refus par la personne, conservés pour mesurer la pertinence (E27).

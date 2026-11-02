@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { defineTool } from "@/features/ai/tools"
-import { OFFER_CATEGORIES, formatOfferPrice } from "./labels"
+import { OFFER_CATEGORIES, formatOfferPrice, withPriceNote } from "./labels"
 import { activeOffers } from "./service"
 import { signalLabel } from "./signals"
 
@@ -22,7 +22,7 @@ export const listOffersTool = defineTool({
         summary: o.summary,
         signals: o.signals.map((s) => ({ key: s, label: signalLabel(s) })),
         deliverables: o.deliverables,
-        price: formatOfferPrice(o) + (o.priceNote ? ` (${o.priceNote})` : ""),
+        price: withPriceNote(formatOfferPrice(o), o.priceNote),
         angle: o.angle,
       })),
 })

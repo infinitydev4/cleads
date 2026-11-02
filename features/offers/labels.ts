@@ -43,3 +43,9 @@ export function formatOfferPrice(o: { priceMinEur: number | null; priceMaxEur: n
     min != null && max != null ? (max === min ? eur.format(min) : `${eur.format(min)} à ${eur.format(max)}`) : min != null ? `À partir de ${eur.format(min)}` : `Jusqu’à ${eur.format(max!)}`
   return `${range} HT${o.billing === "MONTHLY" ? " par mois" : ""}`
 }
+
+/** "300 à 900 € HT par mois (Hors budget publicitaire)"; a note that already starts with the price replaces it ("Sur devis, engagement initial de 3 mois"). */
+export function withPriceNote(price: string, note: string | null | undefined): string {
+  if (!note) return price
+  return note.toLowerCase().startsWith(price.toLowerCase()) ? note : `${price} (${note})`
+}

@@ -32,7 +32,7 @@ import { SequenceCard } from "./sequence-card"
 import { TasksCard } from "./tasks-card"
 import { CALL_OUTCOMES } from "@/features/activity/rules"
 import { CampaignField } from "./campaign-field"
-import { AuditCard } from "@/components/crm/ai/audit-card"
+import { LeadAiCard } from "@/components/crm/ai/lead-ai-card"
 
 interface Props {
   lead: LeadDetail
@@ -223,7 +223,7 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
         <p className="text-xs text-muted-foreground">Règles simples et visibles ; les poids seront ajustés avec les résultats réels.</p>
       </Card>
 
-      {lead.company && <AuditCard leadId={lead.id} canRun={lead.can.audit} onChanged={reload} />}
+      {lead.company && <LeadAiCard lead={lead} onChanged={reload} />}
 
       <QualificationCard lead={lead} onEdit={() => setQualifying(true)} />
 

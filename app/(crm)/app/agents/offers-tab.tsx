@@ -8,13 +8,25 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { EmptyState } from "@/components/crm/empty-state"
-import { CATEGORY_LABELS, OFFER_CATEGORIES, OFFER_STATUS_LABELS, OFFER_STATUS_TONE, formatOfferPrice } from "@/features/offers/labels"
+import { CATEGORY_LABELS, OFFER_CATEGORIES, OFFER_STATUS_LABELS, OFFER_STATUS_TONE, formatOfferPrice, withPriceNote } from "@/features/offers/labels"
 import { signalLabel } from "@/features/offers/signals"
 import type { OfferView } from "@/features/offers/service"
 import { api } from "../leads/api"
 import { OfferDialog } from "./offer-dialog"
 
 const day = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", year: "numeric" })
+const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? "s" : ""}`
+
+/** What closers made of the advisor's suggestions of this offer; relevance once three decisions are in. */
+function SuggestionStats({ stats }: { stats: OfferView["stats"] }) {
+  const decided = stats.accepted + stats.rejected
+  return (
+    <span title="Suggestions du Conseiller offres sur les fiches, et décisions des commerciaux">
+      Suggérée {stats.suggested} fois · {plural(stats.accepted, "retenue")} · {plural(stats.rejected, "écartée")}
+      {decided >= 3 && ` · pertinence ${Math.round((stats.accepted / decided) * 100)} %`}
+    </span>
+  )
+}
 
 function OfferCard({ offer, canManage, busy, onEdit, onStatus }: { offer: OfferView; canManage: boolean; busy: boolean; onEdit: () => void; onStatus: (status: OfferView["status"]) => void }) {
   return (
@@ -25,10 +37,7 @@ function OfferCard({ offer, canManage, busy, onEdit, onStatus }: { offer: OfferV
             {offer.name}
             <Badge variant={OFFER_STATUS_TONE[offer.status]}>{OFFER_STATUS_LABELS[offer.status]}</Badge>
           </p>
-          <p className="text-sm font-medium tabular-nums">
-            {formatOfferPrice(offer)}
-            {offer.priceNote && <span className="font-normal text-muted-foreground"> · {offer.priceNote}</span>}
-          </p>
+          <p className="text-sm font-medium tabular-nums">{withPriceNote(formatOfferPrice(offer), offer.priceNote)}</p>
         </div>
         {canManage && (
           <div className="flex flex-wrap gap-1.5">
@@ -93,9 +102,11 @@ function OfferCard({ offer, canManage, busy, onEdit, onStatus }: { offer: OfferV
           </dl>
         )}
       </details>
-      {offer.reviewedAt && (
+      {(offer.reviewedAt || offer.stats.suggested > 0) && (
         <p className="text-xs text-muted-foreground">
-          Validée par {offer.reviewedBy ?? "?"} le {day.format(new Date(offer.reviewedAt))}
+          {offer.reviewedAt && `Validée par ${offer.reviewedBy ?? "?"} le ${day.format(new Date(offer.reviewedAt))}`}
+          {offer.reviewedAt && offer.stats.suggested > 0 && " · "}
+          {offer.stats.suggested > 0 && <SuggestionStats stats={offer.stats} />}
         </p>
       )}
     </Card>
