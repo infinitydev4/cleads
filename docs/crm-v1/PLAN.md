@@ -801,7 +801,7 @@ L'Auditeur digital produit une fiche enrichie et sourcée, à la demande, depuis
 >   - module **Studio Web** (`/app/studio`) : aperçu sur ordinateur et téléphone, brief, contrôles, versions comparées, instruction, partage et visites ;
 >   - « Insérer le lien de la maquette » dans la fenêtre d'email : l'envoi reste l'email habituel, relu par la personne ;
 > - **Purge** : le contenu d'une maquette (pages, captures, images, brief) est supprimé 90 jours après sa dernière version ou la dernière prolongation de son lien, par la maintenance du worker. La suppression de la fiche emporte ses maquettes ;
-> - **Worker** : Chromium (headless shell de Playwright 1.64) et axe-core dans l'image, limites portées à 1 Go et 512 processus.
+> - **Worker** : Chromium (headless shell de Playwright 1.64) et axe-core dans l'image, qui passe à 1,3 Go ; limites portées à 1 Go de mémoire et 512 processus.
 >
 > **Vérifié** :
 > - `tests/studio.test.ts` (18 tests : nettoyage, couleurs, polices, CSS, document, hôte, liens, en-têtes) ;
@@ -815,9 +815,15 @@ L'Auditeur digital produit une fiche enrichie et sourcée, à la demande, depuis
 >   - visite comptée et notifiée ;
 >   - lien inséré dans un email.
 >
-> **Pas encore** :
-> - une maquette réelle (Opus, environ 1 €) ;
-> - **le préalable reste à faire** : le domaine `apercu.cleads.fr` doit être ajouté au site Netlify (Domain management › Add a domain alias). Le DNS de cleads.fr est chez Netlify, qui crée l'enregistrement et le certificat. Sans lui, les liens ne s'ouvrent pas et PageSpeed ne peut pas mesurer la maquette ; le Studio le signale.
+> **En production (2 novembre)** :
+> - le domaine `apercu.cleads.fr` répond, avec le certificat `*.cleads.fr`. Une page inexistante y est servie isolée et non indexée, et les adresses du CRM n'y existent pas ;
+> - **premier essai réel** (M&LOIRE, rôle « designer » réglé sur Sonnet) : brief en 56 s pour 0,04 €, page en 3 min pour 0,13 €, puis une modification par instruction pour 0,18 €. Il a révélé six défauts, corrigés par la PR suivante (branche `fix/studio-premier-essai`) :
+>   - la critique visuelle était refusée : un défaut décrit en plus de 240 caractères faisait rejeter toute la réponse. Les schémas des réponses du modèle sont désormais souples, et le code coupe et trie ;
+>   - les images de la galerie, chargées en différé, restaient blanches dans les captures : le rendu charge maintenant toutes les images ;
+>   - des notes pour l'équipe s'affichaient sur la page (« à fournir par le cabinet », « horaires à confirmer ») : le brief les range dans « À vérifier avec le prospect », et une page qui en montre encore une est corrigée, même sans critique ;
+>   - le site déclarait une police Windows (« Microsoft Sans Serif ») : seules les polices que Google Fonts sert sont proposées ;
+>   - PageSpeed échouait (« Something went wrong ») : Lighthouse ne peut pas mesurer une page `sandbox` sans scripts. Seule la copie lue par PageSpeed les autorise (`sandbox allow-scripts`), et `default-src 'none'` refuse toujours ceux de la page. En local, la même page passe de l'échec à 96 en performance ;
+>   - un défaut d'accessibilité sérieux (contraste) restait sans correction quand la critique manquait : les contrôles déclenchent maintenant la correction à eux seuls.
 >
 > **Écarts** :
 > - les pages, captures et images sont gardées en base, comme les captures de l'audit, et non sur S3 : le worker n'a pas de clé AWS, et une maquette pèse environ 1 à 2 Mo ;

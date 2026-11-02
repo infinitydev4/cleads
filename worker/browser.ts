@@ -100,9 +100,13 @@ function summarise(lists: Awaited<ReturnType<typeof axeInPage>>[]): AxeSummary {
   return { critical: count("critical"), serious: count("serious"), moderate: count("moderate"), minor: count("minor"), violations: violations.slice(0, 12) }
 }
 
-/** Serves the page and its assets from memory; everything else is refused. */
+/**
+ * Serves the page and its assets from memory; everything else is refused. The captures show the whole page at once, so
+ * every image loads at once: a lazy image below the first screen would stay blank in a full-page capture (seen on the
+ * first real mock-up), while a visitor sees it as they scroll.
+ */
 function router(html: string, assets: ReadonlyMap<string, PageAsset>) {
-  const doc = withAssets(html, (name) => `${ORIGIN}/a/${name}`)
+  const doc = withAssets(html, (name) => `${ORIGIN}/a/${name}`).replace(/ (loading="lazy"|decoding="async")/g, "")
   return (route: Route) => {
     const url = route.request().url()
     if (url === `${ORIGIN}/`) return route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: doc })
@@ -128,6 +132,8 @@ async function settle(page: Page) {
             })
       )
     )
+    // Decoded before the capture, or an image outside the viewport may still be painted blank.
+    await Promise.all(Array.from(document.images).map((img) => img.decode().catch(() => undefined)))
     await document.fonts.ready
   })
 }

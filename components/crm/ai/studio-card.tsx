@@ -143,6 +143,11 @@ export function StudioCard({ leadId, onChanged }: { leadId: string; onChanged?: 
             <span>· {site.brief.fonts.heading} / {site.brief.fonts.body}</span>
             <span>· {site.brief.sections.length} sections</span>
           </div>
+          {site.brief.toCheck.length > 0 && (
+            <p className="flex items-start gap-2 text-sm text-warning">
+              <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /> {site.brief.toCheck.length} point{site.brief.toCheck.length > 1 ? "s" : ""} à vérifier avec le prospect, listé{site.brief.toCheck.length > 1 ? "s" : ""} dans le brief.
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
             <Button asChild size="sm">
               <Link href={`/app/studio/${site.id}`}>Relire le brief</Link>

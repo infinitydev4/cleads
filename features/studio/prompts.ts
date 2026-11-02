@@ -36,6 +36,8 @@ export function briefPrompt(c: BriefContext): string {
       "Écris le brief de la landing de démonstration de cette entreprise, selon la charte du Studio :",
       "- positionnement, public et ton ; un titre de premier écran tourné vers le bénéfice du client (90 caractères au plus) et un sous-titre avec le métier et la zone ;",
       `- 4 à 7 sections dans l'ordre de la page, la première de type hero, la dernière de type contact (types : ${Object.keys(SECTION_LABELS).join(", ")}). Leurs points reprennent seulement ce que disent les pages (P…) ou la fiche (F…), reformulé clairement : aucun chiffre, avis, label, année, prix ni client qui n'y figure ;`,
+      "- titres et points sont le texte que liront les visiteurs, écrit pour eux : jamais une consigne, une remarque sur la maquette ni une mention de ce qui manque ;",
+      "- dans toCheck, ce qui manque ou reste à vérifier avec le prospect (horaires, email, nom des projets…) : ces informations n'apparaissent jamais dans les points ;",
       "- une section de preuves seulement avec des preuves réelles : la note Google de la fiche avec son nombre d'avis, des réalisations ou des labels cités par le site. Jamais d'avis rédigé ;",
       "- la palette : la couleur principale de la marque (logo ou site) et une couleur d'accent si la marque en a une ; à défaut, une palette sobre adaptée au métier. Couleurs au format #rrggbb ;",
       `- deux polices de cette liste (titres, texte) : ${c.fonts.join(", ")}. Si le site utilise l'une d'elles, garde-la ;`,
@@ -58,7 +60,8 @@ export const PAGE_RULES = [
   "- icônes : SVG en ligne simples (path, circle, rect, line, polyline), stroke=\"currentColor\", aria-hidden=\"true\" ;",
   "- une FAQ éventuelle en <details> et <summary> ;",
   "- mobile d'abord (sm:, md:, lg:) ; texte courant de 16 px au moins ; contrastes de 4,5:1 au moins ; zones cliquables de 44 px ; rien ne déborde à 390 px ;",
-  "- aucun fait, chiffre, avis, label, prix ni client qui ne soit dans le brief ou les coordonnées ; aucun lien vers des réseaux sociaux ni vers des mentions légales.",
+  "- aucun fait, chiffre, avis, label, prix ni client qui ne soit dans le brief ou les coordonnées ; aucun lien vers des réseaux sociaux ni vers des mentions légales ;",
+  "- aucun texte qui signale un manque ou s'adresse à l'équipe (« à fournir », « à compléter », « à confirmer ») : ce qui manque est simplement omis.",
 ].join("\n")
 
 export interface PageContext {
@@ -128,7 +131,7 @@ export function findingsText(f: Findings): string {
   for (const i of f.critique?.issues ?? []) lines.push(`[${SEVERITY[i.severity]}] ${CRITERIA_LABELS[i.criterion]} : ${i.problem} → ${i.fix}`)
   for (const v of f.axe?.violations ?? []) if (v.impact === "critical" || v.impact === "serious") lines.push(`[Accessibilité, ${v.impact}] ${v.help} (${v.nodes} élément${v.nodes > 1 ? "s" : ""}, par exemple ${v.sample})`)
   if (f.markup.h1 !== 1) lines.push(`[Balisage] La page a ${f.markup.h1} titre${f.markup.h1 > 1 ? "s" : ""} <h1> : il en faut un seul.`)
-  if (f.markup.placeholders.length) lines.push(`[Contenu] Textes provisoires à retirer : ${f.markup.placeholders.join(", ")}.`)
+  if (f.markup.placeholders.length) lines.push(`[Contenu] Textes à retirer, provisoires ou adressés à l'équipe (ce qui manque est simplement omis) : ${f.markup.placeholders.map((p) => `« ${p} »`).join(", ")}.`)
   if (f.markup.emptyAlt) lines.push(`[Accessibilité] ${f.markup.emptyAlt} image${f.markup.emptyAlt > 1 ? "s" : ""} sans texte alternatif.`)
   return lines.join("\n") || "- rien de bloquant"
 }
@@ -162,7 +165,7 @@ export function critiquePrompt(c: { company: string; brief: Brief; desktop: numb
     [
       "Évalue la page sur la grille, de 1 (à refaire) à 5 (excellent) :",
       ...CRITERIA.map((k) => `- ${k} (${CRITERIA_LABELS[k].toLowerCase()}) : ${CRITERIA_HINTS[k]} ;`),
-      "Liste ensuite les défauts visibles sur les captures, du plus grave au moins grave, chacun avec la correction à faire (en classes Tailwind si c'est utile). Ne juge que ce que tu vois ; le bandeau sombre du haut est ajouté par le CRM, ne le critique pas.",
+      "Liste ensuite les défauts visibles sur les captures, du plus grave au moins grave, chacun avec la correction à faire (en classes Tailwind si c'est utile), en une ou deux phrases courtes. Sont graves : une image vide ou cassée, un texte qui s'adresse à l'équipe ou signale un manque (« à fournir », « à confirmer »), un texte illisible. Ne juge que ce que tu vois ; le bandeau sombre du haut est ajouté par le CRM, ne le critique pas.",
     ].join("\n"),
   ].join("\n\n")
 }

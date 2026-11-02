@@ -12,15 +12,15 @@ import { auditReportSchema, type AuditReport } from "@/features/prospect-audit/s
 import { playbookFor } from "@/features/prospect-audit/sectors"
 import { allowedFonts, auditPoints, cleanBrief, ficheFacts } from "./brief"
 import { collectStudioSite } from "./collect"
-import { assembleDocument, pageBody, staticChecks, type StaticChecks } from "./document"
-import { downloadFonts, fontFaceCss, fontStack } from "./fonts"
+import { assembleDocument, pageBody, staticChecks, TEAM_NOTE, type StaticChecks } from "./document"
+import { downloadFonts, fontFaceCss, fontStack, googleServes } from "./fonts"
 import { average } from "./labels"
 import { addDays, hashToken, PROBE_MINUTES, PURGE_DAYS, previewHost, previewUrl, randomToken } from "./link"
 import { brandColors } from "./palette"
 import { briefPrompt, critiquePrompt, fixPrompt, pagePrompt, revisePrompt, type PageContext } from "./prompts"
 import type { PageAsset, PreparedImage, RenderedPage, Renderer } from "./render"
 import { extractBody, sanitizeBody, type SanitizeReport } from "./sanitize"
-import { briefOutputSchema, briefSchema, collectedSchema, critiqueSchema, designerInputSchema, type Brief, type Collected, type Critique, type DesignerInput, type LabScores, type VersionChecks, type VersionScores } from "./schemas"
+import { briefOutputSchema, briefSchema, collectedSchema, critiqueSchema, designerInputSchema, normalizeCritique, type Brief, type Collected, type Critique, type DesignerInput, type LabScores, type VersionChecks, type VersionScores } from "./schemas"
 import { compileCss, type PageTheme } from "./tailwind"
 
 /**
@@ -39,6 +39,7 @@ export const MAX_ROUNDS = 2
 /** What a correction needs left in the run (an Opus page and its critique); below, the best version so far is kept. */
 export const ROUND_RESERVE_MICROS = 650_000
 export const CRITIQUE_RESERVE_MICROS = 80_000
+export const PAGESPEED_TIMEOUT_MS = 150_000
 
 export interface DesignerDeps extends ModelDeps {
   /** The worker's browser (worker/browser.ts); tests give a fake. */
@@ -119,14 +120,16 @@ async function writeBrief(job: HandlerContext, site: Site, deps: DesignerDeps): 
   const address = [company.address, [company.postalCode, company.city].filter(Boolean).join(" ")].filter(Boolean).join(", ") || null
   const pages = (studio.site?.pages ?? []).map((p, i) => ({ id: `P${i + 1}`, url: p.url, title: p.title, text: p.text.slice(0, 4_000) }))
   const auditList = report?.success ? auditPoints(report.data.findings) : []
-  const fonts = allowedFonts(studio.fonts)
+  // Only the site's families a page can host are offered; the others would fall back to system fonts.
+  const siteFonts = await googleServes(studio.fonts, deps.fetchImpl)
+  const fonts = allowedFonts(siteFonts)
   const collected: Collected = {
     url: studio.site?.finalUrl ?? website,
     reachable: studio.site?.reachable ?? false,
     failure: studio.site?.failure ?? null,
     pages: pages.map((p) => ({ id: p.id, url: p.url, title: p.title })),
     colors: colors.slice(0, 8).map((c) => ({ hex: c.hex, source: c.source, weight: Math.round(c.weight) })),
-    fonts: studio.fonts,
+    fonts: siteFonts,
     images: prepared.map((p) => ({ name: p.name, kind: p.name === "logo" ? ("logo" as const) : ("image" as const), width: p.width, height: p.height, alt: source.get(p.name)?.alt ?? null, sourceUrl: source.get(p.name)?.sourceUrl ?? "" })),
     contact: { phone: company.phone ?? sitePhone, email: company.email ?? siteEmail, address, booking: studio.booking },
     facts,
@@ -272,10 +275,12 @@ async function critiqueOf(ctx: RunContext, system: string, page: BuiltPage, rend
       },
       deps
     )
-    return { critique: output ?? null, note: output ? null : "La critique visuelle n’a pas rendu de grille lisible." }
+    return { critique: output ? normalizeCritique(output) : null, note: output ? null : "Critique visuelle non faite : le modèle n’a pas rendu de grille lisible." }
   } catch (error) {
     if (isRunOver(error)) throw error
-    return { critique: null, note: `Critique visuelle non faite : ${error instanceof Error ? error.message : "erreur"}` }
+    // A refused or unreadable answer is the model's: the page is still published, checked by axe-core and the markup.
+    const unreadable = error instanceof LeadError && (error.code === "unavailable" || error.code === "invalid")
+    return { critique: null, note: unreadable ? "Critique visuelle non faite : le modèle n’a pas rendu de grille lisible." : `Critique visuelle non faite : ${error instanceof Error ? error.message : "erreur"}` }
   }
 }
 
@@ -307,7 +312,8 @@ async function measure(ctx: RunContext, site: Pick<Site, "id" | "auditId">, numb
   try {
     // A first request wakes the function serving previews: PageSpeed then measures the page, not a cold start.
     await (deps.fetchImpl ?? fetch)(url, { signal: AbortSignal.timeout(15_000) }).catch(() => null)
-    const psi = deps.pagespeed ?? ((u: string, s: Strategy) => runPageSpeed(u, s))
+    // Lighthouse on Google's side often needs more than a minute for a whole page.
+    const psi = deps.pagespeed ?? ((u: string, s: Strategy) => runPageSpeed(u, s, { timeoutMs: PAGESPEED_TIMEOUT_MS }))
     const [mobile, desktop] = await Promise.all([psi(url, "mobile"), psi(url, "desktop")])
     scores = {
       measuredAt: new Date().toISOString(),
@@ -344,7 +350,8 @@ async function buildVersion(job: HandlerContext, site: Site, input: Exclude<Desi
   const theme: PageTheme = { primary: brief.palette.primary, accent: brief.palette.accent, heading: brief.fonts.heading, body: brief.fonts.body }
   const pageCtx: PageContext = {
     company: site.companyName,
-    brief,
+    // A point that speaks to the team (written before « À vérifier » existed, or by hand) never reaches the page.
+    brief: { ...brief, sections: brief.sections.map((s) => ({ ...s, points: s.points.filter((p) => !TEAM_NOTE.test(p.text)) })) },
     contact,
     assets: assets.filter((a) => a.kind !== "font").map((a) => ({ name: a.name, kind: a.kind, width: a.width, height: a.height, label: brief.images.find((i) => i.name === a.name)?.alt ?? a.label })),
     fonts: { heading: brief.fonts.heading, body: brief.fonts.body },
@@ -377,7 +384,9 @@ async function buildVersion(job: HandlerContext, site: Site, input: Exclude<Desi
       const roundNotes = note ? [note] : []
       candidates.push({ page, rendered, checks: checksOf(page, rendered, critique, round, roundNotes), model: answer.model, round })
       const last = candidates[candidates.length - 1]
-      if (last.checks.passed || round >= MAX_ROUNDS || !critique) break
+      // Without a critique, a correction still runs for what the checks themselves found (a note for the team, axe…).
+      const fixable = !!critique || page.markup.placeholders.length > 0 || page.markup.h1 !== 1 || (rendered.axe?.critical ?? 0) + (rendered.axe?.serious ?? 0) > 0
+      if (last.checks.passed || round >= MAX_ROUNDS || !fixable) break
       if ((await remainingMicros(ctx.id)) < ROUND_RESERVE_MICROS) {
         notes.push("Correction non faite : le plafond de l’exécution est presque atteint. La meilleure version est publiée.")
         break

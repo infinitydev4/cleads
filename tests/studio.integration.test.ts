@@ -64,7 +64,7 @@ const BRIEF = {
   sections: [
     { kind: "hero", title: "Votre plombier à Angers", points: [{ text: "Plombier chauffagiste depuis 1998", evidence: ["P1"] }] },
     { kind: "services", title: "Nos services", points: [{ text: "Dépannage", evidence: ["P1"] }, { text: "Un service inventé", evidence: ["Z9"] }] },
-    { kind: "proof", title: "Ils nous font confiance", points: [{ text: "4,7/5 sur 32 avis Google", evidence: ["F5"] }] },
+    { kind: "proof", title: "Ils nous font confiance", points: [{ text: "4,7/5 sur 32 avis Google", evidence: ["F5"] }, { text: "Avis détaillés : à fournir par l'atelier.", evidence: ["F5"] }] },
     { kind: "contact", title: "Contact", points: [{ text: "02 41 00 11 22", evidence: ["F4"] }] },
   ],
   palette: { primary: "#E30613", accent: "#1d4ed8", why: "Le rouge du logo" },
@@ -75,6 +75,7 @@ const BRIEF = {
   ],
   cta: { kind: "phone", label: "Appeler l'atelier" },
   changes: [{ text: "Le numéro visible dès le premier écran", evidence: ["A2"] }, { text: "Sans source", evidence: [] }],
+  toCheck: ["Horaires d'ouverture de l'atelier"],
 }
 
 const PAGE = (variant: string) => `Voici la page.
@@ -106,7 +107,7 @@ suite("Studio Web (database)", () => {
   let critiques: unknown[] = []
   let pages: { text: string; finish?: "length" }[] = []
   let rendered: string[] = []
-  let probed: { status: number; robots: boolean; pixel: boolean }[] = []
+  let probed: { status: number; robots: boolean; pixel: boolean; scripts: boolean }[] = []
 
   beforeAll(async () => {
     process.env.DATABASE_URL = url
@@ -197,7 +198,7 @@ suite("Studio Web (database)", () => {
   const pagespeed = async (pageUrl: string, strategy: "mobile" | "desktop") => {
     const res = await preview.servePage(new URL(pageUrl).pathname.slice(1))
     const body = await res.text()
-    probed.push({ status: res.status, robots: body.includes('name="robots"'), pixel: body.includes("/vu") })
+    probed.push({ status: res.status, robots: body.includes('name="robots"'), pixel: body.includes("/vu"), scripts: (res.headers.get("content-security-policy") ?? "").includes("allow-scripts") })
     return { ok: true as const, strategy, finalUrl: pageUrl, scores: { performance: strategy === "mobile" ? 96 : 100, accessibility: 100, bestPractices: 100, seo: 100 }, lab: { lcpMs: 1200, cls: 0, tbtMs: 0, fcpMs: 800 }, field: null, viewport: true, screenshot: null, reportUrl: "" }
   }
 
@@ -255,6 +256,10 @@ suite("Studio Web (database)", () => {
     // Only what cites something known stays; the colour is normalised; the logo's colour and the site's font are offered.
     expect(site.brief!.sections[1].points.map((p) => p.text)).toEqual(["Dépannage"])
     expect(site.brief!.changes).toEqual([{ text: "Le numéro visible dès le premier écran", evidence: ["A2"] }])
+    // A note for the team never reaches the page: it joins what to check with the prospect.
+    expect(site.brief!.sections[2].points.map((p) => p.text)).toEqual(["4,7/5 sur 32 avis Google"])
+    expect(site.brief!.toCheck).toEqual(["Horaires d'ouverture de l'atelier", "Avis détaillés : à fournir par l'atelier."])
+    expect(site.collected!.notes.join(" ")).toContain("déplacé dans « À vérifier »")
     expect(site.brief!.palette.primary).toBe("#e30613")
     expect(site.collected!.colors[0].hex).toBe("#e30613")
     expect(site.collected!.fonts).toContain("Montserrat")
@@ -305,10 +310,11 @@ suite("Studio Web (database)", () => {
     expect(row.html).toContain("text-slate-900")
     expect(v.checks.sanitizer.removed).toMatchObject({ "<script>": 1, "image extérieure": 1 })
 
-    // PageSpeed read the page through its own token, without the beacon or noindex; the token is then forgotten.
+    // PageSpeed read the page through its own token, without the beacon or noindex, Lighthouse allowed to run its scripts;
+    // the token is then forgotten.
     expect(probed).toEqual([
-      { status: 200, robots: false, pixel: false },
-      { status: 200, robots: false, pixel: false },
+      { status: 200, robots: false, pixel: false, scripts: true },
+      { status: 200, robots: false, pixel: false, scripts: true },
     ])
     expect(row.probeHash).toBeNull()
     expect(v.scores).toMatchObject({ before: { mobile: 34, desktop: 71 }, mobile: { performance: 96 }, desktop: { performance: 100 } })
@@ -319,6 +325,40 @@ suite("Studio Web (database)", () => {
     expect(run.costMicros).toBeLessThanOrEqual(2_000_000)
     expect(row.costMicros).toBe(run.costMicros)
     expect(await prisma.activity.count({ where: { leadId, body: "Maquette du Studio Web prête (version 1)", actorKind: "AGENT" } })).toBe(1)
+  })
+
+  it("never gives the page a point that speaks to the team, even one written in the brief by hand", async () => {
+    await audit()
+    const { siteId } = await studio.startStudio(u.sdr, leadId)
+    await drain()
+    const brief = (await studio.getSite(u.sdr, siteId)).brief!
+    brief.sections[1].points.push({ text: "Tarifs : à confirmer avec l'atelier.", evidence: [] })
+    await studio.updateBrief(u.sdr, siteId, brief)
+    pages = [{ text: PAGE("text-slate-900") }]
+    await studio.requestBuild(u.sdr, siteId)
+    await drain()
+    const page = prompts.find((p) => p.kind === "page")!.text
+    expect(page).toContain("Dépannage")
+    expect(page).not.toContain("Tarifs : à confirmer")
+  })
+
+  it("corrects a note for the team left on the page even when the critique is unreadable", async () => {
+    await audit()
+    const { siteId } = await studio.startStudio(u.sdr, leadId)
+    await drain()
+    critiques = [{ scores: "illisible" }]
+    pages = [{ text: PAGE("text-slate-900").replace("Dépannage depuis 1998.", "Dépannage depuis 1998. Horaires : à confirmer avec l'atelier.") }, { text: PAGE("text-slate-900") }]
+    await studio.requestBuild(u.sdr, siteId)
+    await drain()
+    expect(prompts.map((p) => p.kind)).toEqual(["brief", "page", "critique", "fix", "critique"])
+    expect(prompts.find((p) => p.kind === "fix")!.text).toContain("« Horaires : à confirmer avec l'atelier. »")
+    const v = (await studio.getSite(u.sdr, siteId)).versions[0]
+    expect(v.checks).toMatchObject({ rounds: 1, passed: true, markup: { placeholders: [] } })
+    const row = await prisma.generatedSiteVersion.findUniqueOrThrow({ where: { siteId_number: { siteId, number: 1 } } })
+    expect(row.html).not.toContain("à confirmer")
+    // What the model answered is kept with the failed step, to see why afterwards.
+    const failed = await prisma.agentStep.findFirstOrThrow({ where: { name: "critique_page", output: { path: ["error"], string_contains: "No object generated" } } })
+    expect(JSON.stringify(failed.output)).toContain("illisible")
   })
 
   it("does not publish a page cut short, and says why", async () => {

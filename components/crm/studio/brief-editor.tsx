@@ -78,7 +78,7 @@ export function BriefEditor({ site, onChanged }: { site: SiteView; onChanged: ()
   }
 
   /** The brief with the sections' text turned back into points. */
-  const current = (): Brief => ({ ...brief, sections: brief.sections.map((s, i) => ({ ...s, points: fromLines(lines[i] ?? "", s.points) })) })
+  const current = (): Brief => ({ ...brief, toCheck: brief.toCheck.map((l) => l.trim()).filter((l) => l.length >= 2), sections: brief.sections.map((s, i) => ({ ...s, points: fromLines(lines[i] ?? "", s.points) })) })
 
   async function save(): Promise<boolean> {
     try {
@@ -125,22 +125,22 @@ export function BriefEditor({ site, onChanged }: { site: SiteView; onChanged: ()
     >
       <fieldset disabled={!editable} className="space-y-4">
         <legend className="mb-2 text-base font-bold">Promesse</legend>
-        <FormField label="Titre du premier écran" required hint={`${brief.headline.length} / 90 caractères`}>
-          <Input value={brief.headline} onChange={(e) => set("headline", e.target.value)} maxLength={90} />
+        <FormField label="Titre du premier écran" required hint={`${brief.headline.length} caractères : 90 au plus se lisent d’un coup d’œil.`}>
+          <Input value={brief.headline} onChange={(e) => set("headline", e.target.value)} maxLength={120} />
         </FormField>
         <FormField label="Sous-titre" hint="Le métier, la zone et la preuve la plus forte.">
-          <Textarea value={brief.subheadline} onChange={(e) => set("subheadline", e.target.value)} maxLength={220} rows={2} />
+          <Textarea value={brief.subheadline} onChange={(e) => set("subheadline", e.target.value)} maxLength={300} rows={2} />
         </FormField>
         <div className="grid gap-4 sm:grid-cols-2">
           <FormField label="Positionnement" required>
-            <Textarea value={brief.positioning} onChange={(e) => set("positioning", e.target.value)} maxLength={300} rows={3} />
+            <Textarea value={brief.positioning} onChange={(e) => set("positioning", e.target.value)} maxLength={400} rows={3} />
           </FormField>
           <div className="space-y-4">
             <FormField label="Public">
-              <Input value={brief.audience} onChange={(e) => set("audience", e.target.value)} maxLength={200} />
+              <Input value={brief.audience} onChange={(e) => set("audience", e.target.value)} maxLength={240} />
             </FormField>
             <FormField label="Ton">
-              <Input value={brief.tone} onChange={(e) => set("tone", e.target.value)} maxLength={160} />
+              <Input value={brief.tone} onChange={(e) => set("tone", e.target.value)} maxLength={200} />
             </FormField>
           </div>
         </div>
@@ -174,7 +174,7 @@ export function BriefEditor({ site, onChanged }: { site: SiteView; onChanged: ()
                     )}
                   </FormField>
                   <FormField label="Titre" className="min-w-40 flex-1">
-                    <Input value={s.title} onChange={(e) => setSection(i, { title: e.target.value })} maxLength={80} />
+                    <Input value={s.title} onChange={(e) => setSection(i, { title: e.target.value })} maxLength={100} />
                   </FormField>
                   <div className="flex gap-1">
                     <Button type="button" variant="ghost" size="icon" onClick={() => move(i, -1)} disabled={i === 0} aria-label={`Monter la section ${i + 1}`}>
@@ -308,7 +308,7 @@ export function BriefEditor({ site, onChanged }: { site: SiteView; onChanged: ()
                             ))}
                           </SelectContent>
                         </Select>
-                        <Input value={chosen.alt} onChange={(e) => set("images", brief.images.map((b) => (b.name === img.name ? { ...b, alt: e.target.value } : b)))} maxLength={140} placeholder="Texte alternatif" aria-label={`Texte alternatif de ${img.name}`} className="h-8 text-xs" />
+                        <Input value={chosen.alt} onChange={(e) => set("images", brief.images.map((b) => (b.name === img.name ? { ...b, alt: e.target.value } : b)))} maxLength={200} placeholder="Texte alternatif" aria-label={`Texte alternatif de ${img.name}`} className="h-8 text-xs" />
                       </>
                     )}
                   </div>
@@ -338,7 +338,7 @@ export function BriefEditor({ site, onChanged }: { site: SiteView; onChanged: ()
           )}
         </FormField>
         <FormField label="Libellé" hint="Un verbe d’action : « Appeler l’atelier », « Demander un devis »…">
-          <Input value={brief.cta.label} onChange={(e) => set("cta", { ...brief.cta, label: e.target.value })} maxLength={40} />
+          <Input value={brief.cta.label} onChange={(e) => set("cta", { ...brief.cta, label: e.target.value })} maxLength={60} />
         </FormField>
       </fieldset>
 
@@ -349,6 +349,23 @@ export function BriefEditor({ site, onChanged }: { site: SiteView; onChanged: ()
             value={brief.changes.map((c) => c.text).join("\n")}
             onChange={(e) => set("changes", fromLines(e.target.value, brief.changes).slice(0, 6))}
             rows={Math.min(Math.max(brief.changes.length, 2), 6)}
+          />
+        </FormField>
+        <FormField label="À vérifier avec le prospect" hint="Pour l’équipe, jamais affiché sur la page : ce qui manque ou reste à confirmer. Un point par ligne.">
+          <Textarea
+            value={brief.toCheck.join("\n")}
+            onChange={(e) =>
+              set(
+                "toCheck",
+                e.target.value
+                  .split("\n")
+                  .map((l) => l.slice(0, 240))
+                  .slice(0, 12)
+              )
+            }
+            onBlur={() => set("toCheck", brief.toCheck.map((l) => l.trim()).filter((l) => l.length >= 2))}
+            rows={Math.min(Math.max(brief.toCheck.length, 2), 6)}
+            placeholder="Ex. : horaires d’ouverture, adresse email du cabinet."
           />
         </FormField>
         <FormField label="Consignes" hint="Ce que vous voulez voir, ou éviter, sur cette page (600 caractères).">

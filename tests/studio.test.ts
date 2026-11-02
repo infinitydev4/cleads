@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { assembleDocument, staticChecks, withAssets, VISIT_MARKER } from "@/features/studio/document"
-import { cssFamilies, fontFaceCss, googleFamilies, latinFaces } from "@/features/studio/fonts"
+import { cleanBrief } from "@/features/studio/brief"
+import { cssFamilies, fontFaceCss, googleFamilies, googleServes, latinFaces } from "@/features/studio/fonts"
+import { normalizeCritique, type BriefOutput } from "@/features/studio/schemas"
 import { brandColors, contrast, cssColors, parseColor, readableOn, scale, textSafe, toHex, WHITE } from "@/features/studio/palette"
 import { extractBody, safeHref, sanitizeBody } from "@/features/studio/sanitize"
 import { compileCss } from "@/features/studio/tailwind"
@@ -51,6 +53,13 @@ describe("sanitizer (E23)", () => {
     expect(html).not.toMatch(/javascript/i)
     expect(html).toContain('<a href="https://ok.fr/" target="_blank" rel="noopener noreferrer">z</a>')
     expect(report.links).toEqual({ tel: 1, mailto: 0, https: 1, anchors: 0 })
+  })
+
+  it("decides how images load itself, without reporting the model's own attributes as removed", () => {
+    const { html, report } = clean(`<img src="asset:image-1" alt="Chantier" loading="eager" decoding="sync" fetchpriority="low"><img src="asset:image-2" alt="Cuisine" loading="eager">`)
+    expect(report.removed).toEqual({})
+    expect(html).toContain('fetchpriority="high"')
+    expect(html).toContain('src="cleads-asset:image-2" alt="Cuisine" width="800" height="600" loading="lazy"')
   })
 
   it("keeps only the site's own images, with their real size, the first one loaded first", () => {
@@ -116,9 +125,24 @@ describe("palette (E23)", () => {
 describe("fonts (E23)", () => {
   it("finds the families a site uses", () => {
     expect(cssFamilies("body{font-family:'Montserrat',sans-serif}h1{font-family:Montserrat}p{font-family:Arial}code{font-family:var(--mono)}")).toEqual(["Montserrat"])
+    // A Windows font and an icon font are never offered (the first real mock-up chose « Microsoft Sans Serif »).
+    expect(cssFamilies(".a{font-family:'microsoft sans serif'}.i{font-family:FontAwesome}.j{font-family:'Font Awesome 6 Free'}.b{font-family:Lato}")).toEqual(["Lato"])
     expect(googleFamilies("https://fonts.googleapis.com/css?family=Open+Sans:400,700|Lato")).toEqual(["Open Sans", "Lato"])
     expect(googleFamilies("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter&display=swap")).toEqual(["Playfair Display", "Inter"])
     expect(googleFamilies("https://evil.example/css?family=Inter")).toEqual([])
+  })
+
+  it("offers a site's family only when Google Fonts serves it, under Google's own name", async () => {
+    const asked: string[] = []
+    const fetchImpl = (async (input: string | URL) => {
+      const family = new URL(String(input)).searchParams.get("family")!
+      asked.push(family)
+      if (family !== "Open+Sans" && family !== "Open Sans") return new Response("Bad Request", { status: 400 })
+      return new Response("/* latin */\n@font-face {\n  font-family: 'Open Sans';\n  font-style: normal;\n  font-weight: 400;\n  src: url(https://fonts.gstatic.com/s/opensans/v1/l.woff2) format('woff2');\n}", { status: 200 })
+    }) as typeof fetch
+    expect(await googleServes(["microsoft sans serif", "open sans", "inter"], fetchImpl)).toEqual(["Open Sans", "Inter"])
+    // A family of the Studio's list is known: no request.
+    expect(asked.some((a) => /inter/i.test(a))).toBe(false)
   })
 
   it("keeps the latin faces of a Google Fonts stylesheet and writes them for our host", () => {
@@ -149,6 +173,13 @@ describe("page CSS and document (E23)", () => {
     expect(doc).toContain(VISIT_MARKER)
     expect(withAssets(doc, (n) => `/tok/a/${n}`)).toContain('src="/tok/a/logo"')
     expect(withAssets(doc, () => null)).toContain('src="data:,"')
+  })
+
+  it("finds the notes for the team a page must never show, with their sentence", () => {
+    const checks = staticChecks("<h1>Projets</h1><p>Photos du cabinet.</p><figcaption>Nom, lieu et programme du projet : à fournir par le cabinet.</figcaption><p>Horaires à confirmer avec le cabinet.</p>", null)
+    expect(checks.placeholders).toEqual(["Nom, lieu et programme du projet : à fournir par le cabinet."])
+    expect(staticChecks("<p>Une salle de bains à rénover, un devis à demander : appelez-nous.</p>", null).placeholders).toHaveLength(1)
+    expect(staticChecks("<p>Rénovation à Nantes, maîtrise d'oeuvre à Orvault.</p>", null).placeholders).toEqual([])
   })
 
   it("checks the markup for headings, alternatives, contact links and placeholders", () => {
@@ -207,3 +238,59 @@ describe("preview host and links (E23)", () => {
     expect(previewHeaders()["Referrer-Policy"]).toBe("no-referrer")
   })
 })
+
+describe("lessons of the first real mock-up (E23)", () => {
+  it("keeps a critique whatever its scale and length, so a long defect never costs the whole answer", () => {
+    const long = "La troisième carte de la galerie affiche une grande zone blanche vide : l’image ne s’est pas chargée. ".repeat(8)
+    const c = normalizeCritique({
+      scores: { hierarchy: 8, readability: 7.5, contrast: 6, mobile: 10, brand: 9, conversion: 3 },
+      issues: Array.from({ length: 11 }, () => ({ severity: "high" as const, criterion: "conversion" as const, problem: long, fix: long })),
+      summary: long,
+    })
+    expect(c.scores).toEqual({ hierarchy: 4, readability: 4, contrast: 3, mobile: 5, brand: 5, conversion: 2 })
+    expect(c.issues).toHaveLength(8)
+    expect(c.issues[0].problem.length).toBeLessThanOrEqual(400)
+    expect(c.issues[0].problem.endsWith("…")).toBe(true)
+    expect(normalizeCritique({ scores: { hierarchy: 4.4, readability: 0, contrast: 3, mobile: 5, brand: 2.6, conversion: 4 }, issues: [], summary: "ok" }).scores).toMatchObject({ hierarchy: 4, readability: 1, brand: 3 })
+  })
+
+  it("moves the notes for the team out of the page's points, and clips what is too long", () => {
+    const out: BriefOutput = {
+      positioning: "Cabinet de maîtrise d'oeuvre à Nantes : rénovation et construction.",
+      audience: "Particuliers",
+      tone: "Sobre",
+      headline: "Votre projet de rénovation ou de construction, piloté de bout en bout par un maître d'oeuvre installé à Nantes depuis des années",
+      subheadline: "Bureau à Orvault.",
+      sections: [
+        { kind: "hero", title: "Votre projet", points: [{ text: "Maîtrise d'oeuvre à Nantes.", evidence: ["P1"] }] },
+        { kind: "gallery", title: "Nos réalisations", points: [{ text: "Nom, lieu et programme de chaque projet : à fournir par le cabinet, rien n'est inventé.", evidence: ["A10"] }, { text: "Photos du site actuel.", evidence: ["P1"] }] },
+        { kind: "area", title: "Où nous trouver", points: [{ text: "Horaires : non fournis, à vérifier avec le cabinet avant publication.", evidence: [] }, { text: "2 rue René Panhard, Orvault.", evidence: ["F3"] }] },
+      ],
+      palette: { primary: "#39C", accent: "pas une couleur", why: "Le bleu du site" },
+      fonts: { heading: "Inter", body: "Inter", why: "" },
+      images: [],
+      cta: { kind: "phone", label: "Appeler" },
+      changes: [{ text: "Un numéro visible dès le premier écran.", evidence: ["A8"] }],
+      toCheck: ["Adresse email du cabinet"],
+    }
+    const { brief, notes } = cleanBrief(out, { ids: new Set(["P1", "F3", "A8", "A10"]), assets: new Set(), fonts: ["Inter"], hasBooking: false, hasPhone: true, hasEmail: false })
+    expect(brief.sections.flatMap((s) => s.points.map((p) => p.text))).toEqual(["Maîtrise d'oeuvre à Nantes.", "Photos du site actuel.", "2 rue René Panhard, Orvault."])
+    expect(brief.toCheck).toEqual(["Adresse email du cabinet", "Nom, lieu et programme de chaque projet : à fournir par le cabinet, rien n'est inventé.", "Horaires : non fournis, à vérifier avec le cabinet avant publication."])
+    expect(notes.join(" ")).toContain("2 points s’adressaient à l’équipe")
+    expect(brief.headline.length).toBeLessThanOrEqual(120)
+    expect(brief.headline.endsWith("…")).toBe(true)
+    expect(brief.palette).toMatchObject({ primary: "#3399cc", accent: null })
+  })
+
+  it("lets PageSpeed's copy run Lighthouse, and nothing else", async () => {
+    const { previewHeaders } = await import("@/features/studio/preview")
+    const shared = previewHeaders("https://cleads.fr")["Content-Security-Policy"]
+    const measured = previewHeaders("https://cleads.fr", { measure: true })["Content-Security-Policy"]
+    expect(shared).not.toContain("allow-scripts")
+    expect(measured).toMatch(/^sandbox allow-scripts /)
+    // The page's own scripts stay refused, and its origin opaque.
+    expect(measured).toContain("default-src 'none'")
+    expect(measured).not.toMatch(/allow-same-origin|script-src|unsafe-inline'[^;]*script/)
+  })
+})
+
