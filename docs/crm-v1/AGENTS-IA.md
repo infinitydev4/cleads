@@ -1,6 +1,8 @@
 # Couche agentique IA du CRM Cleads
 
-> Architecture de référence décidée le 2 novembre 2026 (décisions D13 à D27 de [PLAN.md](PLAN.md)). Elle sert de spécification aux epics E17 à E27. **Rien n'est encore implémenté** : ce document dit ce qui sera construit, et comment.
+> Architecture de référence décidée le 2 novembre 2026 (décisions D13 à D27 de [PLAN.md](PLAN.md)). Elle sert de spécification aux epics E17 à E27.
+>
+> **État** : le socle (E17) est implémenté, avec `lib/ai/`, `features/ai/` et Réglages › IA ; les sections 4 à 12 décrivent ce qui existe. Le reste (worker, agents métier, Studio, copilote, QG) est la spécification des epics E18 à E27.
 
 ## 1. Objet
 
@@ -66,6 +68,10 @@ apercu.cleads.fr ──► proxy.ts ──► route d'aperçu (HTML depuis S3, C
 - **Intégration** : le CRM est en TypeScript (Next 16, React 19, zod) et l'AI SDK s'y intègre sans couche de traduction. Il parle aux principaux fournisseurs avec la même interface.
 - **Production** : il apporte ce qu'il faut pour des agents en production : validation humaine des outils, MCP, streaming vers React.
 - **Passerelle** : elle permet de changer de modèle par un simple identifiant (`anthropic/claude-sonnet-5.5`, `typesafe-ai/jev`…) et de définir des secours. Elle fonctionne depuis Netlify comme depuis le VPS.
+- **Options envoyées à chaque appel** (`lib/ai/gateway.ts`) :
+  - les modèles de secours ;
+  - `disallowPromptTraining: true` : la passerelle n'utilise que des fournisseurs qui n'entraînent pas leurs modèles sur nos données (D16) ;
+  - pour ses rapports de dépense, l'identifiant opaque de la personne et une étiquette `agent:<id>`, jamais un nom ni un email.
 
 **Écartés.**
 - **LangChain / LangGraph** : couche lourde, pensée Python d'abord, intégration moins directe au streaming React. Ce que LangGraph apporte (reprise, humain dans la boucle) est couvert par `pg-boss`, nos tables d'exécution et `toolApproval`.
@@ -78,7 +84,7 @@ apercu.cleads.fr ──► proxy.ts ──► route d'aperçu (HTML depuis S3, C
 
 | Rôle | Par défaut | Secours | Sert à |
 |---|---|---|---|
-| `decision` | Jev `typesafe-ai/jev` | Claude Haiku 5.5, puis un humain | pertinence d'un import, classement d'une réponse, prochaine action, aiguillage du copilote |
+| `decision` | Jev `typesafe-ai/jev` | GPT-6 Luna Decisions, puis un humain | pertinence d'un import, classement d'une réponse, prochaine action, aiguillage du copilote |
 | `fast` | Claude Haiku 5.5 | GPT-6 Luna, Mistral Small | extraction du contenu des pages, résumés, petites vérifications |
 | `writer` | Claude Sonnet 5.5 | GPT-6.1 Sol, Mistral Large 4 | analyse d'audit et des captures, offres, emails, copilote |
 | `designer` | Claude Opus 5.5 | Gemini 4 Argon, GPT-6 Astra | Studio Web, audit approfondi à la demande |
@@ -99,20 +105,24 @@ Prix relevés sur la passerelle le 2 novembre 2026, par million de jetons (entr�
 - **Versions fixées** : les identifiants de modèle sont fixés, sans alias « dernier ». Une mise à jour chez le fournisseur ne change donc pas la qualité sans évaluation.
 - **Cache** : les consignes des agents et les skills sont placés en tête des requêtes, pour profiter du cache de prompts des fournisseurs.
 
-**Décisions (Jev).** `lib/ai/decide.ts` enveloppe `experimental_decide`. Chaque question déclare ses réponses possibles et deux seuils, `auto` et `human` :
-- au-dessus d'`auto`, la suggestion s'applique dans le CRM, jamais sous forme d'action externe ;
-- entre les deux seuils, la passerelle relance la décision sur le modèle de secours (bascule conditionnelle) ;
-- sous `human`, la fiche va dans une file « À classer ».
+**Décisions (Jev).** `decideForRun` (`features/ai/calls.ts`) appelle `experimental_decide`, avec les règles de `lib/ai/decide.ts`.
+- **Confiance** : elle est mesurée sur la réponse retenue. C'est la probabilité de l'option choisie, ou du niveau le plus probable d'un score, ou la plus grande de P(oui) et P(non).
+- **Bascule conditionnelle** : le premier secours, GPT-6 Luna Decisions, relance automatiquement toute réponse dont la confiance est sous le seuil `auto`. La passerelle exige ici un modèle de décision.
+- **Seuils**, appliqués ensuite :
+  - au-dessus d'`auto`, la suggestion s'applique dans le CRM, jamais sous forme d'action externe ;
+  - entre les deux, elle est proposée à confirmer ;
+  - sous `human`, ou sans probabilité, la fiche va dans une file « À classer ».
 
-Les seuils partent prudents (par exemple 0,85 et 0,60), puis sont calibrés sur le jeu d'évaluation. Jev accepte un état en texte ou en JSON, pas d'image. L'API est encore marquée expérimentale : elle est isolée dans ce seul fichier.
+Les seuils partent prudents (0,85 et 0,60), puis sont calibrés sur le jeu d'évaluation. Jev accepte un état en texte ou en JSON, pas d'image. L'API est encore marquée expérimentale : elle n'est appelée que depuis `features/ai/calls.ts`.
 
 ## 6. Budget et coûts (D22)
 
-- **Plafond de l'espace** : moins de 100 € par mois, réglable par le propriétaire. Des alertes partent à 50 % et à 80 % (notification et email au propriétaire). Au-delà du plafond, les fonctions IA se mettent en pause jusqu'au mois suivant ou jusqu'à une hausse du plafond.
+- **Plafond de l'espace** : 100 € par mois par défaut, réglable par le propriétaire. Les propriétaires reçoivent une notification dans le CRM à 50 %, 80 % et 100 %, une fois par seuil et par mois. Au-delà du plafond, les fonctions IA se mettent en pause jusqu'au mois suivant ou jusqu'à une hausse du plafond.
 - **Quota quotidien par personne** (D24), à l'intérieur du plafond global.
 - **Plafond par exécution** : audit ≤ 0,30 €, maquette ≤ 2 €, brouillon ≤ 0,05 €. Une exécution qui l'atteint s'arrête proprement.
 - **Réservation verrouillée** : avant de démarrer, une exécution réserve son plafond, sous un verrou de ligne comme les plafonds d'envoi d'E9. Le coût réel remplace la réservation à la fin. Des exécutions simultanées ne peuvent donc pas dépasser le plafond.
-- **Coût réel** : il est calculé à partir de l'usage renvoyé par chaque appel et des prix lus sur la passerelle (mis à jour chaque jour). Il est compté en dollars et affiché en euros, au taux réglé dans `AiSetting`.
+- **Appels bornés** : avant chaque appel, la sortie maximale est calculée pour que le pire cas tienne dans ce qu'il reste à l'exécution. Ce pire cas se calcule au prix le plus cher parmi le modèle et ses secours, entrée estimée comprise. Si même une réponse courte ne tient pas, l'exécution s'arrête (`BUDGET_EXCEEDED`) sans appeler le modèle.
+- **Coût réel** : il est calculé à partir de l'usage renvoyé par chaque appel et des prix lus sur la passerelle (liste publique relue toutes les 12 heures, instantané intégré en secours). Il est converti en micro-euros au taux réglé dans `AiSetting` au moment de l'appel. Chaque étape garde l'identifiant de génération de la passerelle, pour rapprocher plus tard ce coût estimé du coût facturé.
 - **Économies** :
   - audit réutilisé 30 jours par domaine ;
   - cache des prompts ;
@@ -143,17 +153,16 @@ Exemple de mois (ordre de grandeur, à mesurer en E20 et E23) :
 | Stratège marché | Stratège growth : secteurs, douleurs par métier, offre phare, angle | `writer` | `list_offers`, `campaign_metrics`, MCP `list_sectors`, `propose_campaign`, `launch_search` | campagne brouillon, recherche | le lancement |
 | Analyste qualification | — | `decision` | `score_import`, `next_action` | pertinence, probabilité | sous le seuil |
 
-**Définition dans le code**, versionnée et testée (esquisse ; l'API exacte est fixée en E17) :
+**Définition dans le code** (`features/ai/agents.ts`, depuis E17), versionnée et testée. E17 fixe l'identité de chaque agent, son rôle de modèle et ses limites ; chaque epic métier y ajoutera ses consignes (`persona`), ses outils et ses skills :
 ```ts
-export const auditor = defineAgent({
+auditor: defineAgent({
   id: "auditor",
-  persona: "Consultant senior en acquisition locale et en performance web…",
+  label: "Auditeur digital",
+  mission: "Audite le site et la présence en ligne d'un prospect, chaque constat avec sa preuve.",
   modelRole: "writer",
-  tools: ["fetch_page", "pagespeed", "screenshot", "detect_stack", "find_socials", "dirigeants", "save_audit"],
-  skills: { always: ["audit-ux-conversion"], onDemand: ["audit-seo-local", "audit-geo-site", "presence-sociale"] },
-  limits: { maxSteps: 12, maxCostEur: 0.3 },
-  output: ProspectAuditSchema,
-})
+  epic: "E20",
+  limits: { maxSteps: 12, maxCostEur: 0.3 }, // le plafond réservé au démarrage d'une exécution
+}),
 ```
 
 **Surcouche éditable** (`AgentDefinition`) : consignes ajoutées, modèle (parmi la liste blanche), skills actifs, limites. Chaque modification crée une version et est journalisée.
@@ -276,6 +285,11 @@ Le contenu d'un site audité n'est pas stocké en entier. On ne garde que les ex
 | `studio:generate` | ✓ | ✓ | ✓ | ✓ | — | fiches que la personne peut modifier |
 
 Peut valider l'action d'un agent : la personne qui a lancé l'exécution, ou un manager ou le propriétaire. Dans tous les cas, il faut avoir soi-même le droit de faire l'action (par exemple `email:send` sur sa boîte).
+
+**Réglages › IA** (`/app/settings/ai`) :
+- **Accès** : la page est visible avec `ai:use`. Le propriétaire la modifie (`ai:manage`) ; les autres la lisent.
+- **Contenu** : la consommation du mois et le quota du jour de la personne, le détail par personne (propriétaire et manager seulement), les validations en attente et les exécutions récentes.
+- **Routes** : `GET` et `PUT /api/ai/settings`, `POST /api/ai/approvals/[id]` (approuver ou refuser), `POST /api/ai/runs/[id]/cancel`.
 
 ## 13. Audit et enrichissement (E20)
 

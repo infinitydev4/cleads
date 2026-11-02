@@ -142,7 +142,7 @@ Entonnoir par semaine : prospects importés → contactés → réponses → qua
 | `SDR` | Prospection et qualification | Ses prospects et le pool non attribué |
 | `CLOSER` | Conversion | Ses rendez-vous et ses opportunités ; lecture des fiches liées |
 | `VIEWER` | Associé, client en lecture | Lecture seule d'un périmètre choisi |
-| `AGENT` *(E17)* | Compte de service des exécutions IA planifiées, sans personne derrière | Droits explicitement délégués, journalisés, jamais d'envoi sans validation. Une exécution lancée par quelqu'un agit avec **ses** droits (délégation) |
+| `AGENT` *(E17)* | Exécutions IA planifiées, sans personne derrière (pas un compte de connexion) | Aucun droit nominatif : seulement les outils qui n'en demandent pas, journalisés, jamais d'envoi sans validation. Une exécution lancée par quelqu'un agit avec **ses** droits (délégation) |
 
 | Action | OWNER | MANAGER | SDR | CLOSER | VIEWER |
 |---|:-:|:-:|:-:|:-:|:-:|
@@ -322,7 +322,7 @@ Rédiger un email, résumer, auditer un site, générer une page : il faut un mo
 ### 10.4 Modèles par rôle (D15)
 | Rôle | Par défaut | Secours | Exemples |
 |---|---|---|---|
-| `decision` | Jev | Claude Haiku 5.5, puis un humain | pertinence d'un import, classement d'une réponse, prochaine action |
+| `decision` | Jev | GPT-6 Luna Decisions (relance une réponse incertaine), puis un humain | pertinence d'un import, classement d'une réponse, prochaine action |
 | `fast` | Claude Haiku 5.5 (0,10 $ / 0,50 $ par million de jetons) | GPT-6 Luna, Mistral Small | extraction du contenu d'un site, résumés |
 | `writer` | Claude Sonnet 5.5 (2 $ / 10 $) | GPT-6.1 Sol, Mistral Large 4 | emails, pitch, analyse d'audit et des captures |
 | `designer` | Claude Opus 5.5 (4 $ / 20 $) | Gemini 4 Argon, GPT-6 Astra | Studio Web, audit approfondi à la demande |
@@ -546,9 +546,31 @@ Seconde vue du CRM, isométrique et interactive, à côté de la vue 2D qui rest
 - **Critères** : aucune régression de la vue 2D (tests et parcours dans le navigateur) ; aucun chiffre sans définition ; fluide sur un portable récent.
 
 ### Couche agentique IA (E17 à E27, décidée le 2 novembre 2026)
-Décisions D13 à D27 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). Rien n'est encore implémenté.
+Décisions D13 à D27 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17 est fait ; E18 à E27 restent à faire.
 
 ### E17 — Socle IA · **M** *(absorbe E13)*
+> **Avancement (branche `feat/e17-socle-ia`)** — fait :
+> - migration additive `20261102120000_ai_foundation` (cinq tables : `AiSetting`, `AiUsage`, `AgentRun`, `AgentStep`, `AgentApproval`) ;
+> - `lib/ai/` : modèles par rôle, prix lus sur la passerelle avec un instantané de secours, budget en micro-euros avec réservation verrouillée et alertes aux propriétaires à 50, 80 et 100 %, décisions Jev avec seuils et bascule conditionnelle, encadrement du contenu non fiable ;
+> - `features/ai/` : catalogue des huit agents avec leurs plafonds, exécutions et étapes facturées, appels de modèles bornés par ce que l'exécution peut encore payer, validations humaines, registre d'outils ;
+> - droits `ai:use`, `ai:read`, `ai:manage` ;
+> - écran Réglages › IA : consommation, modèles, plafonds, validations en attente, exécutions récentes.
+>
+> Détails : [AGENTS-IA.md](AGENTS-IA.md).
+>
+> **Vérifié** :
+> - `tests/ai.test.ts` (21 tests) ;
+> - `tests/ai.integration.test.ts` (19 tests, base jetable) : 10 démarrages simultanés pour 3 places, droits délégués, validations, expiration, facturation exacte d'un appel ;
+> - suite complète verte (638 tests) et build ;
+> - écran et actions contrôlés sur le serveur de développement (base jetable, rendu serveur et API).
+>
+> **Pas encore** : contrôle visuel de l'écran dans le navigateur, appel réel à la passerelle (pas de clé).
+>
+> **Écarts** :
+> - le secours des décisions est GPT-6 Luna Decisions, pas Claude Haiku, car la bascule conditionnelle de la passerelle exige un modèle de décision ;
+> - `AGENT` n'est pas un rôle de connexion : une exécution planifiée n'a aucun droit nominatif et n'utilise que les outils qui n'en demandent pas ;
+> - une validation approuvée remet l'exécution en file : l'action elle-même sera exécutée par le worker (E18).
+
 Tout ce qui rend l'IA sûre et pilotable, avant le premier agent métier.
 - `lib/ai/` : passerelle (clé serveur `AI_GATEWAY_API_KEY`), registre des modèles par rôle avec secours (`decision`, `fast`, `writer`, `designer`), prix lus sur la passerelle et coût de chaque appel, plafonds et quotas avec réservation verrouillée, décisions Jev avec seuils, encadrement du contenu non fiable.
 - `features/ai/` : exécutions (`AgentRun`, `AgentStep`), validations (`AgentApproval`), registres `defineTool` et `defineAgent` (droit requis, politique de validation, limites).
