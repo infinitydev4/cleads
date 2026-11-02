@@ -597,6 +597,8 @@ model Workspace {
   agentSkills            AgentSkill[]
   offers                 Offer[]
   prospectAudits         ProspectAudit[]
+  offerPitches           OfferPitch[]
+  offerRecommendations   OfferRecommendation[]
 }
 
 enum LeadSource {
@@ -818,6 +820,7 @@ model Lead {
   sequenceEnrollments SequenceEnrollment[]
   agentRuns           AgentRun[]
   audits              ProspectAudit[]
+  offerPitches        OfferPitch[]
 
   @@unique([workspaceId, companyId])
   @@index([workspaceId, status])
@@ -1522,6 +1525,7 @@ model AgentRun {
   steps     AgentStep[]
   approvals AgentApproval[]
   audit     ProspectAudit?
+  pitch     OfferPitch?
 
   @@index([workspaceId, createdAt])
   @@index([workspaceId, status])
@@ -1730,36 +1734,37 @@ model AgentSkill {
 
 /// An offer of the catalogue: agents only ever recommend active ones.
 model Offer {
-  id           String        @id @default(cuid())
-  workspaceId  String
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  id              String                @id @default(cuid())
+  workspaceId     String
+  workspace       Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   /// kebab-case and stable: rules and recommendations refer to it.
-  slug         String
-  name         String
-  category     OfferCategory
-  summary      String
-  deliverables String[]      @default([])
+  slug            String
+  name            String
+  category        OfferCategory
+  summary         String
+  deliverables    String[]              @default([])
   /// Audit signals that call for it (features/offers/signals.ts).
-  signals      String[]      @default([])
+  signals         String[]              @default([])
   /// Euros excluding tax; both null on quote.
-  priceMinEur  Int?
-  priceMaxEur  Int?
-  billing      OfferBilling  @default(ONE_OFF)
+  priceMinEur     Int?
+  priceMaxEur     Int?
+  billing         OfferBilling          @default(ONE_OFF)
   /// "hors budget média", "engagement initial de 3 mois"…
-  priceNote    String?
+  priceNote       String?
   /// The argument to open with.
-  angle        String?
+  angle           String?
   /// [{ objection, answer }]
-  objections   Json?
-  status       OfferStatus   @default(DRAFT)
-  sortOrder    Int           @default(0)
+  objections      Json?
+  status          OfferStatus           @default(DRAFT)
+  sortOrder       Int                   @default(0)
   /// Who checked it last, when it was activated.
-  reviewedById String?
-  reviewedAt   DateTime?
-  createdById  String?
-  updatedById  String?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  reviewedById    String?
+  reviewedAt      DateTime?
+  createdById     String?
+  updatedById     String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  recommendations OfferRecommendation[]
 
   @@unique([workspaceId, slug])
   @@index([workspaceId, status])
@@ -1804,6 +1809,7 @@ model ProspectAudit {
   createdById String?
   createdAt   DateTime               @default(now())
   captures    ProspectAuditCapture[]
+  pitches     OfferPitch[]
 
   @@index([workspaceId, domain, createdAt])
   @@index([leadId, createdAt])
@@ -1821,4 +1827,108 @@ model ProspectAuditCapture {
   createdAt DateTime      @default(now())
 
   @@unique([auditId, kind])
+}
+
+// E21: offers and pitch (docs/crm-v1/AGENTS-IA.md §14).
+
+/// Where an offer stands in the pitch: the main offer, the rest of the pack, a cheaper first step, or an idea for later.
+enum RecommendationRole {
+  MAIN
+  COMPLEMENT
+  ENTRY
+  LATER
+}
+
+/// What the person made of a suggested offer; kept to measure the advisor's relevance (E27).
+enum RecommendationStatus {
+  SUGGESTED
+  ACCEPTED
+  REJECTED
+}
+
+enum RejectionReason {
+  NOT_RELEVANT
+  TOO_EXPENSIVE
+  ALREADY_HAS
+  BAD_TIMING
+  OTHER
+}
+
+/// The Conseiller offres' work on a fiche: the offers it recommends from the audit, the call script, the objections and
+/// the email angle. The latest one is shown; older ones stay for their decisions.
+model OfferPitch {
+  id              String                @id @default(cuid())
+  workspaceId     String
+  workspace       Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  leadId          String
+  lead            Lead                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  /// The audit it was built from; the evidence it cites is copied below, so it stays readable once the audit is gone.
+  auditId         String?
+  audit           ProspectAudit?        @relation(fields: [auditId], references: [id], onDelete: SetNull)
+  runId           String?               @unique
+  run             AgentRun?             @relation(fields: [runId], references: [id], onDelete: SetNull)
+  /// One sentence for the closer: why this prospect needs the agency.
+  headline        String
+  /// { opening, hook: { text, evidence }, questions, proposal, close } (features/offer-pitch/schemas.ts).
+  script          Json
+  /// [{ objection, answer }]: the most likely ones in the call.
+  objections      Json
+  /// { subject, angle, evidence }, for the first email (E22); null when it cited no valid evidence.
+  emailAngle      Json?
+  /// The audit evidence the pitch cites: [{ id, kind, label, value, url }].
+  evidence        Json
+  /// What was left out, and why.
+  notes           String[]              @default([])
+  model           String?
+  costMicros      Int                   @default(0)
+  createdById     String?
+  createdAt       DateTime              @default(now())
+  recommendations OfferRecommendation[]
+
+  @@index([leadId, createdAt])
+  @@index([workspaceId, createdAt])
+}
+
+/// One offer of a pitch, as it was recommended (name and price copied), and what the person decided.
+model OfferRecommendation {
+  id          String               @id @default(cuid())
+  workspaceId String
+  workspace   Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  pitchId     String
+  pitch       OfferPitch           @relation(fields: [pitchId], references: [id], onDelete: Cascade)
+  offerId     String?
+  offer       Offer?               @relation(fields: [offerId], references: [id], onDelete: SetNull)
+  /// 1 for the main offer, then the pack, the entry offer and the ideas for later.
+  rank        Int
+  role        RecommendationRole
+  offerSlug   String
+  offerName   String
+  category    OfferCategory
+  priceMinEur Int?
+  priceMaxEur Int?
+  billing     OfferBilling
+  priceNote   String?
+  /// 0-100: how well the offer fits the prospect, according to the advisor.
+  fit         Int
+  /// Audit signals that made it a candidate (features/offers/signals.ts).
+  signals     String[]             @default([])
+  why         String
+  gain        String
+  /// Identifiers of the audit evidence the argument relies on: at least one.
+  evidence    String[]
+  objection   String?
+  answer      String?
+  status      RecommendationStatus @default(SUGGESTED)
+  /// Only when rejected.
+  reason      RejectionReason?
+  note        String?
+  decidedById String?
+  decidedAt   DateTime?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@unique([pitchId, offerSlug])
+  @@unique([pitchId, rank])
+  @@index([workspaceId, status])
+  @@index([offerId, status])
 }

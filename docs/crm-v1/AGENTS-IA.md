@@ -2,7 +2,7 @@
 
 > Architecture de référence décidée le 2 novembre 2026 (décisions D13 à D27 de [PLAN.md](PLAN.md)). Elle sert de spécification aux epics E17 à E27.
 >
-> **État** : le socle (E17), le worker (E18), les agents, skills et catalogue d'offres (E19) et l'audit des prospects (E20) sont implémentés : `lib/ai/`, `features/ai/`, `features/offers/`, `features/prospect-audit/`, `worker/`, Réglages › IA, Agents IA (`/app/agents`) et la carte « Audit IA » des fiches. Les sections 4 à 13 et le catalogue de la section 14 décrivent ce qui existe. Le reste (offres argumentées, rédaction, Studio, copilote, QG) est la spécification des epics E21 à E27.
+> **État** : le socle (E17), le worker (E18), les agents, skills et catalogue d'offres (E19), l'audit des prospects (E20) et les offres argumentées (E21) sont implémentés : `lib/ai/`, `features/ai/`, `features/offers/`, `features/prospect-audit/`, `features/offer-pitch/`, `worker/`, Réglages › IA, Agents IA (`/app/agents`) et les onglets « Audit IA » et « Offres suggérées » des fiches. Les sections 4 à 14 décrivent ce qui existe. Le reste (rédaction, Studio, copilote, QG) est la spécification des epics E22 à E27.
 
 ## 1. Objet
 
@@ -283,7 +283,8 @@ Migrations additives uniquement ; chaque table porte `workspaceId`.
 | `Skill`, `SkillVersion`, `AgentSkill` | E19 | nom, description, version courante, archivé ; contenu, fichiers et note de chaque version ; mode `ALWAYS` ou `ON_DEMAND` |
 | `Offer` | E19 | identifiant stable, nom, catégorie, description, livrables, signaux, fourchette de prix et facturation, angle, objections, statut (à valider, active, archivée), validée par |
 | `ProspectAudit` | E20 | fiche, entreprise, domaine, sous-scores, constats et preuves, résumé, captures, coût, date, valable jusqu'au |
-| `OfferRecommendation` | E21 | audit, offre, adéquation, argumentaire, preuves, script, angle, statut (suggérée, acceptée, refusée) |
+| `OfferPitch` | E21 | fiche, audit, exécution, phrase d'accroche, script d'appel, objections, angle d'email, preuves citées (copiées), notes, modèle, coût |
+| `OfferRecommendation` | E21 | pitch, offre (nom et prix copiés), rang, rôle (principale, pack, entrée, plus tard), adéquation, signaux, argumentaire, gain, preuves, objection, statut (suggérée, retenue, écartée), raison et note d'un refus, décidée par, date |
 | `GeneratedSite` | E23 | fiche, audit, brief, version, clés S3, empreinte du jeton, expiration, scores avant / après, statut |
 | `GeneratedSiteVisit` | E23 | maquette, date (aucune adresse IP en clair) |
 | `AiConversation`, `AiMessage` | E24 | personne, contexte, messages, exécutions liées |
@@ -309,6 +310,10 @@ Peut valider l'action d'un agent : la personne qui a lancé l'exécution, ou un 
 - **Accès** : visible avec `ai:use`. Un lecteur n'y a pas accès : il verrait des consignes internes et des prix.
 - **Onglets** : agents, skills, offres, exécutions (avec le détail des étapes et le résultat), « À valider », consommation.
 - **Routes** : `PUT /api/ai/agents/[id]`, `GET` et `POST /api/ai/skills`, `POST /api/ai/skills/import`, `GET` et `PATCH /api/ai/skills/[id]`, `GET /api/ai/skills/[id]/versions/[version]`, `POST /api/ai/skills/[id]/test`, `GET` et `POST /api/ai/offers`, `PATCH /api/ai/offers/[id]`, `GET /api/ai/runs/[id]`.
+
+**Offres suggérées** (fiche, E21) :
+- **Accès** : `ai:use` sur une fiche visible, comme Agents IA, car l'onglet montre des offres et des prix. Lancer le Conseiller et décider d'une offre demandent aussi de pouvoir modifier la fiche (`lead:write`).
+- **Routes** : `GET` et `POST /api/leads/[id]/offers` (état et lancement), `PATCH /api/leads/[id]/offers/[recommendationId]` (retenir, écarter avec une raison, annuler).
 
 **Réglages › IA** (`/app/settings/ai`) :
 - **Accès** : la page est visible avec `ai:use`. Le propriétaire la modifie (`ai:manage`) ; les autres la lisent.
@@ -377,6 +382,22 @@ Peut valider l'action d'un agent : la personne qui a lancé l'exécution, ou un 
    - un angle d'email.
 
 Tout s'affiche dans l'onglet « Offres suggérées » de la fiche. La personne accepte ou refuse chaque offre, ce qui sert à mesurer la pertinence (E27).
+
+**Implémentation (E21, `features/offer-pitch/`)** : un workflow codé, exécuté par le worker.
+1. **Candidates** (`rules.ts`, sans modèle) : une offre active devient candidate quand l'audit a levé l'un de ses signaux avec une preuve existante ; huit au plus, les mieux étayées d'abord. « Prospect à accompagner dans la durée » est ajouté quand l'audit trouve trois volets sous 50, ou des besoins récurrents dans deux domaines (SEO et publicité, par exemple), avec leurs preuves.
+2. **Refus avant toute dépense** : pas d'audit, aucune offre active ou aucune candidate. La fiche le dit et propose l'étape qui manque (lancer l'audit, valider le catalogue).
+3. **Conseiller offres** (`advisor.ts`) : un appel du rôle de l'agent, sans outil.
+   - Il reçoit l'audit encadré comme contenu externe (ses textes peuvent reprendre le site du prospect), sans le nom des dirigeants, puis les candidates.
+   - Ses consignes comprennent son rôle d'expert, `offres-cleads`, `script-appel-15min`, le playbook du secteur et `preparation-ads` quand une offre de publicité est candidate.
+   - Il ne peut nommer qu'une candidate : le schéma de sortie n'en connaît pas d'autre.
+4. **Ce qui est gardé** :
+   - une offre dont l'argument ne cite aucune preuve existante est retirée, avec une note ;
+   - l'accroche du script sans preuve est remplacée par le premier constat de l'audit ;
+   - l'angle d'email sans preuve est retiré ;
+   - le pack garde une offre principale, deux compléments au plus et une offre d'entrée au plus ;
+   - si aucune offre ne reste, l'exécution est retentée (trois fois au plus, dans son plafond).
+5. **Enregistrement** : `OfferPitch` et `OfferRecommendation`, avec le nom et le prix de chaque offre tels que recommandés et les preuves citées, copiées de l'audit. Les offres désactivées pendant l'appel sont écartées à ce moment-là ; si aucune ne reste, l'exécution échoue avec la raison. Le budget du pack est additionné à partir des prix du catalogue, jamais écrit par le modèle.
+6. **Décisions** : « Retenir » ou « Écarter » avec une raison (pas adaptée, trop chère, déjà équipé, pas le bon moment, autre), annulables. Elles sont journalisées (`offer.recommendation_*`), et Agents IA › Offres affiche pour chaque offre combien de fois elle a été suggérée, retenue et écartée. Une offre qui n'est plus active peut être écartée, pas retenue.
 
 ## 15. Rédaction et réponses (E22)
 

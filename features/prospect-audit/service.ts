@@ -51,7 +51,8 @@ export interface LeadAuditState {
 
 const emptyScores = () => Object.fromEntries(AREAS.map((a) => [a, null])) as Scores
 
-async function visibleLead(actor: CurrentUser, leadId: string) {
+/** The fiche, if the person may see it, with what tells which audit it shows. */
+export async function visibleLead(actor: CurrentUser, leadId: string) {
   const lead = await prisma.lead.findFirst({
     where: { id: leadId, workspaceId: actor.workspaceId, ...scopeWhere(actor, "lead:read") },
     select: { id: true, ownerId: true, contactId: true, companyId: true, company: { select: { domain: true, website: true } } },

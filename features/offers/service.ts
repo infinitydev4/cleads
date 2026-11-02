@@ -19,6 +19,14 @@ export interface OfferView extends SkillOffer {
   reviewedAt: string | null
   reviewedBy: string | null
   updatedAt: string
+  /** E21: how often the Conseiller offres suggested it, and what people decided (to measure relevance, E27). */
+  stats: OfferStats
+}
+
+export interface OfferStats {
+  suggested: number
+  accepted: number
+  rejected: number
 }
 
 type Db = Prisma.TransactionClient | typeof prisma
@@ -40,7 +48,9 @@ const toSkillOffer = (o: Offer): SkillOffer => ({
   objections: objectionsOf(o.objections),
 })
 
-const toView = (o: Offer, names: Map<string, string>): OfferView => ({
+const NO_STATS: OfferStats = { suggested: 0, accepted: 0, rejected: 0 }
+
+const toView = (o: Offer, names: Map<string, string>, stats: Map<string, OfferStats> = new Map()): OfferView => ({
   id: o.id,
   ...toSkillOffer(o),
   status: o.status,
@@ -48,7 +58,24 @@ const toView = (o: Offer, names: Map<string, string>): OfferView => ({
   reviewedAt: o.reviewedAt?.toISOString() ?? null,
   reviewedBy: o.reviewedById ? (names.get(o.reviewedById) ?? "Ancien membre") : null,
   updatedAt: o.updatedAt.toISOString(),
+  stats: stats.get(o.id) ?? NO_STATS,
 })
+
+/** Suggestions of each offer, all pitches together; `suggested` counts every one, decided or not. */
+async function offerStats(workspaceId: string, offerIds: string[]): Promise<Map<string, OfferStats>> {
+  if (!offerIds.length) return new Map()
+  const groups = await prisma.offerRecommendation.groupBy({ by: ["offerId", "status"], where: { workspaceId, offerId: { in: offerIds } }, _count: { _all: true } })
+  const stats = new Map<string, OfferStats>()
+  for (const g of groups) {
+    if (!g.offerId) continue
+    const s = stats.get(g.offerId) ?? { ...NO_STATS }
+    s.suggested += g._count._all
+    if (g.status === "ACCEPTED") s.accepted += g._count._all
+    if (g.status === "REJECTED") s.rejected += g._count._all
+    stats.set(g.offerId, s)
+  }
+  return stats
+}
 
 async function peopleNames(ids: (string | null)[]): Promise<Map<string, string>> {
   const unique = [...new Set(ids.filter((x): x is string => !!x))]
@@ -63,8 +90,8 @@ const ORDER = [{ sortOrder: "asc" }, { createdAt: "asc" }] satisfies Prisma.Offe
 export async function listOffers(actor: CurrentUser, opts: { archived?: boolean } = {}): Promise<OfferView[]> {
   if (!can(actor.role, "ai:use")) throw new LeadError("forbidden", "Accès refusé", 403)
   const rows = await prisma.offer.findMany({ where: { workspaceId: actor.workspaceId, status: opts.archived ? "ARCHIVED" : { not: "ARCHIVED" } }, orderBy: ORDER })
-  const names = await peopleNames(rows.map((r) => r.reviewedById))
-  return rows.map((r) => toView(r, names))
+  const [names, stats] = await Promise.all([peopleNames(rows.map((r) => r.reviewedById)), offerStats(actor.workspaceId, rows.map((r) => r.id))])
+  return rows.map((r) => toView(r, names, stats))
 }
 
 /** What agents may recommend: active offers only. */
@@ -181,5 +208,6 @@ export async function updateOffer(actor: CurrentUser, offerId: string, input: Up
     metadata: { slug: row.slug, changes, from: before.status, to: status },
     ip,
   })
-  return toView(row, await peopleNames([row.reviewedById]))
+  const [names, stats] = await Promise.all([peopleNames([row.reviewedById]), offerStats(actor.workspaceId, [row.id])])
+  return toView(row, names, stats)
 }

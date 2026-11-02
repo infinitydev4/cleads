@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { CircleAlert, ExternalLink, Loader2, RefreshCw, Sparkles, UserPlus } from "lucide-react"
+import { ArrowRight, CircleAlert, Loader2, RefreshCw, Sparkles, UserPlus } from "lucide-react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -13,33 +13,10 @@ import { AREA_HINTS, AREA_LABELS, AUDIT_STATUS_LABELS, SEVERITY_LABELS, SEVERITY
 import { AREAS, type Evidence, type Point } from "@/features/prospect-audit/schemas"
 import type { LeadAuditState } from "@/features/prospect-audit/service"
 import { api } from "@/app/(crm)/app/leads/api"
+import { EvidenceChips, safeLink } from "./evidence"
 
 const day = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric" })
 const ACTIVE = ["QUEUED", "RUNNING", "WAITING_APPROVAL"]
-const safeLink = (url: string | null) => (url && /^https?:\/\//i.test(url) ? url : null)
-
-function EvidenceChips({ ids, evidence }: { ids: string[]; evidence: Map<string, Evidence> }) {
-  return (
-    <span className="ml-1 inline-flex flex-wrap gap-1 align-middle">
-      {ids.map((id) => {
-        const e = evidence.get(id)
-        if (!e) return null
-        const label = `${e.label}${e.value ? ` : ${e.value}` : ""}`
-        const href = safeLink(e.url)
-        return href ? (
-          <a key={id} href={href} target="_blank" rel="noopener noreferrer nofollow" title={label} className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground hover:text-foreground">
-            {id}
-            <ExternalLink className="h-2.5 w-2.5" aria-hidden="true" />
-          </a>
-        ) : (
-          <span key={id} title={label} className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-            {id}
-          </span>
-        )
-      })}
-    </span>
-  )
-}
 
 function Points({ title, points, evidence }: { title: string; points: Point[]; evidence: Map<string, Evidence> }) {
   if (!points.length) return null
@@ -60,9 +37,26 @@ function Points({ title, points, evidence }: { title: string; points: Point[]; e
 
 /**
  * The AI audit of a fiche (E20): start it, follow it, read it. Every finding shows its evidence (P page, M measure,
- * C screenshot, S source) with a link when there is one. `compact` is the 3D panel's version.
+ * C screenshot, S source) with a link when there is one. `compact` is the 3D panel's version; `embedded` sits in the
+ * fiche's AI tabs, next to the suggested offers (E21).
  */
-export function AuditCard({ leadId, canRun, compact = false, onChanged, onOpenFull }: { leadId: string; canRun: boolean; compact?: boolean; onChanged?: () => void; onOpenFull?: () => void }) {
+export function AuditCard({
+  leadId,
+  canRun,
+  compact = false,
+  embedded = false,
+  onChanged,
+  onOpenFull,
+  onShowOffers,
+}: {
+  leadId: string
+  canRun: boolean
+  compact?: boolean
+  embedded?: boolean
+  onChanged?: () => void
+  onOpenFull?: () => void
+  onShowOffers?: () => void
+}) {
   const [state, setState] = useState<{ leadId: string; data?: LeadAuditState; error?: string } | null>(null)
   const [reloads, setReloads] = useState(0)
   const [busy, setBusy] = useState(false)
@@ -122,11 +116,16 @@ export function AuditCard({ leadId, canRun, compact = false, onChanged, onOpenFu
 
   const audit = data?.audit
   const evidence = new Map((audit?.report.evidence ?? []).map((e) => [e.id, e]))
-  const header = (
-    <div className="flex flex-wrap items-center gap-2">
-      <h3 className="flex items-center gap-2 text-sm font-bold">
-        <Sparkles className="h-4 w-4" aria-hidden="true" /> Audit IA
-      </h3>
+  const Box = embedded ? "div" : Card
+  const box = embedded ? "" : "p-4"
+  // In the tabs, the tab says what this is: the header only shows when it has a date or an action.
+  const header = (!embedded || audit || (data?.canRun && !running)) && (
+    <div className="flex min-h-8 flex-wrap items-center gap-2">
+      {!embedded && (
+        <h3 className="flex items-center gap-2 text-sm font-bold">
+          <Sparkles className="h-4 w-4" aria-hidden="true" /> Audit IA
+        </h3>
+      )}
       {audit && <Badge variant={audit.status === "COMPLETE" ? "success" : "warning"}>{AUDIT_STATUS_LABELS[audit.status]}</Badge>}
       {audit && <span className="text-xs text-muted-foreground">du {day.format(new Date(audit.createdAt))}</span>}
       {data?.canRun && !running && (
@@ -140,20 +139,20 @@ export function AuditCard({ leadId, canRun, compact = false, onChanged, onOpenFu
 
   if (current?.error) {
     return (
-      <Card className="space-y-2 p-4">
+      <Box className={cn("space-y-2", box)}>
         {header}
         <p className="text-sm text-destructive-text">{current.error}</p>
-      </Card>
+      </Box>
     )
   }
   if (!data) {
     return (
-      <Card className="space-y-2 p-4">
+      <Box className={cn("space-y-2", box)}>
         {header}
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Chargement…
         </p>
-      </Card>
+      </Box>
     )
   }
 
@@ -169,7 +168,7 @@ export function AuditCard({ leadId, canRun, compact = false, onChanged, onOpenFu
     <div className="space-y-1 rounded-lg bg-muted p-3 text-sm">
       <p className="flex items-center gap-2 font-medium">
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-        {data.run!.status === "QUEUED" ? "En file d’attente" : "Audit en cours"} · {RUN_STATUS_LABELS[data.run!.status]}
+        {data.run!.status === "QUEUED" ? "En file d’attente" : data.run!.status === "RUNNING" ? "Audit en cours" : RUN_STATUS_LABELS[data.run!.status]}
       </p>
       <p className="text-muted-foreground">Lecture du site, mesure PageSpeed, annuaire des entreprises, puis analyse des captures. Comptez une à deux minutes.</p>
       {!data.workerOnline && <p className="text-warning">Le worker IA est hors ligne : l’audit attend son retour.</p>}
@@ -179,7 +178,7 @@ export function AuditCard({ leadId, canRun, compact = false, onChanged, onOpenFu
 
   if (!audit) {
     return (
-      <Card className="space-y-3 p-4">
+      <Box className={cn("space-y-3", box)}>
         {header}
         {progress}
         {failure}
@@ -191,13 +190,13 @@ export function AuditCard({ leadId, canRun, compact = false, onChanged, onOpenFu
           </p>
         )}
         {!data.configured && <p className="flex items-start gap-2 text-sm text-warning"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />La passerelle IA n’est pas encore branchée sur ce serveur.</p>}
-      </Card>
+      </Box>
     )
   }
 
   const scoreTone = audit.score == null ? "bg-muted" : audit.score < 50 ? "bg-destructive" : audit.score < 70 ? "bg-warning" : "bg-success"
   return (
-    <Card className="space-y-4 p-4">
+    <Box className={cn("space-y-4", box)}>
       {header}
       {progress}
       {failure}
@@ -265,11 +264,11 @@ export function AuditCard({ leadId, canRun, compact = false, onChanged, onOpenFu
               <ul className="mt-2 space-y-2">
                 {audit.report.findings.map((f, i) => (
                   <li key={i} className="rounded-lg border p-3 text-sm">
-                    <p className="flex flex-wrap items-center gap-2 font-medium">
+                    <div className="flex flex-wrap items-center gap-2 font-medium">
                       <Badge variant={SEVERITY_TONE[f.severity]}>{SEVERITY_LABELS[f.severity]}</Badge>
                       <span className="text-xs text-muted-foreground">{AREA_LABELS[f.area]}</span>
                       {f.title}
-                    </p>
+                    </div>
                     <p className="mt-1 text-muted-foreground">
                       {f.detail}
                       <EvidenceChips ids={f.evidence} evidence={evidence} />
@@ -293,6 +292,11 @@ export function AuditCard({ leadId, canRun, compact = false, onChanged, onOpenFu
                   </Badge>
                 ))}
               </div>
+              {onShowOffers && (
+                <Button variant="link" size="sm" onClick={onShowOffers}>
+                  Voir les offres suggérées <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </Button>
+              )}
             </section>
           )}
 
@@ -352,6 +356,6 @@ export function AuditCard({ leadId, canRun, compact = false, onChanged, onOpenFu
           </p>
         </>
       )}
-    </Card>
+    </Box>
   )
 }

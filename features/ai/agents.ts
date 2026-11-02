@@ -98,7 +98,7 @@ export const AGENTS: Record<AgentId, Readonly<AgentDef>> = {
     modelRole: "writer",
     modelRoles: ["writer", "fast", "designer"],
     epic: "E21",
-    available: false,
+    available: true,
     tools: ["get_audit", "list_offers", "save_recommendations", "read_skill"],
     skills: [{ name: "offres-cleads", mode: "always" }, ...onDemand("script-appel-15min", "preparation-ads", ...PLAYBOOKS)],
     output: "Offres recommandées avec leurs preuves, script d'appel de 15 minutes, objections, angle d'email",

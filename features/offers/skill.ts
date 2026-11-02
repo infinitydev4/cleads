@@ -1,5 +1,5 @@
 import type { OfferBilling, OfferCategory } from "@prisma/client"
-import { CATEGORY_LABELS, OFFER_CATEGORIES, formatOfferPrice } from "./labels"
+import { CATEGORY_LABELS, OFFER_CATEGORIES, formatOfferPrice, withPriceNote } from "./labels"
 import { signalLabel } from "./signals"
 
 /**
@@ -39,7 +39,7 @@ export function renderOffersSkill(offers: readonly SkillOffer[]): string {
     if (!inCategory.length) continue
     lines.push("", `## ${CATEGORY_LABELS[category]}`)
     for (const o of inCategory) {
-      lines.push("", `### ${o.name} (\`${o.slug}\`)`, o.summary, `- Prix : ${formatOfferPrice(o)}${o.priceNote ? ` (${o.priceNote})` : ""}`)
+      lines.push("", `### ${o.name} (\`${o.slug}\`)`, o.summary, `- Prix : ${withPriceNote(formatOfferPrice(o), o.priceNote)}`)
       if (o.signals.length) lines.push(`- Quand la proposer : ${o.signals.map(signalLabel).join(" ; ")}`)
       if (o.deliverables.length) lines.push(`- Livrables : ${o.deliverables.join(" ; ")}`)
       if (o.angle) lines.push(`- Angle : ${o.angle}`)
