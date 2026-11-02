@@ -18,6 +18,7 @@ import {
 } from "@/lib/ai/pricing"
 import { DEFAULT_THRESHOLDS, confidenceOf, decisionFallbacks, outcomeOf, validThresholds, valueOf } from "@/lib/ai/decide"
 import { UNTRUSTED_RULE, forLog, untrusted } from "@/lib/ai/untrusted"
+import { modelCallError } from "@/features/ai/calls"
 import { gatewayOptions } from "@/lib/ai/gateway"
 import { dayStart, monthKey, monthStart } from "@/lib/ai/budget"
 import { AGENTS, AGENT_IDS, agentCapMicros, defineAgent } from "@/features/ai/agents"
@@ -242,3 +243,25 @@ describe("live updates", () => {
     expect(canSubscribe("u1", "presence-team")).toBe(false)
   })
 })
+
+describe("model call errors", () => {
+  const gateway = (type: string, statusCode: number, message: string) => Object.assign(new Error(message), { type, statusCode })
+
+  it("end the run with what to do when a setting must change", () => {
+    const free = modelCallError(gateway("forbidden", 403, "Free tier users do not have access to this model. Upgrade to paid credits"), "anthropic/claude-sonnet-5.5", "writer")
+    expect(free).toMatchObject({ code: "forbidden", status: 403 })
+    expect(free.message).toMatch(/Claude Sonnet 5\.5.*offre gratuite ou crédits épuisés.*Rédiger et analyser/)
+    expect(modelCallError(gateway("authentication_error", 401, "Invalid API key"), "anthropic/claude-haiku-5.5", "fast")).toMatchObject({ code: "forbidden", message: expect.stringMatching(/AI_GATEWAY_API_KEY/) })
+    expect(modelCallError(gateway("model_not_found", 404, "Model not found"), "openai/gpt-6.1-sol", "writer")).toMatchObject({ code: "invalid", message: expect.stringMatching(/GPT-6\.1 Sol n'est pas disponible/) })
+    expect(modelCallError(gateway("invalid_request_error", 400, "image too large"), "anthropic/claude-sonnet-5.5", "writer")).toMatchObject({ code: "invalid", message: expect.stringMatching(/image too large/) })
+    // Behind the SDK's retry wrapper too.
+    expect(modelCallError({ errors: [new Error("x"), gateway("forbidden", 403, "Free tier users do not have access")] }, "anthropic/claude-opus-5.5", "designer").message).toMatch(/crédits/)
+  })
+
+  it("are tried again later when they pass", () => {
+    for (const e of [gateway("rate_limit_exceeded", 429, "Too many requests"), gateway("internal_server_error", 500, "boom"), new Error("fetch failed"), null]) {
+      expect(modelCallError(e, "anthropic/claude-haiku-5.5", "fast")).toMatchObject({ code: "unavailable", status: 503 })
+    }
+  })
+})
+

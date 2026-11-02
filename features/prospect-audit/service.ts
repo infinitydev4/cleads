@@ -42,6 +42,8 @@ export interface AuditView {
 export interface LeadAuditState {
   audit: AuditView | null
   run: { id: string; status: AgentRunStatus; createdAt: string; error: string | null } | null
+  /** The last audit that did not finish, when nothing newer replaced it: why, in words for the person. */
+  lastFailure: { runId: string; at: string; error: string } | null
   canRun: boolean
   configured: boolean
   workerOnline: boolean
@@ -90,14 +92,17 @@ async function toView(row: NonNullable<Awaited<ReturnType<typeof latestFor>>>, l
 export async function getLeadAudit(actor: CurrentUser, leadId: string): Promise<LeadAuditState> {
   if (!can(actor.role, "ai:read")) throw new LeadError("forbidden", "Accès refusé", 403)
   const lead = await visibleLead(actor, leadId)
-  const [row, run, worker] = await Promise.all([
+  const [row, run, failed, worker] = await Promise.all([
     latestFor(actor.workspaceId, lead),
     prisma.agentRun.findFirst({ where: { leadId, agentId: "auditor", status: { in: [...ACTIVE_RUN_STATUSES] } }, orderBy: { createdAt: "desc" }, select: { id: true, status: true, createdAt: true, error: true } }),
+    prisma.agentRun.findFirst({ where: { leadId, agentId: "auditor", status: { in: ["FAILED", "BUDGET_EXCEEDED", "EXPIRED"] } }, orderBy: { createdAt: "desc" }, select: { id: true, createdAt: true, finishedAt: true, error: true } }),
     workerStatus(actor.workspaceId),
   ])
+  const failure = failed && !run && (!row || failed.createdAt > row.createdAt) ? failed : null
   return {
     audit: row ? await toView(row, lead) : null,
     run: run ? { id: run.id, status: run.status, createdAt: run.createdAt.toISOString(), error: run.error } : null,
+    lastFailure: failure ? { runId: failure.id, at: (failure.finishedAt ?? failure.createdAt).toISOString(), error: failure.error ?? "L'audit n'a pas abouti." } : null,
     canRun: can(actor.role, "ai:use") && canAccessRecord(actor, "lead:write", lead.ownerId) && !!lead.companyId,
     configured: aiConfigured(),
     workerOnline: worker.online,

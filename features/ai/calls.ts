@@ -4,7 +4,7 @@ import { LeadError } from "@/features/leads/errors"
 import { getAiSettings } from "@/lib/ai/budget"
 import { DEFAULT_THRESHOLDS, confidenceOf, decisionFallbacks, outcomeOf, validThresholds, valueOf, type DecisionAnswer, type DecisionOutcome, type Thresholds } from "@/lib/ai/decide"
 import { aiConfigured, gatewayOptions } from "@/lib/ai/gateway"
-import { resolveRole, type AiRole } from "@/lib/ai/models"
+import { ROLES, modelLabel, resolveRole, type AiRole } from "@/lib/ai/models"
 import { estimateTokens, maxOutputTokensWithin, priceTable, tokenUsage, worstPrice, type ModelPrice, type TokenUsage } from "@/lib/ai/pricing"
 import { finishRun, recordModelStep, remainingMicros, type RunContext } from "./runs"
 
@@ -28,6 +28,32 @@ const NO_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens:
 
 const notConfigured = () => new LeadError("unavailable", "L'IA n'est pas configurée sur ce serveur : la clé AI_GATEWAY_API_KEY manque.", 503)
 const unavailable = () => new LeadError("unavailable", "Le service IA n'a pas répondu, modèles de secours compris. Réessayez dans quelques minutes.", 503)
+
+/** The error behind a failed call: the SDK wraps repeated failures in a RetryError. */
+function rootError(error: unknown): { type?: string; statusCode?: number; message?: string } | null {
+  const e = error as { lastError?: unknown; errors?: unknown[] } | null
+  const root = e?.lastError ?? (Array.isArray(e?.errors) && e.errors.length ? e.errors[e.errors.length - 1] : error)
+  return root && typeof root === "object" ? (root as { type?: string; statusCode?: number; message?: string }) : null
+}
+
+/**
+ * What a failed model call means for the run. A passing failure (provider down, rate limit, timeout) is tried again
+ * later; a setting a person must change (credits, key, model) ends the run at once, with what to do.
+ */
+export function modelCallError(error: unknown, model: string, role: AiRole): LeadError {
+  const e = rootError(error)
+  const text = e?.message ?? ""
+  const label = modelLabel(model)
+  const where = `Réglages › IA, rôle « ${ROLES[role].label} »`
+  if (e?.statusCode === 402 || /free tier|credits|top-?up|payment|billing|insufficient (funds|balance)/i.test(text)) {
+    return new LeadError("forbidden", `Le compte Vercel AI Gateway n'a pas accès à ${label} (offre gratuite ou crédits épuisés). Ajoutez des crédits dans Vercel › AI Gateway, ou choisissez un autre modèle (${where}).`, 403)
+  }
+  if (e?.type === "authentication_error" || e?.statusCode === 401) return new LeadError("forbidden", "La passerelle IA refuse la clé AI_GATEWAY_API_KEY (invalide ou révoquée) : vérifiez-la sur le serveur.", 403)
+  if (e?.type === "forbidden" || e?.statusCode === 403) return new LeadError("forbidden", `La passerelle IA refuse l'accès à ${label} : vérifiez le compte Vercel AI Gateway, ou choisissez un autre modèle (${where}).`, 403)
+  if (e?.type === "model_not_found" || e?.statusCode === 404) return new LeadError("invalid", `${label} n'est pas disponible sur la passerelle IA : choisissez un autre modèle (${where}).`, 400)
+  if (e?.type === "invalid_request_error" || e?.statusCode === 400) return new LeadError("invalid", `La passerelle IA a refusé la demande : ${text.slice(0, 200) || "requête invalide"}.`, 400)
+  return unavailable()
+}
 
 async function overBudget(ctx: RunContext): Promise<never> {
   await finishRun(ctx.id, { status: "BUDGET_EXCEEDED", error: "Plafond de l'exécution atteint" })
@@ -102,7 +128,7 @@ export async function generateForRun<T = never>(
   } catch (error) {
     await recordModelStep(ctx, { type: "MODEL", name: opts.name, model, usage: NO_USAGE, durationMs: Date.now() - started, output: { error: error instanceof Error ? error.message : String(error) }, prices })
     console.error("[AI_GENERATE]", ctx.agentId, error)
-    throw unavailable()
+    throw modelCallError(error, model, opts.role)
   }
 }
 
@@ -160,6 +186,6 @@ export async function decideForRun<Q extends Record<string, Experimental_Decisio
   } catch (error) {
     await recordModelStep(ctx, { type: "DECISION", name: opts.name, model, usage: NO_USAGE, durationMs: Date.now() - started, output: { error: error instanceof Error ? error.message : String(error) }, prices })
     console.error("[AI_DECIDE]", ctx.agentId, error)
-    throw unavailable()
+    throw modelCallError(error, model, "decision")
   }
 }
