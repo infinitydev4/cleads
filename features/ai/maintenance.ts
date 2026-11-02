@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma"
+import { publishNotifications } from "@/lib/ai/realtime"
 import { expireApprovals } from "./approvals"
 import { MAINTENANCE_LOCK, expireStaleQueued, recoverStaleRuns } from "./queue"
 import { sweepTriage } from "@/features/reply-triage/handler"
@@ -44,7 +45,7 @@ async function failureAlerts(now: Date): Promise<number> {
       where: { userId: { in: owners.map((o) => o.id) }, title: FAILURE_ALERT_TITLE, createdAt: { gte: new Date(now.getTime() - 3600_000) } },
     })
     if (recent) continue
-    await prisma.notification.createMany({
+    const notes = await prisma.notification.createManyAndReturn({
       data: owners.map((o) => ({
         userId: o.id,
         type: "SYSTEM",
@@ -52,6 +53,7 @@ async function failureAlerts(now: Date): Promise<number> {
         message: `${w._count._all} exécutions ont échoué en 15 minutes. Détail dans Réglages › IA ; les journaux du worker sont sur le VPS.`,
       })),
     })
+    await publishNotifications(notes)
     sent += owners.length
   }
   return sent

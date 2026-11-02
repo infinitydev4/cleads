@@ -98,6 +98,7 @@ Facturation (devis, factures, PDF : 3 900 lignes) et portail client (2 500 ligne
 - **Rendez-vous** (section 6).
 - **Clients** → devient « Prospects / Entreprises / Contacts » (le modèle actuel confond utilisateur et client).
 - **Notifications** : on garde le concept (table + préférences), on retire Pusher au profit d'un rafraîchissement par requête.
+  - Écart (2 novembre 2026) : Pusher est revenu avec les exécutions IA (E18). La cloche suit donc les notifications en direct sur le même canal privé ; sans Pusher, la liste se charge avec la page ([WORKER-IA.md](WORKER-IA.md), section 3).
 - **Réglages** : 1 851 lignes dans une seule page, à découper en sous-pages (profil, équipe, boîtes d'envoi, intégrations).
 
 ### 2.5 Dette technique repérée

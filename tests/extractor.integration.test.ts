@@ -4,9 +4,13 @@
 import { spawn, type ChildProcess } from "node:child_process"
 import { existsSync } from "node:fs"
 import path from "node:path"
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { resetDatabase } from "./helpers/reset-db"
 import { signWebhook } from "@/lib/extractor/webhook"
+import { publishNotifications } from "@/lib/ai/realtime"
+
+// What would reach the bells live is recorded: Pusher itself is never set up in tests.
+vi.mock("@/lib/ai/realtime", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/ai/realtime")>()), publishNotifications: vi.fn(async () => {}) }))
 
 const url = process.env.TEST_DATABASE_URL
 const bin = process.env.EXTRACTOR_BIN ?? path.resolve(__dirname, "../../cleads-extractor/bin/cleads-extractor")
@@ -228,6 +232,7 @@ suite("extractor contract and CRM end to end", () => {
     const mkSearch = () => prisma.extractionSearch.create({ data: { workspaceId: ws, createdById: user.id, extractorJobId: "job_wh_1", label: "plombier — Lyon", spec: {}, status: "RUNNING" } })
 
     it("finishes the search and notifies the person once, even when delivered twice", async () => {
+      vi.mocked(publishNotifications).mockClear()
       const s = await mkSearch()
       expect((await send(job("job_wh_1"))).status).toBe(200)
       expect((await send(job("job_wh_1"))).status).toBe(200)
@@ -237,6 +242,7 @@ suite("extractor contract and CRM end to end", () => {
       const notes = await prisma.notification.findMany({ where: { userId: user.id } })
       expect(notes).toHaveLength(1)
       expect(notes[0].message).toContain("12 entreprises")
+      expect(vi.mocked(publishNotifications).mock.calls.map(([sent]) => sent.map((n) => n.id))).toEqual([[notes[0].id]])
     })
 
     it("rejects forged, stale or unsigned deliveries and leaves the search alone", async () => {

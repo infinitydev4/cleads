@@ -1,6 +1,6 @@
-import { pusher } from "./pusher"
 import { prisma } from "./prisma"
 import { sendMail } from "@/lib/mail"
+import { publishNotifications } from "@/lib/ai/realtime"
 
 
 interface SendNotificationParams {
@@ -35,15 +35,9 @@ export async function sendNotification({
       },
     })
 
-    // Envoyer une notification push si activé
-    if (settings?.push) {
-      pusher.trigger(`private-user-${userId}`, "notification", {
-        id: notification.id,
-        type,
-        title,
-        message,
-        data,
-      })
+    // Live in the bell unless the person turned it off: without a settings row the defaults apply, and push is on.
+    if (settings?.push !== false) {
+      await publishNotifications([notification])
     }
 
     // Envoyer un email si activé
