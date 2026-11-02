@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { footerItems, iconFallback, navGroups, paletteActions } from "@/lib/crm/nav"
 import { WINDOW_MESSAGE, WINDOW_PARAM, closeHqWindow, followHqWindow, forgetHqWindowEntry, openHqWindow, windowPath, type WindowMessage } from "@/lib/crm/hq-window"
 import { useHqStore } from "../store"
+import { COPILOT_EVENT } from "@/components/crm/copilot/copilot"
 
 /**
  * The windows of the 3D view (lib/crm/hq-window.ts): a CRM page over the scene, the scene resting behind it. The page
@@ -109,6 +110,10 @@ export function ModuleWindow({ onClosed }: { onClosed: () => void }) {
       if (message?.source !== WINDOW_MESSAGE) return
       if (message.type === "close") {
         close()
+        return
+      }
+      if (message.type === "copilot") {
+        window.dispatchEvent(new CustomEvent(COPILOT_EVENT))
         return
       }
       const path = windowPath(message.path)

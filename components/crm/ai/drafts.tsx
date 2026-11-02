@@ -29,6 +29,11 @@ export const isAbort = (e: unknown) => e instanceof DOMException && e.name === "
  */
 export async function fetchDraft(url: string, body: unknown, signal?: AbortSignal): Promise<DraftView> {
   const { runId } = await api<{ runId: string }>(url, { method: "POST", body: JSON.stringify(body ?? {}), signal })
+  return waitDraft(runId, signal)
+}
+
+/** Waits for the draft of a run already started (by the copilot, E24, or by fetchDraft). */
+export async function waitDraft(runId: string, signal?: AbortSignal): Promise<DraftView> {
   for (let i = 0; i < 60; i++) {
     await wait(i < 6 ? 1_500 : 3_000, signal)
     const state = await api<DraftState>(`/api/ai/drafts/${runId}`, { signal })

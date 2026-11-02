@@ -68,6 +68,7 @@ model User {
   campaignsCreated       Campaign[]              @relation("CampaignCreator")
   /// E17: AI runs the member asked for, and the approvals they requested or decided.
   agentRuns              AgentRun[]              @relation("AgentRunRequester")
+  aiConversations        AiConversation[]
   approvalsRequested     AgentApproval[]         @relation("ApprovalRequester")
   approvalsDecided       AgentApproval[]         @relation("ApprovalDecider")
 }
@@ -602,6 +603,7 @@ model Workspace {
   emailDrafts            EmailDraft[]
   replyTriages           ReplyTriage[]
   generatedSites         GeneratedSite[]
+  aiConversations        AiConversation[]
 }
 
 enum LeadSource {
@@ -1538,6 +1540,7 @@ model AgentRun {
   draft       EmailDraft?
   triages     ReplyTriage[]
   siteVersion GeneratedSiteVersion?
+  aiMessages  AiMessage[]
 
   @@index([workspaceId, createdAt])
   @@index([workspaceId, status])
@@ -2155,4 +2158,65 @@ model GeneratedSiteVisit {
   createdAt DateTime      @default(now())
 
   @@index([siteId, createdAt])
+}
+
+// E24: the copilot (docs/crm-v1/AGENTS-IA.md §17).
+
+enum AiMessageRole {
+  USER
+  ASSISTANT
+}
+
+/// A conversation with the copilot. It belongs to its person alone; it is deleted with any fiche it read, and 90 days
+/// after its last message.
+model AiConversation {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The first question, shortened: the history lists it.
+  title         String
+  /// The page it was started from: { path, kind, label }.
+  context       Json?
+  /// Fiches its tools read or acted on: the AI data of a fiche follows the fiche.
+  leadIds       String[]  @default([])
+  /// A turn is in progress since then: one at a time. Free again when it ends, or when it outlived any request.
+  turnStartedAt DateTime?
+  messageCount  Int       @default(0)
+  /// What its turns cost, all together.
+  costMicros    Int       @default(0)
+  lastMessageAt DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  messages AiMessage[]
+
+  @@index([workspaceId, userId, lastMessageAt])
+  @@index([leadIds], type: Gin)
+  @@index([lastMessageAt])
+}
+
+/// One message, in the AI SDK's UI format: text, and tool calls with their approval and result.
+model AiMessage {
+  id             String         @id @default(cuid())
+  conversationId String
+  conversation   AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  /// Its id in the chat: given by the browser for a question, by the server for an answer.
+  uiId           String
+  /// Order in the conversation, from 1.
+  seq            Int
+  role           AiMessageRole
+  parts          Json
+  /// A question: { context }. An answer: { runIds, costMicros, model, stopped }.
+  metadata       Json?
+  /// The last turn that wrote this answer.
+  runId          String?
+  run            AgentRun?      @relation(fields: [runId], references: [id], onDelete: SetNull)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([conversationId, uiId])
+  @@unique([conversationId, seq])
+  @@index([runId])
 }

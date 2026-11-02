@@ -41,18 +41,21 @@ interface Props {
   /** Called with the new state after any change, so a parent list can refresh. */
   onChange: (lead: LeadDetail) => void
   onDeleted?: () => void
+  /** E24: open the email window on this draft of the Rédacteur (« Ouvrir le brouillon » in the copilot). */
+  draftRunId?: string | null
 }
 
 const NONE = "__none__"
 
-export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDeleted }: Props) {
+export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDeleted, draftRunId = null }: Props) {
   const router = useRouter()
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [qualifying, setQualifying] = useState(false)
   const [calling, setCalling] = useState(false)
   const [planning, setPlanning] = useState(false)
-  const [emailing, setEmailing] = useState(false)
+  const [emailing, setEmailing] = useState(!!draftRunId && lead.can.email)
+  const [draftRun, setDraftRun] = useState(draftRunId)
   const [addingTask, setAddingTask] = useState(false)
   const canQualifyNow = lead.can.write && lead.status !== "DO_NOT_CONTACT" && lead.status !== "QUALIFIED" && lead.status !== "DISQUALIFIED"
 
@@ -257,7 +260,23 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
       )}
 
       {planning && <MeetingDialog open={planning} onOpenChange={setPlanning} leadId={lead.id} leadName={title} currentUserId={currentUserId} canOverride={lead.can.meetAnywhere} onDone={() => { reload(); router.refresh() }} />}
-      {emailing && <EmailDialog open={emailing} onOpenChange={setEmailing} leadId={lead.id} leadName={title} onDone={reload} />}
+      {emailing && (
+        <EmailDialog
+          open={emailing}
+          onOpenChange={(open) => {
+            setEmailing(open)
+            if (!open && draftRun) {
+              // The draft was shown once: a reload of the page must not open it again.
+              setDraftRun(null)
+              router.replace(`/app/leads/${lead.id}`, { scroll: false })
+            }
+          }}
+          leadId={lead.id}
+          leadName={title}
+          onDone={reload}
+          draftRunId={draftRun}
+        />
+      )}
       {calling && <CallDialog open={calling} onOpenChange={setCalling} leadId={lead.id} leadName={title} onDone={(next) => { onChange(next); router.refresh() }} />}
       {qualifying && <QualifyDialog open={qualifying} onOpenChange={setQualifying} lead={lead} assignees={assignees} onDone={(next) => { onChange(next); router.refresh() }} />}
       {editing && <EditDialog open={editing} onOpenChange={setEditing} lead={lead} onSave={async (body) => { const ok = await patch(body, "Fiche mise à jour"); if (ok) setEditing(false); return !!ok }} />}

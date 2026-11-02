@@ -15,6 +15,8 @@ import {
 import { ROLE_LABELS, type CrmRole } from "@/lib/crm/roles"
 
 export interface ShellUser {
+  /** Absent for the design preview, which has no account: no copilot there. */
+  id?: string
   name: string
   email: string
   image?: string | null

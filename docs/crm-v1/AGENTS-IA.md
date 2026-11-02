@@ -2,7 +2,7 @@
 
 > Architecture de référence décidée le 2 novembre 2026 (décisions D13 à D27 de [PLAN.md](PLAN.md)). Elle sert de spécification aux epics E17 à E27.
 >
-> **État** : le socle (E17), le worker (E18), les agents, skills et catalogue d'offres (E19), l'audit des prospects (E20), les offres argumentées (E21), la rédaction et le classement des réponses (E22) et le Studio Web (E23) sont implémentés : `lib/ai/`, `features/ai/`, `features/offers/`, `features/prospect-audit/`, `features/offer-pitch/`, `features/email-draft/`, `features/reply-triage/`, `features/studio/`, `worker/`, Réglages › IA, Agents IA (`/app/agents`), Studio Web (`/app/studio`), les onglets « Audit IA », « Offres suggérées » et « Maquette » des fiches, le Brouillon IA et les suggestions de la boîte. Les sections 4 à 16 décrivent ce qui existe. Le reste (copilote, stratège, QG, évaluations) est la spécification des epics E24 à E27.
+> **État** : le socle (E17), le worker (E18), les agents, skills et catalogue d'offres (E19), l'audit des prospects (E20), les offres argumentées (E21), la rédaction et le classement des réponses (E22), le Studio Web (E23) et le copilote (E24) sont implémentés : `lib/ai/`, `features/ai/`, `features/offers/`, `features/prospect-audit/`, `features/offer-pitch/`, `features/email-draft/`, `features/reply-triage/`, `features/studio/`, `features/copilot/`, `worker/`, Réglages › IA, Agents IA (`/app/agents`), Studio Web (`/app/studio`), les onglets « Audit IA », « Offres suggérées » et « Maquette » des fiches, le Brouillon IA, les suggestions de la boîte et le panneau du copilote (⌘J). Les sections 4 à 17 décrivent ce qui existe, sauf le Stratège. Le reste (stratège, QG, évaluations) est la spécification des epics E25 à E27.
 
 ## 1. Objet
 
@@ -274,7 +274,7 @@ Un outil appelle un service existant ; il ne touche jamais la base directement.
   - Elle apparaît sur la fiche, dans `/app/agents` (« À valider ») et dans l'espace 3D « Agents IA ».
   - Approuver relance l'exécution à cette étape ; refuser la termine proprement.
 - **Temps réel** : le worker publie la progression sur Pusher, dans un canal privé par personne autorisé par `app/api/pusher/auth`. En secours, l'interface interroge l'exécution.
-- **Copilote** : il tourne dans une route Next en streaming, en tours courts (6 étapes au plus). Tout ce qui est long part dans le worker par un outil `start_*`, qui renvoie une carte d'exécution.
+- **Copilote** : il tourne dans une route Next en streaming (`POST /api/ai/chat`), en tours courts (6 étapes au plus, 50 s au plus). Chaque tour est une exécution `RUNNING` du CRM, sans worker. Tout ce qui est long part dans le worker par un outil (`start_audit`, `suggest_offers`, `draft_email`, `start_studio`), qui renvoie une carte d'exécution. Ses validations se donnent dans la conversation (section 17).
 
 ## 11. Données
 
@@ -299,7 +299,8 @@ Migrations additives uniquement ; chaque table porte `workspaceId`.
 | `GeneratedSiteVersion` | E23 | maquette, numéro, instruction, exécution, page publiée, captures (ordinateur, téléphone, premier écran), contrôles, scores PageSpeed avant / après, jeton PageSpeed (empreinte), modèle, coût |
 | `GeneratedSiteAsset` | E23 | maquette, nom, type (logo, image, police), données, dimensions, source |
 | `GeneratedSiteVisit` | E23 | maquette, version, date (ni cookie ni adresse IP) |
-| `AiConversation`, `AiMessage` | E24 | personne, contexte, messages, exécutions liées |
+| `AiConversation` | E24 | personne, titre, page de départ, fiches lues (la conversation les suit à l'effacement), coût, tour en cours |
+| `AiMessage` | E24 | conversation, ordre, rôle, contenu au format de l'AI SDK (texte, appels d'outils, validations, résultats), métadonnées (page et date d'une question ; exécutions, coût et arrêt d'une réponse), dernière exécution |
 
 Le contenu d'un site audité n'est pas stocké en entier. On ne garde que les extraits utiles aux constats et les captures (S3, purgées avec la fiche).
 
@@ -348,6 +349,11 @@ Peut valider l'action d'un agent : la personne qui a lancé l'exécution, ou un 
   - `POST /api/studio/sites/[id]/versions/[n]` (remettre une version en ligne) ;
   - `GET /api/studio/sites/[id]/preview?v=n`, `/versions/[n]/[desktop|mobile|thumb]`, `/assets/[name]` (aperçu interne, captures, images) ;
   - public, sur l'hôte d'aperçu seulement : `/<jeton>`, `/<jeton>/a/<nom>`, `/<jeton>/vu` (`app/apercu/[...path]`).
+
+**Copilote** (E24) :
+- **Accès** : `ai:use`. Ses outils sont ceux que le rôle permet, et chacun passe par le service habituel au nom de la personne : il voit et fait exactement ce qu'elle peut. Un lecteur n'a pas de copilote (chaque tour coûte).
+- **Conversations** : privées ; ni les managers ni le propriétaire ne les lisent. Les exécutions des tours restent visibles comme les autres (Agents IA › Exécutions), avec des étapes courtes.
+- **Routes** : `POST /api/ai/chat` (un tour, en streaming) ; `GET` et `DELETE /api/ai/conversations` (liste, tout effacer) ; `GET` et `DELETE /api/ai/conversations/[id]` ; `GET /api/ai/runs/[id]?view=status` (état d'une exécution, pour les cartes).
 
 **Réglages › IA** (`/app/settings/ai`) :
 - **Accès** : la page est visible avec `ai:use`. Le propriétaire la modifie (`ai:manage`) ; les autres la lisent.
@@ -537,13 +543,17 @@ Cache-Control: private, no-store
 
 ## 17. Copilote (E24) et Stratège (E25)
 
-- **Copilote** :
-  - panneau ⌘J dans la 2D et la 3D, avec le contexte de la page (fiche, campagne, liste filtrée) ;
-  - il répond à partir des données que la personne voit, délègue aux spécialistes (audit, offres, brouillon, maquette) et propose des actions qui passent par `toolApproval` ;
-  - les conversations sont conservées (`AiConversation`, `AiMessage`), et la personne peut les effacer ;
-  - dans la 3D, les modules qu'il ouvre s'affichent dans les fenêtres existantes (`ModuleWindow`).
-
-  Préalable : mesurer la durée de streaming réellement permise par les fonctions Netlify.
+**Copilote (E24, `features/copilot/`, `components/crm/copilot/`).**
+- **Panneau** : à droite, dans la 2D et la 3D, ouvert par ⌘J, par le bouton des barres ou par la palette ⌘K (« Ouvrir le copilote », « Demander au copilote : … »). La conversation survit à la navigation dans le CRM. Dans la 3D, ⌘J marche aussi depuis une fenêtre, et ses liens (fiches citées, « Ouvrir le brouillon », « Ouvrir la maquette ») s'ouvrent dans les fenêtres de la vue (`ModuleWindow`).
+- **Contexte** : le panneau envoie l'adresse de sa page (dans la 3D, celle de la fenêtre ouverte). Le serveur la décrit au modèle en une ligne (fiche, campagne, maquette, liste filtrée et ses filtres) après avoir vérifié que la personne la voit, avec la date et l'heure de Paris. Cette ligne précède la question plutôt que les consignes, qui restent identiques d'un tour à l'autre.
+- **Agent** : un `ToolLoopAgent` (AI SDK 7), rôle `writer` (Sonnet 5.5) ou `fast` (Haiku 5.5) au choix du propriétaire, raisonnement « low », 2 000 jetons au plus par étape et 6 étapes par tour. Ses consignes : persona, règles communes, consignes de l'équipe, catalogue de skills (`offres-cleads`, playbooks), puis la façon de travailler ici.
+- **Outils** : lecture sans validation (`search_leads`, `get_lead`, `get_lead_audit`, `get_lead_offers`, `get_today`, `list_meetings`, `get_pipeline`, `list_campaigns`, `get_campaign`, `read_skill`) ; actions validées (`create_task`, `add_note`, `start_audit`, `suggest_offers`, `draft_email`, `start_studio`). Les résultats sont courts et en français ; l'email et le téléphone du contact restent sur la fiche, et le texte d'un email reçu arrive balisé comme contenu externe.
+- **Validation** : `toolApproval` de l'AI SDK. Le serveur écrit la carte (« Créer la tâche « Rappeler Jean » sur la fiche Plomberie Dupont, pour le mardi 10 novembre. », « … 0,30 € au plus ») ; un appel impossible est refusé avant de demander, et le modèle en lit la raison. La personne valide ou refuse ; une validation laissée en attente est refusée à la question suivante. Refuser n'appelle pas le modèle.
+- **Le serveur garde la conversation** : du navigateur, il ne prend que le texte d'une question, ou la réponse aux validations du dernier message, appariée à ce qu'il a lui-même demandé (appel, identifiant de validation, état). Un historique forgé, une validation inventée, rejouée ou venue d'une autre personne n'atteignent ni le modèle ni les outils.
+- **Budget** : un tour est une exécution du copilote, qui réserve son plafond (0,10 €) avant d'écrire quoi que ce soit. Chaque étape est facturée avant la suivante, sa sortie est bornée par ce qui reste au pire prix du modèle et de ses secours, et le tour s'arrête quand une réponse courte ne tiendrait plus. L'historique envoyé au modèle se limite aux 24 derniers messages, et les résultats d'outils des réponses plus anciennes que les deux dernières y sont résumés : le modèle relance l'outil s'il en a besoin.
+- **Durée** : un tour s'arrête à 50 s, garde ce qui est écrit et le dit (« demandez la suite ») ; la réponse est enregistrée après chaque étape et à la fin, même si le panneau s'est fermé (`after` de Next). Un tour à la fois par conversation ; un tour mort sans le dire libère la conversation au bout de 3 minutes.
+- **Délégation** : les spécialistes travaillent dans le worker. La carte suit leur exécution en direct (Pusher, sinon toutes les 5 s) et ouvre le résultat : l'audit ou les offres sur la fiche, la maquette dans le Studio, le brouillon dans la fenêtre d'email de la fiche (`?brouillon=<exécution>`), que la personne relit et envoie elle-même.
+- **Conversations** : privées, listées dans le panneau avec leur coût, effaçables une à une ou toutes. Supprimées avec toute fiche qu'elles ont lue (dans la transaction de suppression) et 90 jours après leur dernier message (maintenance du worker).
 - **Stratège** :
   - il part du catalogue d'offres, des résultats des campagnes (`features/metrics`) et de la taxonomie de l'Extractor (`list_sectors`) ;
   - il propose les secteurs à cibler, les douleurs de chaque métier, l'offre phare, l'angle et les zones ;
@@ -560,8 +570,8 @@ Cache-Control: private, no-store
 | `/app/agents` | exécutions, « À valider », agents, skills, offres, consommation, qualité | E17, E19, E27 |
 | `/app/studio` | maquettes, versions, visites | E23 |
 | Réglages › IA (`/app/settings/ai`) | modèles par rôle, plafonds, quotas, consommation | E17 |
-| Palette ⌘K | « Auditer cette fiche », « Générer une landing », « Ouvrir le copilote » | E20, E23, E24 |
-| Partout | copilote ⌘J | E24 |
+| Palette ⌘K | « Ouvrir le copilote », « Demander au copilote : … » (l'audit et la maquette se lancent depuis la fiche, ou en le demandant au copilote) | E24 |
+| Partout | copilote ⌘J, bouton des barres 2D et 3D | E24 |
 
 **QG 3D (E26).**
 - **Deux nouveaux espaces** dans `features/hq/zones.ts` :
@@ -636,4 +646,4 @@ Cache-Control: private, no-store
 | DPA des fournisseurs, politique de confidentialité, registre des traitements | le propriétaire | ouverture à l'équipe |
 | Durée de streaming réellement permise par les fonctions Netlify | à mesurer | E24 |
 
-**Prochaine étape : E24 (copilote).**
+**Prochaine étape : E25 (stratège et sourcing).**

@@ -18,7 +18,7 @@ import type { ComposeContext } from "@/features/outreach/service"
 import { composeText } from "@/features/outreach/footer"
 import { VARIABLES, hasPlaceholder, renderTemplate, templateValues } from "@/features/outreach/template"
 import type { DraftView } from "@/features/email-draft/labels"
-import { DraftReview, fetchDraft, isAbort } from "@/components/crm/ai/drafts"
+import { DraftReview, fetchDraft, isAbort, waitDraft } from "@/components/crm/ai/drafts"
 import { api } from "./api"
 
 const FREE = "__free__"
@@ -29,10 +29,12 @@ interface Props {
   leadId: string
   leadName: string
   onDone: () => void
+  /** E24: a draft the copilot asked the Rédacteur for, shown once it is written. */
+  draftRunId?: string | null
 }
 
 /** Writes one email to the prospect, from one of the person's mailboxes. Every rule is checked again by the server. */
-export function EmailDialog({ open, onOpenChange, leadId, leadName, onDone }: Props) {
+export function EmailDialog({ open, onOpenChange, leadId, leadName, onDone, draftRunId }: Props) {
   const [ctx, setCtx] = useState<ComposeContext | null>(null)
   const [mailboxId, setMailboxId] = useState("")
   const [templateId, setTemplateId] = useState(FREE)
@@ -55,19 +57,29 @@ export function EmailDialog({ open, onOpenChange, leadId, leadName, onDone }: Pr
       .catch((e) => toast.error(e instanceof Error ? e.message : "Échec"))
   }, [leadId])
 
+  // The copilot's draft (E24), once the sender's values are known: they fill its placeholders.
+  const startedDraft = useRef(false)
+  useEffect(() => {
+    if (!draftRunId || !ctx || startedDraft.current) return
+    startedDraft.current = true
+    void writeDraft(draftRunId)
+    // writeDraft reads the values of this render: they are complete once ctx is set.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftRunId, ctx])
+
   const mailbox = ctx?.mailboxes.find((m) => m.id === mailboxId) ?? null
   const values = useMemo(() => {
     const sender = templateValues({ senderName: mailbox?.displayName })
     return { ...ctx?.values, expediteur: sender.expediteur, expediteur_prenom: sender.expediteur_prenom }
   }, [ctx, mailbox])
 
-  async function writeDraft() {
+  async function writeDraft(runId?: string) {
     drafts.current?.abort()
     const controller = new AbortController()
     drafts.current = controller
     setDrafting(true)
     try {
-      const d = await fetchDraft(`/api/leads/${leadId}/email/draft`, {}, controller.signal)
+      const d = runId ? await waitDraft(runId, controller.signal) : await fetchDraft(`/api/leads/${leadId}/email/draft`, {}, controller.signal)
       setTemplateId(FREE)
       setSubject(renderTemplate(d.subject, values).text)
       setBody(renderTemplate(d.body, values).text)
@@ -171,7 +183,7 @@ export function EmailDialog({ open, onOpenChange, leadId, leadName, onDone }: Pr
 
               {ctx.ai.available && (
                 <div className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/60 p-2.5">
-                  <Button type="button" variant="outline" size="sm" onClick={writeDraft} loading={drafting} disabled={!ctx.ai.canDraft || drafting} title={ctx.ai.reason ?? "Un email court tiré de l’audit, avec une seule demande : 15 minutes d’échange."}>
+                  <Button type="button" variant="outline" size="sm" onClick={() => writeDraft()} loading={drafting} disabled={!ctx.ai.canDraft || drafting} title={ctx.ai.reason ?? "Un email court tiré de l’audit, avec une seule demande : 15 minutes d’échange."}>
                     {!drafting && <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />}
                     {drafting ? "Le Rédacteur écrit…" : draft ? "Nouveau brouillon IA" : "Brouillon IA"}
                   </Button>

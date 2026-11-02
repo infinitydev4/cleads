@@ -332,3 +332,24 @@ export async function getRunDetail(actor: CurrentUser, runId: string): Promise<R
     output: r.output,
   }
 }
+
+export interface RunStatusView {
+  id: string
+  agentId: string
+  agentLabel: string
+  status: AgentRunStatus
+  error: string | null
+  costEur: number
+  finishedAt: string | null
+}
+
+/** Where a run stands, without its steps: what a live card polls (the copilot's, E24). Same visibility as the detail. */
+export async function runStatus(actor: CurrentUser, runId: string): Promise<RunStatusView> {
+  if (!can(actor.role, "ai:read")) throw new LeadError("forbidden", "Accès refusé", 403)
+  const r = await prisma.agentRun.findFirst({
+    where: { id: runId, workspaceId: actor.workspaceId, ...(isManager(actor) ? {} : { requestedById: actor.id }) },
+    select: { id: true, agentId: true, status: true, error: true, costMicros: true, finishedAt: true },
+  })
+  if (!r) throw new LeadError("not_found", "Exécution introuvable", 404)
+  return { id: r.id, agentId: r.agentId, agentLabel: agentLabel(r.agentId), status: r.status, error: r.error, costEur: microsToEur(r.costMicros), finishedAt: r.finishedAt?.toISOString() ?? null }
+}

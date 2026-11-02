@@ -13,7 +13,7 @@ export const WINDOW_PARAM = "w"
 /** Tag of the messages a page in a window sends to the 3D view (same origin only). */
 export const WINDOW_MESSAGE = "cleads-hq-window"
 
-export type WindowMessageBody = { type: "location"; path: string; title: string } | { type: "close" }
+export type WindowMessageBody = { type: "location"; path: string; title: string } | { type: "close" } | { type: "copilot" }
 export type WindowMessage = WindowMessageBody & { source: typeof WINDOW_MESSAGE }
 
 /** Origin used to read an address when there is no page to resolve it against (server render, tests). */
