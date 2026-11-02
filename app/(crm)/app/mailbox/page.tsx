@@ -25,7 +25,7 @@ export default async function MailboxPage() {
         breadcrumbs={[{ label: "CRM", href: "/app" }, { label: "Emails" }]}
         actions={can(user.role, "mailbox:manage") && <Button asChild variant="outline"><Link href="/app/settings/mailboxes">Boîtes d’envoi</Link></Button>}
       />
-      <MailboxView initialEmails={emails} initialReplies={replies} health={health} mailboxes={mailboxes} initialTemplates={templates} canManageTemplates={can(user.role, "sequence:manage")} showSender={team} />
+      <MailboxView initialEmails={emails} initialReplies={replies} health={health} mailboxes={mailboxes} initialTemplates={templates} canManageTemplates={can(user.role, "sequence:manage")} showSender={team} canUseAi={can(user.role, "ai:use")} />
     </>
   )
 }

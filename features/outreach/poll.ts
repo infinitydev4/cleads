@@ -7,6 +7,7 @@ import { analyze, type Inbound } from "./inbound"
 import { transport, TransportError } from "./transport"
 import { stopForLead } from "./stops"
 import { pauseUnhealthyMailboxes } from "./deliverability"
+import { enqueueTriage } from "@/features/reply-triage/handler"
 
 const CLAIM_TTL_MS = 5 * 60_000
 /** A message still `SENDING` after this long never got its answer from the server (the process died in between). */
@@ -63,7 +64,7 @@ async function handleReply(box: Mailbox, r: Extract<Inbound, { kind: "reply" }>,
   const messageId = r.messageId || `<imap-${box.id}-${uid}@local>`
   const created = await prisma
     .$transaction(async (tx) => {
-      await tx.emailMessage.create({
+      const stored = await tx.emailMessage.create({
         data: {
           workspaceId: sent.workspaceId,
           mailboxId: box.id,
@@ -85,6 +86,7 @@ async function handleReply(box: Mailbox, r: Extract<Inbound, { kind: "reply" }>,
           readAt: r.automatic ? new Date() : null,
           sentAt: r.date,
         },
+        select: { id: true },
       })
       if (sent.leadId && !sent.isTest) {
         await tx.activity.create({ data: { workspaceId: sent.workspaceId, leadId: sent.leadId, actorKind: "SYSTEM", kind: "EMAIL", body: r.subject, data: { event: r.automatic ? "auto_reply" : "replied", emailId: sent.id, from: r.fromEmail } } })
@@ -97,13 +99,15 @@ async function handleReply(box: Mailbox, r: Extract<Inbound, { kind: "reply" }>,
           }
         }
       }
-      return true
+      return stored.id
     })
     // Read twice (an overlapping run, a rewound cursor): the message is already filed.
     .catch((error) => {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return false
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return null
       throw error
     })
+  // E22: Jev suggests how to file a person's reply; the worker's sweep catches it if this does not go through.
+  if (created && !r.automatic && !sent.isTest && sent.leadId) await enqueueTriage(sent.workspaceId, sent.leadId, [created])
   return created ? (r.automatic ? "automatic" : "reply") : null
 }
 

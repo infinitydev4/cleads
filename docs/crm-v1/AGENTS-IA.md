@@ -2,7 +2,7 @@
 
 > Architecture de référence décidée le 2 novembre 2026 (décisions D13 à D27 de [PLAN.md](PLAN.md)). Elle sert de spécification aux epics E17 à E27.
 >
-> **État** : le socle (E17), le worker (E18), les agents, skills et catalogue d'offres (E19), l'audit des prospects (E20) et les offres argumentées (E21) sont implémentés : `lib/ai/`, `features/ai/`, `features/offers/`, `features/prospect-audit/`, `features/offer-pitch/`, `worker/`, Réglages › IA, Agents IA (`/app/agents`) et les onglets « Audit IA » et « Offres suggérées » des fiches. Les sections 4 à 14 décrivent ce qui existe. Le reste (rédaction, Studio, copilote, QG) est la spécification des epics E22 à E27.
+> **État** : le socle (E17), le worker (E18), les agents, skills et catalogue d'offres (E19), l'audit des prospects (E20), les offres argumentées (E21), la rédaction et le classement des réponses (E22) sont implémentés : `lib/ai/`, `features/ai/`, `features/offers/`, `features/prospect-audit/`, `features/offer-pitch/`, `features/email-draft/`, `features/reply-triage/`, `worker/`, Réglages › IA, Agents IA (`/app/agents`), les onglets « Audit IA » et « Offres suggérées » des fiches, le Brouillon IA et les suggestions de la boîte. Les sections 4 à 15 décrivent ce qui existe. Le reste (Studio, copilote, QG) est la spécification des epics E23 à E27.
 
 ## 1. Objet
 
@@ -292,6 +292,8 @@ Migrations additives uniquement ; chaque table porte `workspaceId`.
 | `ProspectAudit` | E20 | fiche, entreprise, domaine, sous-scores, constats et preuves, résumé, captures, coût, date, valable jusqu'au |
 | `OfferPitch` | E21 | fiche, audit, exécution, phrase d'accroche, script d'appel, objections, angle d'email, preuves citées (copiées), notes, modèle, coût |
 | `OfferRecommendation` | E21 | pitch, offre (nom et prix copiés), rang, rôle (principale, pack, entrée, plus tard), adéquation, signaux, argumentaire, gain, preuves, objection, statut (suggérée, retenue, écartée), raison et note d'un refus, décidée par, date |
+| `EmailDraft` | E22 | type (premier email, réponse, étape de séquence), fiche, réponse visée, audit, exécution, objet, corps, faits cités (preuves copiées), points à vérifier, modèle, coût, message envoyé, écart `editRatio` |
+| `ReplyTriage` | E22 | réponse, exécution, classe proposée et probabilité, place par rapport aux seuils (`AUTO`, `REVIEW`, `HUMAN`), urgence et probabilité, action attendue et probabilité, modèle |
 | `GeneratedSite` | E23 | fiche, audit, brief, version, clés S3, empreinte du jeton, expiration, scores avant / après, statut |
 | `GeneratedSiteVisit` | E23 | maquette, date (aucune adresse IP en clair) |
 | `AiConversation`, `AiMessage` | E24 | personne, contexte, messages, exécutions liées |
@@ -321,6 +323,17 @@ Peut valider l'action d'un agent : la personne qui a lancé l'exécution, ou un 
 **Offres suggérées** (fiche, E21) :
 - **Accès** : `ai:use` sur une fiche visible, comme Agents IA, car l'onglet montre des offres et des prix. Lancer le Conseiller et décider d'une offre demandent aussi de pouvoir modifier la fiche (`lead:write`).
 - **Routes** : `GET` et `POST /api/leads/[id]/offers` (état et lancement), `PATCH /api/leads/[id]/offers/[recommendationId]` (retenir, écarter avec une raison, annuler).
+
+**Rédaction et réponses** (E22) :
+- **Brouillons** : `ai:use` et `email:send` sur une fiche que la personne peut modifier. Pour une étape de séquence : `ai:use` et `sequence:manage`. La personne suit son brouillon ; un manager voit ceux de l'équipe.
+- **Répondre** : `email:send`, depuis la boîte qui a reçu la réponse, avec les règles de la fiche (exclusion, « ne plus contacter »).
+- **Routes** :
+  - `POST /api/leads/[id]/email/draft` ;
+  - `POST /api/replies/[id]/draft` ;
+  - `POST /api/sequences/draft` ;
+  - `GET /api/ai/drafts/[runId]` ;
+  - `POST /api/replies/[id]/answer` ;
+  - `POST /api/leads/[id]/email`, qui accepte `draftId`.
 
 **Réglages › IA** (`/app/settings/ai`) :
 - **Accès** : la page est visible avec `ai:use`. Le propriétaire la modifie (`ai:manage`) ; les autres la lisent.
@@ -420,6 +433,18 @@ Tout s'affiche dans l'onglet « Offres suggérées » de la fiche. La personne a
   - En dessous, la réponse reste « À classer ».
   - Les arrêts de séquence existants (E9c) ne changent pas.
 - **Réponse suggérée** à une réponse intéressée : un brouillon qui propose des créneaux (lien de réservation `/rdv/[closer]`), relu avant envoi.
+
+**Implémentation (E22)**
+- **Classement** (`features/reply-triage/`) :
+  - la lecture des boîtes met en file une exécution de l'Analyste réponses pour chaque réponse d'une personne ; une exécution déjà en file pour la fiche prend aussi les suivantes ;
+  - Jev reçoit la réponse encadrée comme contenu externe. Sous le seuil bas (0,6) ou en cas de refus, la réponse reste « À classer » ; au-dessus, la suggestion s'affiche avec sa probabilité et se confirme en un clic ;
+  - la maintenance du worker remet en file les réponses oubliées des 7 derniers jours, en laissant reposer 30 minutes une fiche qui vient d'avoir une exécution ;
+  - l'historique de l'exécution ne recopie pas le texte de la réponse.
+- **Brouillons** (`features/email-draft/`) : un appel du rôle de l'agent (Sonnet), sans outil, avec 3 000 jetons de sortie (raisonnement compris).
+  - **Premier email** : il s'appuie sur l'audit et sur le pitch, s'il existe. Les faits cités sans preuve existante sont retirés, et les points à vérifier sont listés : passage entre crochets, lien, longueur.
+  - **Réponse** : notre email (sans pied de page), la réponse et le contexte, encadrés. Le lien de réservation est ajouté par le code ; sans page active, la réponse demande le créneau qui convient.
+  - **Étape de séquence** : un modèle avec les variables `{{prenom}}`, `{{entreprise}}`, `{{ville}}`, `{{secteur}}` et `{{site}}`, contrôlé par `templateErrors`.
+- **Mesure** : à l'envoi, le message est relié à son brouillon avec `editRatio`, la distance d'édition entre leurs mots rapportée au plus long (0 = envoyé tel quel). Un brouillon manquant ou déjà utilisé ne bloque jamais l'envoi.
 
 ## 16. Studio Web (E23)
 

@@ -12,12 +12,17 @@ import { BLOCKER_LABELS, DUPLICATE_WINDOW_MS, dailyAllowance, leadBlockers, mail
 import { hasPlaceholder, templateValues, type TemplateValues } from "./template"
 import { listTemplates, type TemplateView } from "./templates"
 import { transport, TransportError, type MailboxCredentials } from "./transport"
-import type { SendInput } from "./schemas"
+import type { AnswerInput, SendInput } from "./schemas"
+import { visibleReply } from "./replies"
+import { consumeDraft } from "@/features/email-draft/consume"
+import { NO_AUDIT_FOR_DRAFT } from "@/features/email-draft/labels"
+import { latestFor } from "@/features/prospect-audit/latest"
+import { can, canAccessRecord } from "@/lib/rbac"
 
 type Tx = Prisma.TransactionClient
 
 const leadInclude = {
-  company: { select: { name: true, email: true, city: true, sector: true, website: true } },
+  company: { select: { name: true, email: true, city: true, sector: true, website: true, domain: true } },
   contact: { select: { id: true, name: true, email: true, emailKind: true, doNotContact: true, doNotContactReason: true } },
   deals: { select: { ownerId: true, stage: true } },
 } satisfies Prisma.LeadInclude
@@ -54,16 +59,22 @@ export interface ComposeContext {
   /** Told to the prospect in the footer. */
   origin: string
   recent: EmailView[]
+  /** E22: the « Brouillon IA » button, shown to those who use AI and usable once the fiche has an audit. */
+  ai: { available: boolean; canDraft: boolean; reason: string | null }
 }
 
 export async function composeContext(user: CurrentUser, leadId: string): Promise<ComposeContext> {
   const lead = await loadLead(user, leadId)
-  const [{ recipient, blockers }, boxes, templates, recent] = await Promise.all([
+  const usesAi = can(user.role, "ai:use")
+  const [{ recipient, blockers }, boxes, templates, recent, audit] = await Promise.all([
     checkLead(user, lead),
     usableMailboxes(user),
     listTemplates(user),
-    listEmails(user, { leadId, take: 5 }).then((r) => r.items),
+    // What was already sent to the fiche: its replies are in the mailbox, not in this list.
+    listEmails(user, { leadId, take: 5, direction: "OUTBOUND" }).then((r) => r.items),
+    usesAi ? latestFor(user.workspaceId, lead) : null,
   ])
+  const writable = canAccessRecord(user, "lead:write", lead.ownerId)
   return {
     recipient,
     blockers: labelled(blockers),
@@ -75,6 +86,7 @@ export async function composeContext(user: CurrentUser, leadId: string): Promise
     values: templateValues({ contactName: lead.contact?.name, companyName: lead.company?.name, city: lead.company?.city, sector: lead.company?.sector, website: lead.company?.website }),
     origin: originText(lead.source),
     recent,
+    ai: { available: usesAi, canDraft: usesAi && writable && !!audit, reason: !usesAi ? null : !audit ? NO_AUDIT_FOR_DRAFT : !writable ? "Cette fiche ne vous est pas attribuée : l’IA ne peut pas y écrire pour vous." : null },
   }
 }
 
@@ -129,6 +141,8 @@ export async function reserve(
     isTest: boolean
     /** Sequence steps: which enrollment and step this is, and the earlier message ids it continues (same thread). */
     sequence?: { enrollmentId: string; stepNumber: number; thread: string[] } | null
+    /** E22: an answer to a reply, in its thread. The person wrote to us: the guard against writing twice does not apply. */
+    answer?: { thread: string[] } | null
   },
 ): Promise<Reserved> {
   await tx.$queryRaw`SELECT id FROM "Mailbox" WHERE id = ${input.mailboxId} FOR UPDATE`
@@ -138,7 +152,7 @@ export async function reserve(
   const blocker = mailboxBlocker(box, await sentToday(tx, box.id), dailyAllowance(box))
   if (blocker) throw new LeadError("conflict", blocker === "mailbox_inactive" && box.statusReason ? `${BLOCKER_LABELS[blocker]} ${box.statusReason}` : BLOCKER_LABELS[blocker], 409, { blocker })
 
-  if (!input.isTest) {
+  if (!input.isTest && !input.answer) {
     const recent = await tx.emailMessage.findFirst({
       where: {
         workspaceId: user.workspaceId,
@@ -169,7 +183,7 @@ export async function reserve(
       templateId: input.templateId,
       enrollmentId: input.sequence?.enrollmentId ?? null,
       stepNumber: input.sequence?.stepNumber ?? null,
-      inReplyTo: input.sequence?.thread.at(-1) ?? null,
+      inReplyTo: (input.sequence ?? input.answer)?.thread.at(-1) ?? null,
       status: "SENDING",
       fromEmail: box.address,
       toEmail: input.to,
@@ -179,7 +193,8 @@ export async function reserve(
       isTest: input.isTest,
     },
   })
-  return { id, credentials: credentialsOf(box), mailboxId: box.id, to: input.to, subject: input.subject, text, messageId, headers: { ...outreachHeaders(links.oneClick), ...(input.sequence?.thread.length ? { "In-Reply-To": input.sequence.thread.at(-1)!, References: input.sequence.thread.join(" ") } : {}) } }
+  const thread = (input.sequence ?? input.answer)?.thread ?? []
+  return { id, credentials: credentialsOf(box), mailboxId: box.id, to: input.to, subject: input.subject, text, messageId, headers: { ...outreachHeaders(links.oneClick), ...(thread.length ? { "In-Reply-To": thread.at(-1)!, References: thread.join(" ") } : {}) } }
 }
 
 /** Hands the reserved message to the mailbox's server and records what happened. Throws LeadError on failure. */
@@ -236,7 +251,44 @@ export async function sendToLead(user: CurrentUser, leadId: string, input: SendI
   await deliver(actorOf(user), reserved)
 
   await recordSent(actorOf(user), lead.id, reserved)
-  await audit({ action: "email.sent", actorId: user.id, workspaceId: user.workspaceId, entityType: "EmailMessage", entityId: reserved.id, subject: reserved.to, metadata: { leadId: lead.id, mailboxId: reserved.mailboxId, templateId: input.templateId ?? null }, ip })
+  const edits = input.draftId ? await consumeDraft({ draftId: input.draftId, workspaceId: user.workspaceId, kind: "FIRST_EMAIL", leadId: lead.id }, { emailId: reserved.id, subject: input.subject, body: input.body }) : null
+  await audit({ action: "email.sent", actorId: user.id, workspaceId: user.workspaceId, entityType: "EmailMessage", entityId: reserved.id, subject: reserved.to, metadata: { leadId: lead.id, mailboxId: reserved.mailboxId, templateId: input.templateId ?? null, ...(edits != null ? { draftEdits: edits } : {}) }, ip })
+  return { emailId: reserved.id }
+}
+
+/**
+ * E22: answers a reply in its thread, from the mailbox that received it, to the address that wrote. The fiche's rules
+ * still hold (exclusion list, « ne plus contacter », the person's rights); the footer and the unsubscribe link are added
+ * as in any prospecting email.
+ */
+export async function answerReply(user: CurrentUser, replyId: string, input: AnswerInput, ip?: string | null): Promise<{ emailId: string }> {
+  const reply = await visibleReply(user, replyId)
+  if (!reply.leadId) throw new LeadError("conflict", "Cette réponse n’est liée à aucune fiche : répondez depuis votre messagerie.", 409)
+  const lead = await loadLead(user, reply.leadId)
+  if (!mayEmailLead(user, lead)) throw new LeadError("forbidden", BLOCKER_LABELS.not_yours, 403, { blocker: "not_yours" })
+  if (lead.status === "DO_NOT_CONTACT" || lead.contact?.doNotContact || reply.replyClass === "STOP") throw new LeadError("conflict", BLOCKER_LABELS.do_not_contact, 409, { blocker: "do_not_contact" })
+  if (hasPlaceholder(input.subject) || hasPlaceholder(input.body)) throw new LeadError("invalid", "Une variable n’a pas été remplie ({{…}}) : complétez le message avant de l’envoyer.")
+  const sent = reply.repliesToId ? await prisma.emailMessage.findUnique({ where: { id: reply.repliesToId }, select: { messageId: true } }) : null
+  const reserved = await prisma.$transaction(async (tx) => {
+    if (await isSuppressed(tx, user.workspaceId, reply.fromEmail)) throw new LeadError("conflict", BLOCKER_LABELS.suppressed, 409, { blocker: "suppressed" })
+    return reserve(tx, actorOf(user), {
+      mailboxId: reply.mailboxId,
+      to: reply.fromEmail,
+      subject: input.subject,
+      body: input.body,
+      leadId: lead.id,
+      contactId: reply.contactId,
+      templateId: null,
+      origin: originText(lead.source),
+      isTest: false,
+      answer: { thread: [sent?.messageId, reply.messageId].filter((x): x is string => !!x) },
+    })
+  })
+  await deliver(actorOf(user), reserved)
+  await recordSent(actorOf(user), lead.id, reserved, { answeredReplyId: reply.id })
+  if (!reply.readAt) await prisma.emailMessage.update({ where: { id: reply.id }, data: { readAt: new Date() } })
+  const edits = input.draftId ? await consumeDraft({ draftId: input.draftId, workspaceId: user.workspaceId, kind: "REPLY", leadId: lead.id, replyToId: reply.id }, { emailId: reserved.id, subject: input.subject, body: input.body }) : null
+  await audit({ action: "email.reply_answered", actorId: user.id, workspaceId: user.workspaceId, entityType: "EmailMessage", entityId: reserved.id, subject: reserved.to, metadata: { leadId: lead.id, replyId: reply.id, ...(edits != null ? { draftEdits: edits } : {}) }, ip })
   return { emailId: reserved.id }
 }
 

@@ -546,7 +546,7 @@ Seconde vue du CRM, isométrique et interactive, à côté de la vue 2D qui rest
 - **Critères** : aucune régression de la vue 2D (tests et parcours dans le navigateur) ; aucun chiffre sans définition ; fluide sur un portable récent.
 
 ### Couche agentique IA (E17 à E27, décidée le 2 novembre 2026)
-Décisions D13 à D27 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17 à E21 sont faits ; E22 à E27 restent à faire.
+Décisions D13 à D27 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17 à E22 sont faits ; E23 à E27 restent à faire.
 
 ### E17 — Socle IA · **M** *(absorbe E13)*
 > **Avancement (branche `feat/e17-socle-ia`)** — fait :
@@ -740,6 +740,46 @@ L'Auditeur digital produit une fiche enrichie et sourcée, à la demande, depuis
 - **Critères** : aucune offre sans au moins une preuve d'audit ; le closer voit en un écran pourquoi cette offre et quoi dire.
 
 ### E22 — Rédaction et réponses · **M**
+> **Avancement (branche `feat/e22-redaction-reponses`)** — fait :
+> - migration additive `20261107090000_drafts_replies` : `EmailDraft` (brouillons, avec les faits cités, le message envoyé et l'écart entre les deux) et `ReplyTriage` (classement proposé par Jev, avec ses probabilités) ;
+> - **Classement des réponses** (`features/reply-triage/`) :
+>   - chaque réponse d'une personne met en file l'Analyste réponses. Jev répond à trois questions : classe, urgence, action attendue ;
+>   - au-dessus du seuil bas, la boîte affiche la suggestion avec sa probabilité et un bouton « Confirmer », en un clic ; en dessous, ou si Jev refuse, la réponse reste « À classer » ;
+>   - rien n'est classé sans une personne, et les arrêts de séquence d'E9c ne changent pas ;
+>   - les réponses arrivées ensemble sont classées par une seule exécution ;
+>   - la maintenance du worker rattrape les réponses restées en attente, avec un repos de 30 minutes par fiche après une exécution ;
+>   - le texte de la réponse n'est pas recopié dans l'historique de l'exécution ;
+> - **Brouillon IA** (`features/email-draft/`, Rédacteur outreach) :
+>   - dans la fenêtre d'email d'une fiche auditée : un email court, tiré de l'audit et du pitch, avec les faits cités et leurs preuves, et ce qu'il faut vérifier. Un fait sans preuve est retiré ;
+>   - dans l'éditeur de séquences : un modèle avec variables pour chaque message, guidé par une consigne facultative. Les variables inconnues sont signalées ;
+> - **Réponse dans le fil** : un bouton « Répondre » dans la boîte, depuis la boîte qui a reçu la réponse (`In-Reply-To`, `References`).
+>   - « Réponse suggérée » propose un échange de 15 minutes. Le code y ajoute le lien de la page de réservation (celle de la personne, sinon celle du responsable de la fiche) ;
+>   - les règles de la fiche s'appliquent : liste d'exclusion, « ne plus contacter », « Ne plus écrire » ;
+> - **Ce que le code ajoute, jamais le modèle** : la signature, le pied de page légal, le lien de désinscription et le lien de réservation. À l'envoi, l'écart entre le brouillon et le message est mesuré (`editRatio`, de 0 à 1) pour E27 ;
+> - **Robustesse** :
+>   - un refus du modèle de décision n'est pas retenté ;
+>   - une réponse invalide d'un modèle est retentée avec un message exact ;
+>   - le worker reçoit l'adresse publique du CRM (`NEXT_PUBLIC_APP_URL`, `https://cleads.fr` par défaut) pour les liens qu'il écrit.
+>
+> **Vérifié** :
+> - `tests/drafts-replies.test.ts` (10 tests) et `tests/drafts-replies.integration.test.ts` (7 tests, base jetable, worker, modèles et SMTP simulés) ;
+> - suite complète verte (787 tests), build, paquet du worker ;
+> - parcours dans le navigateur sur la base de prévisualisation, avec un worker local et des modèles simulés, sans aucun envoi :
+>   - suggestions de la boîte, « Intéressé ? » et « Urgent », ou « À classer » sous le seuil ;
+>   - « Confirmer » en un clic ;
+>   - « Répondre » avec la réponse suggérée et le lien de réservation ;
+>   - Brouillon IA d'un premier email, avec ses faits sourcés ;
+>   - brouillon d'une étape de séquence avec variables ;
+>   - aucune erreur dans la console ;
+> - au passage : la fenêtre d'email listait aussi les réponses reçues sous « Déjà envoyés » ; elle ne liste plus que les envois.
+>
+> **Pas encore** : un brouillon et un classement réels (un appel Sonnet de quelques centimes ; un appel Jev d'environ 0,0001 €).
+>
+> **Écarts** :
+> - les brouillons de séquence sont des modèles avec variables, pas un email par fiche : une séquence s'envoie à beaucoup de fiches, et le budget reste sous 100 € par mois ;
+> - la réponse suggérée est proposée pour les réponses « Intéressé », classées ou suggérées ;
+> - au-dessus du seuil haut aussi, la suggestion attend un clic : la spécification d'E22 le demande, même si le principe général appliquerait le classement seul.
+
 - **Brouillon IA** dans la fenêtre d'email et dans les séquences : court, personnalisé, une seule proposition (15 minutes), uniquement des faits de l'audit. Le pied de page et la désinscription sont ajoutés par le code, et les modifications de la personne sont conservées.
 - **Classement des réponses** par Jev (`ReplyClass` et urgence, avec probabilité) : suggestion confirmée en un clic, « À classer » sous le seuil. C'est le classement assisté reporté en E9b.
 - Brouillon de réponse aux réponses intéressées.

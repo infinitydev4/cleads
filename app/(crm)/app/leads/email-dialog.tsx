@@ -1,9 +1,9 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
-import { CircleAlert, Send } from "lucide-react"
+import { CircleAlert, Send, Sparkles } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -17,6 +17,8 @@ import { ago } from "@/lib/crm/format"
 import type { ComposeContext } from "@/features/outreach/service"
 import { composeText } from "@/features/outreach/footer"
 import { VARIABLES, hasPlaceholder, renderTemplate, templateValues } from "@/features/outreach/template"
+import type { DraftView } from "@/features/email-draft/labels"
+import { DraftReview, fetchDraft, isAbort } from "@/components/crm/ai/drafts"
 import { api } from "./api"
 
 const FREE = "__free__"
@@ -38,6 +40,11 @@ export function EmailDialog({ open, onOpenChange, leadId, leadName, onDone }: Pr
   const [body, setBody] = useState("")
   const [confirmGeneric, setConfirmGeneric] = useState(false)
   const [busy, setBusy] = useState(false)
+  // E22: the AI draft the message started from, kept to measure what the person changes before sending.
+  const [draft, setDraft] = useState<DraftView | null>(null)
+  const [drafting, setDrafting] = useState(false)
+  const drafts = useRef<AbortController | null>(null)
+  useEffect(() => () => drafts.current?.abort(), [])
 
   useEffect(() => {
     api<ComposeContext>(`/api/leads/${leadId}/email`)
@@ -54,7 +61,26 @@ export function EmailDialog({ open, onOpenChange, leadId, leadName, onDone }: Pr
     return { ...ctx?.values, expediteur: sender.expediteur, expediteur_prenom: sender.expediteur_prenom }
   }, [ctx, mailbox])
 
+  async function writeDraft() {
+    drafts.current?.abort()
+    const controller = new AbortController()
+    drafts.current = controller
+    setDrafting(true)
+    try {
+      const d = await fetchDraft(`/api/leads/${leadId}/email/draft`, {}, controller.signal)
+      setTemplateId(FREE)
+      setSubject(renderTemplate(d.subject, values).text)
+      setBody(renderTemplate(d.body, values).text)
+      setDraft(d)
+    } catch (e) {
+      if (!isAbort(e)) toast.error(e instanceof Error ? e.message : "Échec")
+    } finally {
+      if (drafts.current === controller) setDrafting(false)
+    }
+  }
+
   function chooseTemplate(id: string) {
+    setDraft(null)
     setTemplateId(id)
     const t = ctx?.templates.find((x) => x.id === id)
     if (!t) return
@@ -73,7 +99,7 @@ export function EmailDialog({ open, onOpenChange, leadId, leadName, onDone }: Pr
     if (!canSend || busy) return
     setBusy(true)
     try {
-      await api(`/api/leads/${leadId}/email`, { method: "POST", body: JSON.stringify({ mailboxId, subject, body, templateId: templateId === FREE ? null : templateId, confirmGeneric: generic ? confirmGeneric : undefined }) })
+      await api(`/api/leads/${leadId}/email`, { method: "POST", body: JSON.stringify({ mailboxId, subject, body, templateId: templateId === FREE ? null : templateId, confirmGeneric: generic ? confirmGeneric : undefined, draftId: draft?.id ?? null }) })
       toast.success(`Email envoyé à ${ctx!.recipient!.email}`)
       onDone()
       onOpenChange(false)
@@ -135,12 +161,23 @@ export function EmailDialog({ open, onOpenChange, leadId, leadName, onDone }: Pr
                 </div>
               )}
 
+              {ctx.ai.available && (
+                <div className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/60 p-2.5">
+                  <Button type="button" variant="outline" size="sm" onClick={writeDraft} loading={drafting} disabled={!ctx.ai.canDraft || drafting} title={ctx.ai.reason ?? "Un email court tiré de l’audit, avec une seule demande : 15 minutes d’échange."}>
+                    {!drafting && <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />}
+                    {drafting ? "Le Rédacteur écrit…" : draft ? "Nouveau brouillon IA" : "Brouillon IA"}
+                  </Button>
+                  <span className="min-w-0 flex-1 text-xs text-muted-foreground">{ctx.ai.reason ?? (drafting ? "Comptez quelques secondes ; vous pouvez fermer la fenêtre." : "Tiré de l’audit de la fiche, à relire avant l’envoi. Quelques centimes.")}</span>
+                </div>
+              )}
+
               <FormField label="Objet" required>
                 <Input value={subject} onChange={(e) => setSubject(e.target.value)} maxLength={150} />
               </FormField>
               <FormField label="Message" required error={unfilled ? `À compléter : ${missing.length ? missing.map((m) => `{{${m}}} (${VARIABLES[m].toLowerCase()})`).join(", ") : "une variable {{…}} reste dans le texte"}.` : undefined}>
                 <Textarea value={body} onChange={(e) => setBody(e.target.value)} rows={9} placeholder="Bonjour…" />
               </FormField>
+              {draft && <DraftReview draft={draft} />}
 
               {mailbox && (
                 <div className="space-y-1">

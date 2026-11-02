@@ -1,9 +1,9 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
-import { Archive, ChevronDown, Pause, Pencil, Play, Plus, Trash2, X } from "lucide-react"
+import { Archive, ChevronDown, CircleAlert, Pause, Pencil, Play, Plus, Sparkles, Trash2, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils"
 import type { EnrollmentView, SequenceView } from "@/features/outreach/sequences"
 import { MAX_DELAY_DAYS, MAX_STEPS, STOP_LABELS } from "@/features/outreach/sequence-rules"
 import { VARIABLES, templateErrors } from "@/features/outreach/template"
+import { fetchDraft, isAbort } from "@/components/crm/ai/drafts"
 import { api } from "../leads/api"
 
 const NEW_STEP = { delayDays: 3, subject: "", body: "" }
@@ -28,7 +29,7 @@ function schedule(steps: SequenceView["steps"]) {
   return steps.map((s, i) => (i === 0 ? "J0" : `J+${(day += s.delayDays)}`)).join(", ")
 }
 
-export function SequencesView({ initial }: { initial: SequenceView[] }) {
+export function SequencesView({ initial, canUseAi }: { initial: SequenceView[]; canUseAi: boolean }) {
   const [sequences, setSequences] = useState(initial)
   const [editing, setEditing] = useState<SequenceView | "new" | null>(null)
   const [open, setOpen] = useState<string | null>(null)
@@ -108,7 +109,7 @@ export function SequencesView({ initial }: { initial: SequenceView[] }) {
         </ul>
       )}
 
-      {editing && <SequenceDialog sequence={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload() }} />}
+      {editing && <SequenceDialog canUseAi={canUseAi} sequence={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload() }} />}
     </div>
   )
 }
@@ -167,13 +168,35 @@ function Enrollments({ sequenceId, onChange }: { sequenceId: string; onChange: (
   )
 }
 
-function SequenceDialog({ sequence, onClose, onSaved }: { sequence: SequenceView | null; onClose: () => void; onSaved: () => Promise<void> }) {
+function SequenceDialog({ sequence, canUseAi, onClose, onSaved }: { sequence: SequenceView | null; canUseAi: boolean; onClose: () => void; onSaved: () => Promise<void> }) {
   const [name, setName] = useState(sequence?.name ?? "")
   const [steps, setSteps] = useState(sequence?.steps ?? [FIRST_STEP, { ...NEW_STEP, body: "Je me permets de relancer mon message précédent. Seriez-vous disponible cette semaine pour un court échange ?" }])
   const [focus, setFocus] = useState(0)
   const [busy, setBusy] = useState(false)
   const errors = steps.flatMap((s) => [...templateErrors(s.subject), ...templateErrors(s.body)])
   const set = (i: number, patch: Partial<(typeof steps)[number]>) => setSteps((all) => all.map((s, j) => (j === i ? { ...s, ...patch } : s)))
+  // E22: the Rédacteur writes a step as a template, from what the team says the sequence is for.
+  const [brief, setBrief] = useState("")
+  const [drafting, setDrafting] = useState<number | null>(null)
+  const [notes, setNotes] = useState<Record<number, string[]>>({})
+  const drafts = useRef<AbortController | null>(null)
+  useEffect(() => () => drafts.current?.abort(), [])
+
+  async function draftStep(i: number) {
+    drafts.current?.abort()
+    const controller = new AbortController()
+    drafts.current = controller
+    setDrafting(i)
+    try {
+      const d = await fetchDraft("/api/sequences/draft", { position: i + 1, delayDays: i === 0 ? 0 : steps[i].delayDays, brief: brief.trim() || undefined, previous: steps.slice(0, i).map(({ subject, body }) => ({ subject, body })) }, controller.signal)
+      set(i, { subject: i === 0 && !d.subject ? steps[i].subject : d.subject, body: d.body })
+      setNotes((all) => ({ ...all, [i]: d.notes }))
+    } catch (e) {
+      if (!isAbort(e)) toast.error(e instanceof Error ? e.message : "Échec")
+    } finally {
+      if (drafts.current === controller) setDrafting(null)
+    }
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -201,21 +224,43 @@ function SequenceDialog({ sequence, onClose, onSaved }: { sequence: SequenceView
             </DialogDescription>
           </DialogHeader>
           <FormField label="Nom de la séquence" required><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Artisans : 3 messages" /></FormField>
+          {canUseAi && (
+            <FormField label="Pour le Rédacteur IA" hint="Facultatif : à qui s’adresse la séquence et quelle offre elle porte. Le brouillon de chaque message en tient compte.">
+              <Input value={brief} onChange={(e) => setBrief(e.target.value)} maxLength={500} placeholder="SEO local pour les artisans du bâtiment, autour de Lyon" />
+            </FormField>
+          )}
 
           {steps.map((s, i) => (
             <fieldset key={i} className="space-y-3 rounded-xl border p-3" onFocus={() => setFocus(i)}>
               <legend className="px-1 text-sm font-semibold">Message {i + 1}</legend>
+              {canUseAi && (
+                <div className="flex justify-end">
+                  <Button type="button" variant="outline" size="sm" onClick={() => draftStep(i)} loading={drafting === i} disabled={drafting !== null} title="Un modèle avec variables, écrit par le Rédacteur IA à partir de la consigne et des messages précédents. Quelques centimes.">
+                    {drafting !== i && <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />}
+                    {drafting === i ? "Le Rédacteur écrit…" : "Brouillon IA"}
+                  </Button>
+                </div>
+              )}
               {i > 0 && (
                 <div className="flex items-end gap-3">
                   <FormField label="Envoyé après (jours)" required><Input type="number" min={1} max={MAX_DELAY_DAYS} value={s.delayDays} onChange={(e) => set(i, { delayDays: Number(e.target.value) })} className="w-28" /></FormField>
                   <p className="pb-2 text-xs text-muted-foreground">après le message précédent, un jour ouvré</p>
-                  <Button type="button" variant="ghost" size="sm" className="ml-auto" aria-label={`Retirer le message ${i + 1}`} onClick={() => setSteps((all) => all.filter((_, j) => j !== i))}><Trash2 className="h-4 w-4" aria-hidden="true" /></Button>
+                  <Button type="button" variant="ghost" size="sm" className="ml-auto" aria-label={`Retirer le message ${i + 1}`} onClick={() => { setSteps((all) => all.filter((_, j) => j !== i)); setNotes({}) }}><Trash2 className="h-4 w-4" aria-hidden="true" /></Button>
                 </div>
               )}
               <FormField label="Objet" required={i === 0} hint={i > 0 ? "Laissez vide pour répondre dans le même fil (« Re: … »), ce qui se lit comme une vraie relance." : undefined}>
                 <Input value={s.subject} onChange={(e) => set(i, { subject: e.target.value })} maxLength={150} />
               </FormField>
               <FormField label="Message" required><Textarea value={s.body} onChange={(e) => set(i, { body: e.target.value })} rows={i === 0 ? 8 : 5} /></FormField>
+              {notes[i]?.length ? (
+                <ul className="space-y-1 text-xs text-warning" aria-label="À vérifier dans le brouillon">
+                  {notes[i].map((n, k) => (
+                    <li key={k} className="flex items-start gap-1.5">
+                      <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" /> {n}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </fieldset>
           ))}
 

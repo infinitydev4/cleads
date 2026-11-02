@@ -53,7 +53,18 @@ export const sendSchema = z.object({
   templateId: z.string().min(1).optional().nullable(),
   /** The address is generic (contact@…): the sender confirmed they want to write to it anyway. */
   confirmGeneric: z.boolean().optional(),
+  /** E22: the AI draft it started from, to measure how much the person changed it. */
+  draftId: z.string().min(1).max(40).optional().nullable(),
 })
+
+/** E22: an answer to a reply, in its thread, from the mailbox that received it. */
+export const answerSchema = z
+  .object({
+    subject: z.string().trim().min(2, "Indiquez un objet").max(SUBJECT_MAX),
+    body: z.string().trim().min(10, "Le message est trop court").max(BODY_MAX),
+    draftId: z.string().min(1).max(40).optional().nullable(),
+  })
+  .strict()
 
 const stepSchema = z.object({
   /** Days after the previous message; ignored for step 1, which leaves at enrollment. */
@@ -83,5 +94,6 @@ export type CreateMailboxInput = z.infer<typeof createMailboxSchema>
 export type UpdateMailboxInput = z.infer<typeof updateMailboxSchema>
 export type TemplateInput = z.infer<typeof templateSchema>
 export type SendInput = z.infer<typeof sendSchema>
+export type AnswerInput = z.infer<typeof answerSchema>
 export type SequenceInput = z.infer<typeof sequenceSchema>
 export type EnrollInput = z.infer<typeof enrollSchema>
