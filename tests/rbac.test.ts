@@ -25,6 +25,9 @@ const expected: Record<string, Record<CrmRole, string>> = {
   "data:delete": { OWNER: "all", MANAGER: "-", SDR: "-", CLOSER: "-", VIEWER: "-" },
   "audit:read": { OWNER: "all", MANAGER: "all", SDR: "-", CLOSER: "-", VIEWER: "-" },
   "mailbox:manage": { OWNER: "all", MANAGER: "-", SDR: "-", CLOSER: "-", VIEWER: "-" },
+  "ai:use": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "all", VIEWER: "-" },
+  "ai:read": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "all", VIEWER: "all" },
+  "ai:manage": { OWNER: "all", MANAGER: "-", SDR: "-", CLOSER: "-", VIEWER: "-" },
 }
 
 describe("role matrix", () => {

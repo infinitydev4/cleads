@@ -45,6 +45,13 @@ const matrix = {
   "report:read": { OWNER: "all", MANAGER: "all", SDR: "own", CLOSER: "own", VIEWER: "all" },
   "data:export": { OWNER: "all", MANAGER: "all" },
   "data:delete": { OWNER: "all" },
+  // AI (E17, docs/crm-v1/AGENTS-IA.md §12)
+  /** Launch AI work within one's daily quota; on a fiche it also needs lead:write on it. */
+  "ai:use": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "all" },
+  /** See AI results and one's runs; owners and managers see everyone's. */
+  "ai:read": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "all", VIEWER: "all" },
+  /** Models per role, spending caps. */
+  "ai:manage": { OWNER: "all" },
   // Administration
   "team:read": { OWNER: "all", MANAGER: "all" },
   "team:manage": { OWNER: "all" },

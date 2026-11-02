@@ -66,6 +66,10 @@ model User {
   hqCharacter            String?
   campaignsOwned         Campaign[]              @relation("CampaignOwner")
   campaignsCreated       Campaign[]              @relation("CampaignCreator")
+  /// E17: AI runs the member asked for, and the approvals they requested or decided.
+  agentRuns              AgentRun[]              @relation("AgentRunRequester")
+  approvalsRequested     AgentApproval[]         @relation("ApprovalRequester")
+  approvalsDecided       AgentApproval[]         @relation("ApprovalDecider")
 }
 
 /// LEGACY (blog, AI keys, NextAuth adapter): unused, dropped by prisma/pending/drop-legacy-blog.sql once a dump is taken.
@@ -584,6 +588,10 @@ model Workspace {
   sequences              Sequence[]
   sequenceEnrollments    SequenceEnrollment[]
   campaigns              Campaign[]
+  aiSetting              AiSetting?
+  aiUsage                AiUsage[]
+  agentRuns              AgentRun[]
+  agentApprovals         AgentApproval[]
 }
 
 enum LeadSource {
@@ -802,6 +810,7 @@ model Lead {
   meetings            Meeting[]
   emails              EmailMessage[]
   sequenceEnrollments SequenceEnrollment[]
+  agentRuns           AgentRun[]
 
   @@unique([workspaceId, companyId])
   @@index([workspaceId, status])
@@ -1378,9 +1387,176 @@ model Campaign {
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
-  leads    Lead[]
-  searches ExtractionSearch[]
+  leads     Lead[]
+  searches  ExtractionSearch[]
+  agentRuns AgentRun[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId, status])
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// E17: AI foundation (docs/crm-v1/AGENTS-IA.md). Amounts are micro-euros (1 € = 1 000 000), converted from the
+// Gateway's dollar prices at the workspace rate when each call is recorded.
+
+enum AgentRunStatus {
+  QUEUED
+  RUNNING
+  WAITING_APPROVAL
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  BUDGET_EXCEEDED
+  EXPIRED
+}
+
+enum AgentStepType {
+  MODEL
+  TOOL
+  DECISION
+  APPROVAL
+}
+
+enum AgentApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+/// One row per workspace, created on first save: models per role and spending caps. No row = the defaults
+/// (lib/ai/models.ts, lib/ai/budget.ts). The row is also the lock that serialises budget reservations.
+model AiSetting {
+  id                 String    @id @default(cuid())
+  workspaceId        String    @unique
+  workspace          Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  /// { role: modelId } overrides of the defaults; entries outside a role's allow list are ignored.
+  roleModels         Json?
+  /// Hard monthly cap for the workspace.
+  monthlyCapMicros   Int       @default(100000000)
+  /// Daily quota per person, inside the monthly cap.
+  userDailyCapMicros Int       @default(5000000)
+  /// Euros per US dollar, to convert the Gateway's prices.
+  eurPerUsd          Float     @default(0.92)
+  /// Budget alerts already sent: { "YYYY-MM": [50, 80, 100] }.
+  alerts             Json?
+  updatedById        String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+/// Spend per day, person, agent and model; the month's total is the sum of its rows. Upserted after every call.
+model AiUsage {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  /// UTC calendar day.
+  day               DateTime  @db.Date
+  /// The member's id, or "system" for scheduled runs (a key, not a relation: history outlives accounts).
+  userKey           String
+  agentId           String
+  model             String
+  calls             Int       @default(0)
+  inputTokens       Int       @default(0)
+  outputTokens      Int       @default(0)
+  cachedInputTokens Int       @default(0)
+  costMicros        Int       @default(0)
+
+  @@unique([workspaceId, day, userKey, agentId, model])
+  @@index([workspaceId, day])
+}
+
+/// One AI execution: who it acts for, which agent, on which fiche, its status and its cost.
+model AgentRun {
+  id             String         @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  agentId        String
+  status         AgentRunStatus @default(QUEUED)
+  /// The person the run acts for: every tool checks this person's rights. Null for scheduled runs.
+  requestedById  String?
+  requestedBy    User?          @relation("AgentRunRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  leadId         String?
+  lead           Lead?          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  campaignId     String?
+  campaign       Campaign?      @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  parentRunId    String?
+  parentRun      AgentRun?      @relation("AgentRunChildren", fields: [parentRunId], references: [id], onDelete: SetNull)
+  children       AgentRun[]     @relation("AgentRunChildren")
+  input          Json?
+  output         Json?
+  error          String?
+  /// The run's own cap: the budget reserved for it when it started.
+  capMicros      Int
+  /// Part of the cap still held while the run is active; 0 once it ends.
+  reservedMicros Int            @default(0)
+  /// Cost recorded so far.
+  costMicros     Int            @default(0)
+  /// Number of steps, also the next step's index.
+  stepCount      Int            @default(0)
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  steps     AgentStep[]
+  approvals AgentApproval[]
+
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, status])
+  @@index([leadId, createdAt])
+  @@index([requestedById, createdAt])
+}
+
+/// What a run did, in order: model calls, tools, decisions, approvals. Inputs and outputs are truncated.
+model AgentStep {
+  id                String        @id @default(cuid())
+  runId             String
+  run               AgentRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  index             Int
+  type              AgentStepType
+  name              String
+  model             String?
+  input             Json?
+  output            Json?
+  inputTokens       Int           @default(0)
+  outputTokens      Int           @default(0)
+  cachedInputTokens Int           @default(0)
+  costMicros        Int           @default(0)
+  durationMs        Int           @default(0)
+  /// Gateway generation id, to reconcile the estimated cost with the Gateway's own.
+  generationId      String?
+  createdAt         DateTime      @default(now())
+
+  @@unique([runId, index])
+}
+
+/// A tool call that leaves the CRM (email, search, shared link) waits here for a person.
+model AgentApproval {
+  id            String              @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  runId         String
+  run           AgentRun            @relation(fields: [runId], references: [id], onDelete: Cascade)
+  tool          String
+  /// The right the decider must hold to allow the call (lib/rbac.ts).
+  permission    String?
+  /// The exact arguments, executed as they are once approved.
+  payload       Json
+  /// What will happen, in one sentence, for the person who decides.
+  summary       String
+  status        AgentApprovalStatus @default(PENDING)
+  requestedById String?
+  requestedBy   User?               @relation("ApprovalRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  decidedById   String?
+  decidedBy     User?               @relation("ApprovalDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt     DateTime?
+  /// Why it was rejected, kept in the run's history.
+  note          String?
+  expiresAt     DateTime
+  createdAt     DateTime            @default(now())
+
+  @@index([workspaceId, status, createdAt])
+  @@index([runId])
+  @@index([requestedById, status])
 }
