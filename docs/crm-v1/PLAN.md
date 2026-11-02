@@ -722,7 +722,12 @@ L'Auditeur digital produit une fiche enrichie et sourcée, à la demande, depuis
 >   - les deux sont facturées.
 > - **Coût mesuré** : environ 15 300 jetons en entrée avec les 13 offres actives, soit environ 0,07 € par pitch, sous le plafond de 0,10 €.
 >
-> **Pas encore** : un pitch réel abouti, après le déploiement du correctif.
+> **Pitch réel abouti** (2 novembre 2026, après le correctif) : un essai, 37 s, 0,052 € (15 340 jetons lus, 2 587 écrits), quatre offres toutes sourcées, aucun contrôle en défaut.
+>
+> **Relecture de ce pitch** : trois défauts corrigés (`fix/audit-encodage-signaux`).
+> - Les accents des sites en Windows-1252 étaient abîmés (« ma�trise ») lorsque l'encodage n'était déclaré que dans la page, ou pas du tout. Il faut refaire l'audit d'un site concerné pour retrouver ses accents.
+> - Le signal `mobile_score_low` s'affichait « Score mobile sous 50 » même pour une page simplement non adaptée au téléphone : il s'affiche maintenant « Site lent ou non adapté au téléphone ».
+> - L'angle d'email recopiait la règle de validation : il ne le fait plus.
 >
 > **Écarts** :
 > - le script d'appel, les objections et l'angle d'email appartiennent au pitch (`OfferPitch`), une fois pour le pack, et non à chaque `OfferRecommendation` ;

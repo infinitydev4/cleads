@@ -18,7 +18,8 @@ export const OFFER_SIGNALS = {
   site_unreachable: { group: "site", label: "Site injoignable" },
   social_only: { group: "site", label: "Seulement une page de réseau social" },
   site_outdated: { group: "site", label: "Site daté" },
-  mobile_score_low: { group: "site", label: "Score mobile sous 50" },
+  // Raised for a mobile PageSpeed score under 50 and for a page not made for phones (no viewport): the label says both.
+  mobile_score_low: { group: "site", label: "Site lent ou non adapté au téléphone" },
   no_https: { group: "site", label: "Pas de HTTPS" },
   cms_outdated: { group: "site", label: "CMS obsolète" },
   weak_cta: { group: "site", label: "Appel à l'action faible" },

@@ -3,7 +3,7 @@ import http from "node:http"
 import zlib from "node:zlib"
 import type { AddressInfo } from "node:net"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { BOT_TOKEN, BOT_USER_AGENT, FetchRefused, hostOf, isPublicAddress, safeFetch, siteUrl } from "@/features/prospect-audit/net"
+import { BOT_TOKEN, BOT_USER_AGENT, FetchRefused, decodeBody, hostOf, isPublicAddress, safeFetch, siteUrl } from "@/features/prospect-audit/net"
 import { aiBotsAccess, isAllowed, parseRobots } from "@/features/prospect-audit/robots"
 import { isSocialProfile, networkOf, parsePage } from "@/features/prospect-audit/html"
 import { detectStack, isOutdatedCms } from "@/features/prospect-audit/stack"
@@ -125,6 +125,29 @@ describe("addresses the audit may visit", () => {
   })
 })
 
+describe("decoding a page", () => {
+  const utf8 = (text: string) => new TextEncoder().encode(text)
+  it("follows the byte order mark, the header, then the page's own declaration", () => {
+    expect(decodeBody(Uint8Array.from([0xef, 0xbb, 0xbf, ...utf8("Arrivé")]), "text/html")).toBe("Arrivé")
+    expect(decodeBody(Uint8Array.from([0xff, 0xfe, 0x63, 0x00, 0xe9, 0x00]), "text/html")).toBe("cé")
+    expect(decodeBody(Uint8Array.from([0x63, 0x61, 0x66, 0xe9]), "text/html; charset=ISO-8859-1")).toBe("café")
+    // Windows-1252 has letters that ISO-8859-1 has not: « œ » is 0x9C.
+    expect(decodeBody(Uint8Array.from([...utf8('<meta charset="windows-1252">'), 0x9c, 0x75, 0x76, 0x72, 0x65]), "text/html")).toBe('<meta charset="windows-1252">œuvre')
+  })
+  it("keeps UTF-8 when it is valid, even cut in the middle of a letter by the size limit", () => {
+    expect(decodeBody(utf8("Le café est très bon"), "text/html")).toBe("Le café est très bon")
+    // "Le café est tr" then the first byte of « è »: the cut letter is dropped, the rest stays UTF-8.
+    expect(decodeBody(utf8("Le café est très bon").subarray(0, 16), "text/html", { truncated: true })).toBe("Le café est tr")
+    expect(decodeBody(utf8("Tarifs : 50 €"), "text/html; charset=x-inconnu")).toBe("Tarifs : 50 €")
+  })
+  it("reads bytes that are not UTF-8 as Windows-1252, whatever the page claims", () => {
+    expect(decodeBody(Uint8Array.from([0x63, 0x61, 0x66, 0xe9]), "text/html")).toBe("café")
+    // L’œuvre… 50 € : the letters of Windows-1252 that ISO-8859-1 has not, whatever the Node version.
+    expect(decodeBody(Uint8Array.from([0x4c, 0x92, 0x9c, 0x75, 0x76, 0x72, 0x65, 0x85, 0x20, 0x35, 0x30, 0x20, 0x80]), "text/html")).toBe("L’œuvre… 50 €")
+    expect(decodeBody(Uint8Array.from([0x63, 0x61, 0x66, 0xe9]), "text/html; charset=utf-8")).toBe("café")
+  })
+})
+
 describe("fetching a page", () => {
   let server: http.Server
   let base = ""
@@ -146,6 +169,12 @@ describe("fetching a page", () => {
       if (req.url === "/image") return res.writeHead(200, { "Content-Type": "image/png" }).end(Buffer.alloc(100))
       if (req.url === "/slow") return setTimeout(() => res.writeHead(200).end("trop tard"), 1_500)
       if (req.url === "/latin1") return res.writeHead(200, { "Content-Type": "text/html; charset=iso-8859-1" }).end(Buffer.from([0x63, 0x61, 0x66, 0xe9]))
+      // An old site, as found on 2 November 2026: no charset in the header, Windows-1252 declared in the page.
+      if (req.url === "/declared-in-page") {
+        return res.writeHead(200, { "Content-Type": "text/html" }).end(Buffer.from(`<html><head><meta http-equiv="Content-Type" content="text/html; charset=windows-1252"><title>Cabinet de maîtrise d'oeuvre à Nantes</title></head></html>`, "latin1"))
+      }
+      if (req.url === "/says-nothing") return res.writeHead(200, { "Content-Type": "text/html" }).end(Buffer.from("<p>Rénovation à Orvault</p>", "latin1"))
+      if (req.url === "/claims-utf8") return res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(Buffer.from("<p>Extension à Orvault</p>", "latin1"))
       res.writeHead(404).end()
     })
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
@@ -159,6 +188,12 @@ describe("fetching a page", () => {
     expect(seen.some((s) => s.includes(BOT_USER_AGENT))).toBe(true)
     expect((await safeFetch(`${base}/gzip`, { unsafeTestOverrides: local })).body).toBe("<p>compressé</p>")
     expect((await safeFetch(`${base}/latin1`, { unsafeTestOverrides: local })).body).toBe("café")
+  })
+
+  it("reads old sites in their own encoding, declared in the page or not declared at all", async () => {
+    expect((await safeFetch(`${base}/declared-in-page`, { unsafeTestOverrides: local })).body).toContain("<title>Cabinet de maîtrise d'oeuvre à Nantes</title>")
+    expect((await safeFetch(`${base}/says-nothing`, { unsafeTestOverrides: local })).body).toBe("<p>Rénovation à Orvault</p>")
+    expect((await safeFetch(`${base}/claims-utf8`, { unsafeTestOverrides: local })).body).toBe("<p>Extension à Orvault</p>")
   })
 
   it("stops at the limits: redirects, size, time, binary content", async () => {

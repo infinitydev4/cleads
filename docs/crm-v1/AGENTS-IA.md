@@ -350,6 +350,7 @@ Peut valider l'action d'un agent : la personne qui a lancé l'exécution, ou un 
 **Implémentation (E20, `features/prospect-audit/`)** : un workflow codé, exécuté par le worker, en cinq temps.
 1. **Collecte** sans modèle :
    - le site, à travers `net.ts` (adresses publiques seulement à chaque redirection, ports 80 et 443, 2 Mo et 10 s par page, robot identifié par la page publique `/robot`) ;
+   - chaque page est décodée dans son encodage, comme le fait un navigateur : celui de l'en-tête, sinon celui déclaré dans la page. Une page dont les octets ne sont pas de l'UTF-8 valide est lue en Windows-1252, encodage de beaucoup d'anciens sites français, même si elle se dit en UTF-8 ;
    - PageSpeed Insights sur mobile et ordinateur ;
    - l'annuaire des entreprises ;
    - la fiche Google telle que l'Extractor l'a importée : note, avis, catégorie, téléphone. Horaires et photos ne sont pas disponibles par une source gratuite.
@@ -369,7 +370,7 @@ Peut valider l'action d'un agent : la personne qui a lancé l'exécution, ou un 
 | Offre | Signaux qui la déclenchent | Livrables | Prix indicatif HT |
 |---|---|---|---|
 | Site vitrine | pas de site, site injoignable, seulement une page de réseau social | site de 5 à 8 pages, responsive, SEO de base, mise en ligne | 1 500 à 4 000 € |
-| Refonte de site | site daté, score mobile < 50, pas de HTTPS, CMS obsolète | refonte complète, reprise des contenus, redirections | 2 000 à 6 000 € |
+| Refonte de site | site daté, site lent ou non adapté au téléphone (score mobile < 50 ou page sans viewport), pas de HTTPS, CMS obsolète | refonte complète, reprise des contenus, redirections | 2 000 à 6 000 € |
 | Landing de conversion | site correct mais appel à l'action faible, pas de prise de rendez-vous, publicité sans page dédiée | une page orientée conversion, formulaire ou réservation, suivi | 600 à 1 500 € |
 | SEO local | fiche Google incomplète, moins de 20 avis ou note < 4, incohérences nom-adresse-téléphone, pas de LocalBusiness | fiche optimisée, citations, pages locales, collecte d'avis | 300 à 800 € / mois |
 | SEO éditorial | peu de pages, pas de contenu par service ou par ville | contenus mensuels, maillage, suivi des positions | 600 à 1 500 € / mois |
