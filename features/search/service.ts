@@ -10,6 +10,7 @@ import { verifyWebhook } from "@/lib/extractor/webhook"
 import { can } from "@/lib/rbac"
 import { LeadError } from "@/features/leads/errors"
 import { assertCampaign } from "@/features/campaigns/filing"
+import { sortAfterImport } from "@/features/relevance/service"
 import { MAX_IMPORT_ROWS, runImport, type ImportResult, type ImportRow } from "@/features/leads/import"
 import { MAX_SEARCH_RESULTS, type ImportOptions, type StartSearchInput } from "./schemas"
 
@@ -277,6 +278,8 @@ export async function importSearch(user: CurrentUser, id: string, options: Impor
   const result = await runImport(user, rows, { commit: options.commit, source: "EXTRACTOR", fileName: `Extractor · ${s.label}`, extractorJobId: s.extractorJobId, campaignId, ip })
   if (options.commit) {
     await prisma.extractionSearch.update({ where: { id }, data: { importedCount: { increment: result.summary.created }, lastImportAt: new Date() } })
+    // E25: Jev sorts the campaign's new fiches on its own; the import never depends on it.
+    if (campaignId && result.summary.created > 0) await sortAfterImport(user, campaignId)
   }
   return { ...result, excluded: { closed }, fetched, jobStatus: s.status }
 }

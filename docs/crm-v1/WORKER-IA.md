@@ -38,7 +38,7 @@ La file est la **table `AgentRun`** elle-même :
 - Si le worker s'arrête entre les deux, l'action n'est jamais rejouée : l'exécution échoue avec le message « a peut-être déjà été faite, vérifiez avant de la relancer ».
 - Une approbation remet l'exécution en tête de file. L'agent reprend avec le résultat de l'action, qu'il ne redemande pas.
 
-**Agents.** Chaque epic métier (E20 à E25) enregistre le code de son agent (`registerAgentHandler`, dans `worker/main.ts`), et le worker ne prend que les agents qu'il connaît. Sont branchés : l'Auditeur digital (`auditor`, E20), le Conseiller offres (`offers`, E21), le Rédacteur outreach (`writer`), l'Analyste réponses (`replies`, E22) et le Designer web (`designer`, E23). Le champ `agents` de `/healthz` les liste.
+**Agents.** Chaque epic métier (E20 à E25) enregistre le code de son agent (`registerAgentHandler`, dans `worker/main.ts`), et le worker ne prend que les agents qu'il connaît. Sont branchés : l'Auditeur digital (`auditor`, E20), le Conseiller offres (`offers`, E21), le Rédacteur outreach (`writer`), l'Analyste réponses (`replies`, E22), le Designer web (`designer`, E23), le Stratège marché (`strategist`) et l'Analyste qualification (`qualifier`, E25). Le champ `agents` de `/healthz` les liste. Le Stratège et le tri tournent un à la fois chacun.
 
 **Tâches** (E19). Une tâche est un travail que n'importe quel agent rédacteur peut faire, reconnu au champ `kind` de l'entrée de l'exécution. Elle est enregistrée avec `registerTaskHandler`. La seule tâche pour l'instant est le **test d'un skill sur une fiche** (`skill_test`, `features/ai/skill-test.ts`).
 - Le worker prend une exécution si c'est un agent qu'il connaît, ou si c'est une tâche qu'il connaît, pour un agent qui a une place libre.
@@ -140,4 +140,4 @@ La file est la **table `AgentRun`** elle-même :
 ## 7. Pas encore
 
 - **Déploiement** : il se fait par script depuis un poste. L'automatisation par GitHub Actions viendra avec E14.
-- **Agents métier** : l'Auditeur (E20), le Conseiller offres (E21), le Rédacteur et l'Analyste réponses (E22) et le Designer web (E23) sont branchés ; le Stratège et l'Analyste qualification arrivent avec E25.
+- **Agents métier** : l'Auditeur (E20), le Conseiller offres (E21), le Rédacteur et l'Analyste réponses (E22), le Designer web (E23), le Stratège et l'Analyste qualification (E25) sont branchés.

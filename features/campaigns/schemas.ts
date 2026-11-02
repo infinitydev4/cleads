@@ -18,6 +18,8 @@ const fields = {
   endsOn: day,
   goalLeads: goal,
   goalMeetings: goal,
+  /** E25: the active offer the campaign leads with. */
+  offerId: z.string().min(1).nullish().transform((v) => v ?? null),
   status: z.enum(CAMPAIGN_STATUSES).optional(),
 }
 
@@ -39,6 +41,7 @@ export const updateCampaignSchema = z
     endsOn: z.string().refine(isDayKey, "Date invalide").nullable().optional(),
     goalLeads: z.number().int().min(1).max(1_000_000).nullable().optional(),
     goalMeetings: z.number().int().min(1).max(1_000_000).nullable().optional(),
+    offerId: z.string().min(1).nullable().optional(),
     status: z.enum(CAMPAIGN_STATUSES).optional(),
     archived: z.boolean().optional(),
   })

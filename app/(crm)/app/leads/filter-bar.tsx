@@ -48,7 +48,7 @@ export function FilterBar({ filters, assignees, campaigns, canSeeOthers, onChang
     const next = filters.status.includes(s as never) ? filters.status.filter((x) => x !== s) : [...filters.status, s as never]
     onChange({ status: next.join(",") || undefined })
   }
-  const active = !!(filters.q || filters.status.length || filters.owner || filters.minScore || filters.hasEmail || filters.hasPhone || filters.city || filters.sector || filters.tag || filters.source || filters.campaign)
+  const active = !!(filters.q || filters.status.length || filters.owner || filters.minScore || filters.hasEmail || filters.hasPhone || filters.city || filters.sector || filters.tag || filters.source || filters.campaign || filters.relevance)
 
   return (
     <div className="space-y-3">
@@ -77,6 +77,20 @@ export function FilterBar({ filters, assignees, campaigns, canSeeOthers, onChang
             </SelectContent>
           </Select>
         )}
+        {/* E25: Jev's sorting of a campaign's fiches. */}
+        {((filters.campaign && filters.campaign !== "none") || filters.relevance) && (
+          <Select value={filters.relevance ?? ANY} onValueChange={(v) => onChange({ relevance: v === ANY ? undefined : v })}>
+            <SelectTrigger className="w-44" aria-label="Pertinence (Jev)"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ANY}>Toute pertinence</SelectItem>
+              <SelectItem value="relevant">Pertinentes</SelectItem>
+              <SelectItem value="maybe">Possibles</SelectItem>
+              <SelectItem value="not">Non pertinentes</SelectItem>
+              <SelectItem value="pending">À trancher</SelectItem>
+              <SelectItem value="unsorted">Pas encore triées</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
         <Select value={String(filters.minScore ?? ANY)} onValueChange={(v) => onChange({ minScore: v === ANY ? undefined : v })}>
           <SelectTrigger className="w-36" aria-label="Score minimum"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -89,7 +103,7 @@ export function FilterBar({ filters, assignees, campaigns, canSeeOthers, onChang
           <SlidersHorizontal className="h-4 w-4" aria-hidden="true" /> Filtres
         </Button>
         {active && (
-          <Button variant="ghost" onClick={() => { setQ(""); onChange({ q: undefined, status: undefined, owner: undefined, minScore: undefined, hasEmail: undefined, hasPhone: undefined, city: undefined, sector: undefined, tag: undefined, source: undefined, campaign: undefined }) }}>
+          <Button variant="ghost" onClick={() => { setQ(""); onChange({ q: undefined, status: undefined, owner: undefined, minScore: undefined, hasEmail: undefined, hasPhone: undefined, city: undefined, sector: undefined, tag: undefined, source: undefined, campaign: undefined, relevance: undefined }) }}>
             <X className="h-4 w-4" aria-hidden="true" /> Effacer
           </Button>
         )}

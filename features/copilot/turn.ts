@@ -9,7 +9,7 @@ import { aiConfigured } from "@/lib/ai/gateway"
 import { LeadError } from "@/features/leads/errors"
 import { modelCallError, type ModelDeps } from "@/features/ai/calls"
 import { finishRun, startRun, type RunContext } from "@/features/ai/runs"
-import { billStep, copilotAgent, type CopilotSetup } from "./agent"
+import { copilotAgent, type CopilotSetup } from "./agent"
 import { describePage, parsePage } from "./context"
 import { closeTurn, conversationFor, createConversation, followLeads, loadMessages, releaseTurn, saveMessage, takeTurn } from "./conversations"
 import { ACTION_TOOLS, leadIdsOf } from "./labels"
@@ -190,7 +190,7 @@ async function stream(user: CurrentUser, run: RunContext, conversationId: string
     abortSignal,
     onStepEnd: async (step) => {
       steps.push(step)
-      turnCost += await billStep(run, step, setup)
+      turnCost += await setup.bill(step)
     },
     onToolExecutionEnd: async (event) => {
       const { toolCall, toolOutput } = event as { toolCall: { toolName: string; input: unknown }; toolOutput: { type: string } }

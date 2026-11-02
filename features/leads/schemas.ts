@@ -7,6 +7,9 @@ const optionalText = (max = 300) => text(max).optional().transform((v) => v || u
 export const SORTS = ["score", "created", "name", "contacted", "status"] as const
 export type LeadSort = (typeof SORTS)[number]
 
+export const RELEVANCE_FILTERS = ["relevant", "maybe", "not", "pending", "unsorted"] as const
+export type RelevanceFilter = (typeof RELEVANCE_FILTERS)[number]
+
 export interface LeadFilters {
   q?: string
   status: (typeof LEAD_STATUSES)[number][]
@@ -22,6 +25,8 @@ export interface LeadFilters {
   batch?: string
   /** A campaign id, or "none" for fiches outside every campaign (E15). */
   campaign?: string
+  /** E25: Jev's sorting for the campaign (or any campaign): relevant, maybe, not relevant, to decide, not sorted. */
+  relevance?: RelevanceFilter
   sort: LeadSort
   dir: "asc" | "desc"
   page: number
@@ -57,6 +62,7 @@ export function parseLeadFilters(params: Params): LeadFilters {
     minScore: Number.isFinite(minScore) && minScore > 0 ? Math.min(100, minScore) : undefined,
     batch: one("batch"),
     campaign: one("campaign"),
+    relevance: RELEVANCE_FILTERS.find((r) => r === one("relevance")),
     sort,
     dir: one("dir") === "asc" ? "asc" : one("dir") === "desc" ? "desc" : sort === "name" ? "asc" : "desc",
     page: page >= 1 ? page : 1,
@@ -77,6 +83,7 @@ export const viewFiltersSchema = z.object({
   hasPhone: z.boolean().optional(),
   minScore: z.number().int().min(0).max(100).optional(),
   campaign: optionalText(100),
+  relevance: z.enum(RELEVANCE_FILTERS).optional(),
   sort: z.enum(SORTS).default("score"),
   dir: z.enum(["asc", "desc"]).default("desc"),
 })

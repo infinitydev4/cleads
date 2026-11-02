@@ -547,7 +547,7 @@ Seconde vue du CRM, isométrique et interactive, à côté de la vue 2D qui rest
 - **Critères** : aucune régression de la vue 2D (tests et parcours dans le navigateur) ; aucun chiffre sans définition ; fluide sur un portable récent.
 
 ### Couche agentique IA (E17 à E27, décidée le 2 novembre 2026)
-Décisions D13 à D27 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17 à E24 sont faits ; E25 à E27 restent à faire.
+Décisions D13 à D27 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17 à E25 sont faits ; E26 et E27 restent à faire.
 
 ### E17 — Socle IA · **M** *(absorbe E13)*
 > **Avancement (branche `feat/e17-socle-ia`)** — fait :
@@ -881,6 +881,44 @@ Panneau ⌘J contextuel (page, fiche sélectionnée), en streaming : questions s
 - **Critères** : le copilote ne voit que ce que la personne voit ; aucune action sans validation.
 
 ### E25 — Stratège et sourcing · **M**
+> **Avancement (branche `feat/e25-stratege`)** — fait :
+> - migration additive `20261110090000_strategist` :
+>   - `StrategyProposal` et `StrategyTarget` : propositions du Stratège et leurs cibles ;
+>   - `LeadRelevance` : verdict de Jev sur une fiche pour sa campagne ;
+>   - colonne `Campaign.offerId` : l'offre phare d'une campagne ;
+> - **Stratège** (`features/strategy/`, agent `strategist`, Sonnet 5.5, plafond 0,30 €), un agent du worker qui choisit ses outils :
+>   - il lit les résultats des campagnes et des secteurs (`campaign_metrics`), les offres actives (`list_offers`) et, par le MCP de l'Extractor en lecture, sa taxonomie (`list_sectors`) et ce que sa base connaît (`search_prospect_base`) ;
+>   - il propose deux à quatre cibles : secteur et zones, douleurs du métier, offre phare et angle, arguments avec leur base (CRM, Extractor, catalogue ou hypothèse), campagne et recherche ;
+>   - une cible sans argument, sans recherche ou avec une offre inactive est retirée par le code ;
+>   - **il ne lance rien** : sur la page Campagnes, une personne crée la campagne (brouillon avec l'offre phare), puis lance la recherche après l'avoir relue, par le service de recherche du CRM (D27). Elle peut aussi écarter la cible ;
+> - **Tri des fiches** (`features/relevance/`, agent `qualifier`, Jev) :
+>   - un import de l'Extractor dans une campagne le lance seul ; « Trier les fiches » prend les fiches restantes ;
+>   - Jev juge chaque fiche (bonne cible, possible, mauvaise) au regard du métier, de la zone et de l'offre phare. Il lit l'entreprise, jamais la personne de contact ;
+>   - sûr de lui, il range ; sinon, une personne tranche d'un clic sur la page de la campagne ;
+>   - 40 fiches par exécution, enchaînées, environ 0,0001 € par fiche ;
+> - **Interface** :
+>   - Stratège sur la page Campagnes ;
+>   - « Offre phare » dans le formulaire d'une campagne ;
+>   - carte « Pertinence des fiches (Jev) » sur la campagne ;
+>   - filtre « Pertinence » dans la liste des fiches, gardé dans les vues enregistrées ;
+> - **Au passage** : le budget par étape des agents qui choisissent leurs outils (`features/ai/loop.ts`) est commun au copilote et au Stratège.
+>
+> **Vérifié** :
+> - `tests/strategy.test.ts` (10 tests) : recadrage des cibles, demande, lecture de Jev sans données personnelles, seuils, filtre ;
+> - `tests/strategy.integration.test.ts` (5 tests, base jetable, modèles et Extractor simulés) :
+>   - proposition argumentée, faite sans rien créer ;
+>   - campagne puis recherche créées une seule fois par un clic, et droits de chacun ;
+>   - aucune offre active : la demande échoue et dit pourquoi ;
+>   - tri de 45 fiches en deux lots ;
+>   - décision d'une personne et filtre de la liste ;
+>   - démarrage seul après un import ;
+> - suite complète verte (859 tests), `tsc`, lint des fichiers touchés, build, paquet du worker.
+>
+> **Écarts** :
+> - le Stratège ne prépare pas la campagne lui-même : il la propose, et c'est la personne qui la crée d'un clic. Une campagne brouillon que personne n'a demandée encombrerait la liste ;
+> - pas d'outil `launch_search` pour l'agent, même avec validation : la recherche se lance depuis la cible, par la personne. Aucun job Extractor ne peut partir d'un agent ;
+> - le tri ne retire ni ne disqualifie aucune fiche : il range la liste, et la décision de prospecter reste à la personne.
+
 - Le Stratège croise le catalogue d'offres, les résultats des campagnes et la taxonomie de l'Extractor (MCP `list_sectors`) : secteurs à cibler, douleurs par métier, offre phare, angle, zones.
 - Il propose une campagne brouillon (E15) et une recherche Extractor ; le lancement passe par le service CRM après validation (D27).
 - Jev trie les fiches importées selon leur pertinence pour la campagne et l'offre.

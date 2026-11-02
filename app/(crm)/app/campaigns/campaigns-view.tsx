@@ -13,7 +13,9 @@ import { campaignStatus } from "@/lib/crm/status"
 import { formatDate } from "@/lib/crm/format"
 import { CAMPAIGN_INDICATORS, formatCount, formatRate } from "@/features/metrics/definitions"
 import type { CampaignView } from "@/features/campaigns/service"
+import type { StrategyState } from "@/features/strategy/service"
 import { CampaignDialog, type Person } from "./campaign-dialog"
+import { StrategyPanel } from "./strategy-panel"
 
 const COLUMNS = ["leads", "contacted", "replied", "meetings", "won"] as const
 
@@ -37,7 +39,26 @@ function Goal({ value, goal, label }: { value: number; goal: number | null; labe
 }
 
 /** `startCreating`: arrived through "Nouvelle campagne" elsewhere (?new=1, the 3D view): the form is already open. */
-export function CampaignsView({ campaigns, archived, people, currentUserId, canManage, startCreating = false }: { campaigns: CampaignView[]; archived: boolean; people: Person[]; currentUserId: string; canManage: boolean; startCreating?: boolean }) {
+export function CampaignsView({
+  campaigns,
+  archived,
+  people,
+  offers = [],
+  strategy = null,
+  currentUserId,
+  canManage,
+  startCreating = false,
+}: {
+  campaigns: CampaignView[]
+  archived: boolean
+  people: Person[]
+  offers?: { id: string; name: string }[]
+  /** E25: the Stratège's proposals, for those who may read them. */
+  strategy?: StrategyState | null
+  currentUserId: string
+  canManage: boolean
+  startCreating?: boolean
+}) {
   const router = useRouter()
   const [creating, setCreating] = useState(startCreating)
 
@@ -52,6 +73,8 @@ export function CampaignsView({ campaigns, archived, people, currentUserId, canM
           {canManage && !archived && <Button onClick={() => setCreating(true)}><Plus className="h-4 w-4" aria-hidden="true" /> Nouvelle campagne</Button>}
         </div>
       </div>
+
+      {strategy && !archived && <StrategyPanel state={strategy} userId={currentUserId} canManage={canManage} />}
 
       {campaigns.length === 0 ? (
         <EmptyState
@@ -105,7 +128,7 @@ export function CampaignsView({ campaigns, archived, people, currentUserId, canM
         </Card>
       )}
 
-      {creating && <CampaignDialog campaign={null} people={people} currentUserId={currentUserId} onClose={() => setCreating(false)} onSaved={(id) => router.push(`/app/campaigns/${id}`)} />}
+      {creating && <CampaignDialog campaign={null} people={people} offers={offers} currentUserId={currentUserId} onClose={() => setCreating(false)} onSaved={(id) => router.push(`/app/campaigns/${id}`)} />}
     </div>
   )
 }

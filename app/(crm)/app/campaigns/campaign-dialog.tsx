@@ -20,8 +20,8 @@ export interface Person {
   email: string | null
 }
 
-/** Creates a campaign, or edits one. Every rule is checked again by the server. */
-export function CampaignDialog({ campaign, people, currentUserId, onClose, onSaved }: { campaign: CampaignView | null; people: Person[]; currentUserId: string; onClose: () => void; onSaved: (id: string) => void }) {
+/** Creates a campaign, or edits one. Every rule is checked again by the server. `offers`: the active catalogue (E25). */
+export function CampaignDialog({ campaign, people, offers = [], currentUserId, onClose, onSaved }: { campaign: CampaignView | null; people: Person[]; offers?: { id: string; name: string }[]; currentUserId: string; onClose: () => void; onSaved: (id: string) => void }) {
   const [form, setForm] = useState({
     name: campaign?.name ?? "",
     description: campaign?.description ?? "",
@@ -33,7 +33,10 @@ export function CampaignDialog({ campaign, people, currentUserId, onClose, onSav
     endsOn: campaign?.endsOn ?? "",
     goalLeads: campaign?.goalLeads ? String(campaign.goalLeads) : "",
     goalMeetings: campaign?.goalMeetings ? String(campaign.goalMeetings) : "",
+    offerId: campaign?.offer?.id ?? NONE,
   })
+  // An offer archived since stays selectable on the campaign that leads with it.
+  const offerChoices = campaign?.offer && !offers.some((o) => o.id === campaign.offer!.id) ? [...offers, { id: campaign.offer.id, name: `${campaign.offer.name} (archivée)` }] : offers
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
   const set = (key: keyof typeof form) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [key]: e.target.value }))
@@ -54,6 +57,7 @@ export function CampaignDialog({ campaign, people, currentUserId, onClose, onSav
       endsOn: form.endsOn || null,
       goalLeads: int(form.goalLeads),
       goalMeetings: int(form.goalMeetings),
+      ...(offerChoices.length ? { offerId: form.offerId === NONE ? null : form.offerId } : {}),
     }
     try {
       const r = campaign
@@ -87,6 +91,19 @@ export function CampaignDialog({ campaign, people, currentUserId, onClose, onSav
               <Input value={form.area} onChange={set("area")} maxLength={120} placeholder="Suisse romande" />
             </FormField>
           </div>
+          {offerChoices.length > 0 && (
+            <FormField label="Offre phare" hint="L’offre du catalogue que la campagne met en avant : Jev trie ses fiches pour elle.">
+              {(props) => (
+                <Select value={form.offerId} onValueChange={(v) => setForm((f) => ({ ...f, offerId: v }))}>
+                  <SelectTrigger {...props}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>Aucune</SelectItem>
+                    {offerChoices.map((o) => <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
+            </FormField>
+          )}
           <FormField label="Offre et angle" hint="Ce que l’on propose, à qui, avec quel argument.">
             <Textarea value={form.description} onChange={set("description")} maxLength={1000} rows={3} />
           </FormField>

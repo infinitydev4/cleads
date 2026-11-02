@@ -27,6 +27,8 @@ export interface CampaignView {
   endsOn: string | null
   goalLeads: number | null
   goalMeetings: number | null
+  /** E25: the offer it leads with; Jev judges its fiches against it. */
+  offer: { id: string; name: string } | null
   archived: boolean
   createdAt: string
   /** Cohort figures over the fiches the person sees (features/metrics/definitions.ts, CAMPAIGN_INDICATORS). */
@@ -42,7 +44,7 @@ export interface CampaignDetail extends CampaignView {
   can: { manage: boolean; fileLeads: boolean }
 }
 
-const include = { owner: { select: { name: true, email: true } } } satisfies Prisma.CampaignInclude
+const include = { owner: { select: { name: true, email: true } }, offer: { select: { id: true, name: true } } } satisfies Prisma.CampaignInclude
 type Row = Prisma.CampaignGetPayload<{ include: typeof include }>
 
 const EMPTY: CohortCounts = { leads: 0, contacted: 0, replied: 0, qualified: 0, meetings: 0, won: 0, replyRate: null, conversion: null }
@@ -61,6 +63,7 @@ function toView(c: Row, stats: CohortCounts = EMPTY): CampaignView {
     endsOn: day(c.endsOn),
     goalLeads: c.goalLeads,
     goalMeetings: c.goalMeetings,
+    offer: c.offer,
     archived: !!c.archivedAt,
     createdAt: c.createdAt.toISOString(),
     stats,
@@ -74,6 +77,12 @@ export async function listCampaigns(user: CurrentUser, opts: { archived?: boolea
   const rows = await prisma.campaign.findMany({ where: { workspaceId: user.workspaceId, archivedAt: opts.archived ? { not: null } : null }, include, orderBy: { createdAt: "desc" } })
   const stats = await campaignCohorts(user, rows.map((r) => r.id))
   return rows.map((r) => toView(r, stats.get(r.id))).sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || b.stats.leads - a.stats.leads)
+}
+
+/** E25: the active offers a campaign can lead with, for the campaign form. */
+export async function campaignOfferOptions(user: CurrentUser): Promise<{ id: string; name: string }[]> {
+  if (!can(user.role, "campaign:manage")) return []
+  return prisma.offer.findMany({ where: { workspaceId: user.workspaceId, status: "ACTIVE" }, select: { id: true, name: true }, orderBy: { name: "asc" } })
 }
 
 /** Campaigns a fiche or a search can be filed in, for selectors. */
@@ -123,9 +132,17 @@ async function assertOwner(workspaceId: string, ownerId: string | null | undefin
 
 const duplicateName = (error: unknown) => (error as { code?: string })?.code === "P2002"
 
+/** A campaign leads with an active offer of its workspace (E25). */
+async function assertOffer(workspaceId: string, offerId: string | null | undefined) {
+  if (!offerId) return
+  const ok = await prisma.offer.count({ where: { id: offerId, workspaceId, status: "ACTIVE" } })
+  if (!ok) throw new LeadError("invalid", "Cette offre n’est pas active dans le catalogue.")
+}
+
 export async function createCampaign(user: CurrentUser, input: CreateCampaignInput, ip?: string | null): Promise<{ id: string }> {
   if (!can(user.role, "campaign:manage")) throw new LeadError("forbidden", "Vous ne pouvez pas créer de campagne.", 403)
   await assertOwner(user.workspaceId, input.ownerId)
+  await assertOffer(user.workspaceId, input.offerId)
   try {
     const c = await prisma.campaign.create({
       data: {
@@ -140,6 +157,7 @@ export async function createCampaign(user: CurrentUser, input: CreateCampaignInp
         endsOn: toDate(input.endsOn) ?? null,
         goalLeads: input.goalLeads,
         goalMeetings: input.goalMeetings,
+        offerId: input.offerId ?? null,
         createdById: user.id,
       },
     })
@@ -155,6 +173,7 @@ export async function updateCampaign(user: CurrentUser, id: string, patch: Updat
   if (!can(user.role, "campaign:manage")) throw new LeadError("forbidden", "Vous ne pouvez pas modifier les campagnes.", 403)
   const c = await load(user, id)
   if (patch.ownerId !== undefined) await assertOwner(user.workspaceId, patch.ownerId)
+  if (patch.offerId) await assertOffer(user.workspaceId, patch.offerId)
   const startsOn = patch.startsOn !== undefined ? toDate(patch.startsOn) : c.startsOn
   const endsOn = patch.endsOn !== undefined ? toDate(patch.endsOn) : c.endsOn
   if (startsOn && endsOn && endsOn < startsOn) throw new LeadError("invalid", "La fin de la campagne doit suivre son début.")
@@ -168,6 +187,7 @@ export async function updateCampaign(user: CurrentUser, id: string, patch: Updat
     endsOn: patch.endsOn !== undefined ? endsOn : undefined,
     goalLeads: patch.goalLeads,
     goalMeetings: patch.goalMeetings,
+    offer: patch.offerId === undefined ? undefined : patch.offerId ? { connect: { id: patch.offerId } } : { disconnect: true },
     status: patch.status,
     archivedAt: patch.archived === undefined ? undefined : patch.archived ? (c.archivedAt ?? new Date()) : null,
   }
