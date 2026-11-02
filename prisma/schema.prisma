@@ -592,6 +592,10 @@ model Workspace {
   aiUsage                AiUsage[]
   agentRuns              AgentRun[]
   agentApprovals         AgentApproval[]
+  agentDefinitions       AgentDefinition[]
+  skills                 Skill[]
+  agentSkills            AgentSkill[]
+  offers                 Offer[]
 }
 
 enum LeadSource {
@@ -1440,6 +1444,8 @@ model AiSetting {
   eurPerUsd          Float     @default(0.92)
   /// Budget alerts already sent: { "YYYY-MM": [50, 80, 100] }.
   alerts             Json?
+  /// E19: when the V1 skills and offers were installed (once; deleting them later does not bring them back).
+  catalogSeededAt    DateTime?
   updatedById        String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -1588,4 +1594,169 @@ model AiWorker {
   beatAt    DateTime
   /// Runs in progress on this worker.
   running   Int      @default(0)
+}
+
+// E19: agents, skills and offers catalogue (docs/crm-v1/AGENTS-IA.md §7, §8 and §14).
+
+enum SkillMode {
+  ALWAYS
+  ON_DEMAND
+}
+
+enum OfferCategory {
+  WEBSITE
+  SEO
+  GEO
+  SOCIAL
+  ADS
+  PACK
+  RETAINER
+}
+
+enum OfferBilling {
+  ONE_OFF
+  MONTHLY
+  QUOTE
+}
+
+enum OfferStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+/// The workspace's layer over an agent defined in the code (features/ai/agents.ts): it adds to it, never replaces it.
+model AgentDefinition {
+  id            String                   @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  agentId       String
+  /// Added after the agent's own instructions.
+  instructions  String?
+  /// One of the agent's allowed model roles; null = the code's.
+  modelRole     String?
+  /// At most the code's limits; null = the code's.
+  maxSteps      Int?
+  maxCostMicros Int?
+  /// A disabled agent cannot be started.
+  enabled       Boolean                  @default(true)
+  /// Raised by every saved change; the history is in AgentDefinitionVersion.
+  version       Int                      @default(0)
+  updatedById   String?
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+  versions      AgentDefinitionVersion[]
+
+  @@unique([workspaceId, agentId])
+}
+
+/// One saved state of an agent's layer, skills included, for its history.
+model AgentDefinitionVersion {
+  id           String          @id @default(cuid())
+  definitionId String
+  definition   AgentDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  version      Int
+  snapshot     Json
+  /// What changed: instructions, skills, model, limits, enabled.
+  changes      String[]
+  createdById  String?
+  createdAt    DateTime        @default(now())
+
+  @@unique([definitionId, version])
+}
+
+/// A know-how given to agents without touching the code (SKILL.md, agentskills.io). Its content lives in SkillVersion.
+model Skill {
+  id          String         @id @default(cuid())
+  workspaceId String
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  /// kebab-case and unique in the workspace: what agents pass to read_skill. Never changes.
+  name        String
+  /// When to use it, as agents see it in their catalogue. The current version's.
+  description String
+  /// Current version.
+  version     Int            @default(1)
+  /// "offers": the content is written from the active offers at each use (the skill offres-cleads).
+  generator   String?
+  /// Archived skills are no longer given to agents; their versions stay readable.
+  archivedAt  DateTime?
+  createdById String?
+  updatedById String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  versions    SkillVersion[]
+  agents      AgentSkill[]
+
+  @@unique([workspaceId, name])
+}
+
+/// Every saved state of a skill: a change creates a version, the earlier ones stay readable.
+model SkillVersion {
+  id          String   @id @default(cuid())
+  skillId     String
+  skill       Skill    @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  version     Int
+  description String
+  /// The SKILL.md body, without its front matter.
+  content     String
+  /// Text files next to SKILL.md: [{ path, content }].
+  files       Json?
+  /// What changed, in a few words.
+  note        String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@unique([skillId, version])
+}
+
+/// A skill given to an agent: ALWAYS (its content is part of the agent's instructions) or ON_DEMAND (read_skill).
+model AgentSkill {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  agentId     String
+  skillId     String
+  skill       Skill     @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  mode        SkillMode
+  createdAt   DateTime  @default(now())
+
+  @@unique([skillId, agentId])
+  @@index([workspaceId, agentId])
+}
+
+/// An offer of the catalogue: agents only ever recommend active ones.
+model Offer {
+  id           String        @id @default(cuid())
+  workspaceId  String
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  /// kebab-case and stable: rules and recommendations refer to it.
+  slug         String
+  name         String
+  category     OfferCategory
+  summary      String
+  deliverables String[]      @default([])
+  /// Audit signals that call for it (features/offers/signals.ts).
+  signals      String[]      @default([])
+  /// Euros excluding tax; both null on quote.
+  priceMinEur  Int?
+  priceMaxEur  Int?
+  billing      OfferBilling  @default(ONE_OFF)
+  /// "hors budget média", "engagement initial de 3 mois"…
+  priceNote    String?
+  /// The argument to open with.
+  angle        String?
+  /// [{ objection, answer }]
+  objections   Json?
+  status       OfferStatus   @default(DRAFT)
+  sortOrder    Int           @default(0)
+  /// Who checked it last, when it was activated.
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdById  String?
+  updatedById  String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId, status])
 }

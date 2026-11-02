@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Bot,
   Box,
   CalendarClock,
   CalendarDays,
@@ -73,7 +74,10 @@ export const navGroups: NavGroup[] = [
   {
     id: "insight",
     label: "Pilotage",
-    items: [{ id: "reports", label: "Rapports", href: "/app/reports", icon: BarChart3, permission: "report:read", soon: true, keywords: ["entonnoir", "statistiques"] }],
+    items: [
+      { id: "agents", label: "Agents IA", href: "/app/agents", icon: Bot, permission: "ai:use", keywords: ["ia", "skills", "offres", "catalogue", "exécutions", "validations", "auditeur", "rédacteur", "designer"] },
+      { id: "reports", label: "Rapports", href: "/app/reports", icon: BarChart3, permission: "report:read", soon: true, keywords: ["entonnoir", "statistiques"] },
+    ],
   },
 ]
 

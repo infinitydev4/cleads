@@ -36,3 +36,6 @@ const euros = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR
 const cents = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 4 })
 /** Below one euro, up to four decimals: an audit costs cents, a decision a fraction of a cent. */
 export const formatEur = (eur: number) => (Math.abs(eur) >= 1 ? euros : cents).format(eur)
+
+/** Parts of an agent's layer that a saved version changed (features/ai/definitions.ts). */
+export const CHANGE_LABELS: Record<string, string> = { instructions: "consignes", skills: "skills", model: "modèle", limits: "limites", enabled: "activation" }

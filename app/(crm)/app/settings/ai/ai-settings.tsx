@@ -6,6 +6,7 @@ import { CheckCircle2, CircleAlert } from "lucide-react"
 import { toast } from "sonner"
 import { ApprovalCard } from "@/components/crm/ai/approval-card"
 import { RunCard } from "@/components/crm/ai/run-card"
+import { SpendList } from "@/components/crm/ai/spend-list"
 import { useLiveRuns } from "@/components/crm/ai/use-live-runs"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -17,33 +18,11 @@ import { cn } from "@/lib/utils"
 import { ACTIVE_STATUSES, formatEur } from "@/features/ai/labels"
 import type { ApprovalView } from "@/features/ai/approvals"
 import type { RunView } from "@/features/ai/runs"
-import type { AiSettingsView, SpendLine } from "@/features/ai/settings"
+import type { AiSettingsView } from "@/features/ai/settings"
 import type { AiRole } from "@/lib/ai/models"
 import { api } from "../../leads/api"
 
 const monthName = (key: string) => new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${key}-01T00:00:00Z`))
-
-function SpendList({ title, lines }: { title: string; lines: SpendLine[] }) {
-  return (
-    <div className="min-w-0">
-      <h3 className="mb-2 text-sm font-bold">{title}</h3>
-      {lines.length ? (
-        <ul className="space-y-1 text-sm">
-          {lines.map((l) => (
-            <li key={l.key} className="flex justify-between gap-3">
-              <span className="truncate">{l.label}</span>
-              <span className="shrink-0 tabular-nums text-muted-foreground">
-                {formatEur(l.eur)} · {l.calls} appel{l.calls > 1 ? "s" : ""}
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="text-sm text-muted-foreground">Rien ce mois-ci.</p>
-      )}
-    </div>
-  )
-}
 
 const seen = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
 

@@ -50,8 +50,12 @@ const matrix = {
   "ai:use": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "all" },
   /** See AI results and one's runs; owners and managers see everyone's. */
   "ai:read": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "all", VIEWER: "all" },
-  /** Models per role, spending caps. */
+  /** Models per role, spending caps; an agent's model, limits and on/off switch. */
   "ai:manage": { OWNER: "all" },
+  /** E19: skills, and the instructions the team adds to an agent. */
+  "skill:manage": { OWNER: "all", MANAGER: "all" },
+  /** E19: the offers catalogue agents recommend from. */
+  "offer:manage": { OWNER: "all", MANAGER: "all" },
   // Administration
   "team:read": { OWNER: "all", MANAGER: "all" },
   "team:manage": { OWNER: "all" },

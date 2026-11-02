@@ -33,9 +33,13 @@ export interface ClaimedRun {
 /** Delay before a retry: 30 s, 60 s, 120 s… up to 10 minutes. */
 export const retryDelayMs = (attempt: number) => Math.min(30_000 * 2 ** Math.max(attempt - 1, 0), 10 * 60_000)
 
-/** Takes the next run this worker can handle: highest priority, then oldest; rows held by another worker are skipped. */
-export async function claimNextRun(workerId: string, agentIds: readonly string[]): Promise<ClaimedRun | null> {
-  if (!agentIds.length) return null
+/**
+ * Takes the next run this worker can handle: highest priority, then oldest; rows held by another worker are skipped.
+ * `agentIds` are the agents whose behaviour this worker has; `tasks` the kinds of work it can do for any agent with a
+ * free slot (a skill test runs on the agent being tested, before that agent's own behaviour ships).
+ */
+export async function claimNextRun(workerId: string, agentIds: readonly string[], tasks: { kinds: readonly string[]; agentIds: readonly string[] } = { kinds: [], agentIds: [] }): Promise<ClaimedRun | null> {
+  if (!agentIds.length && !(tasks.kinds.length && tasks.agentIds.length)) return null
   // Times come from the application, converted like Prisma does (lib/ai/sql.ts): never NOW().
   const now = utc(new Date())
   const rows = await prisma.$queryRaw<{ id: string; agentId: string; workspaceId: string; attempts: number }[]>`
@@ -43,7 +47,8 @@ export async function claimNextRun(workerId: string, agentIds: readonly string[]
            "startedAt" = COALESCE("startedAt", ${now}), "updatedAt" = ${now}
      WHERE "id" = (
        SELECT "id" FROM "AgentRun"
-        WHERE "status" = 'QUEUED' AND "agentId" = ANY(${[...agentIds]}) AND ("notBefore" IS NULL OR "notBefore" <= ${now})
+        WHERE "status" = 'QUEUED' AND ("notBefore" IS NULL OR "notBefore" <= ${now})
+          AND ("agentId" = ANY(${[...agentIds]}) OR ("agentId" = ANY(${[...tasks.agentIds]}) AND "input"->>'kind' = ANY(${[...tasks.kinds]})))
         ORDER BY "priority" DESC, "createdAt" ASC
         LIMIT 1
         FOR UPDATE SKIP LOCKED)

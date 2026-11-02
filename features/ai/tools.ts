@@ -17,7 +17,19 @@ export type ApprovalPolicy = "auto" | "user"
 export type CostClass = "free" | "metered" | "external"
 
 /** Rights no agent may use, whatever it is asked. */
-export const FORBIDDEN_FOR_AGENTS: readonly Permission[] = ["data:delete", "data:export", "lead:merge", "mailbox:manage", "team:manage", "admin:tools", "legacy:access", "ai:manage"]
+export const FORBIDDEN_FOR_AGENTS: readonly Permission[] = [
+  "data:delete",
+  "data:export",
+  "lead:merge",
+  "mailbox:manage",
+  "team:manage",
+  "admin:tools",
+  "legacy:access",
+  "ai:manage",
+  // An agent never rewrites its own instructions or the offers it recommends.
+  "skill:manage",
+  "offer:manage",
+]
 
 export interface ToolContext {
   run: RunContext
