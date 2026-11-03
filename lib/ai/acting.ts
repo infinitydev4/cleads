@@ -8,7 +8,8 @@ import type { Prisma } from "@prisma/client"
  */
 export interface Acting {
   agentId: string
-  runId: string
+  /** The run doing it; a mission's own steps run outside any run, under the mission. */
+  runId?: string
   tool?: string
   missionId?: string
 }
@@ -25,7 +26,7 @@ export function withActing<T>(context: Acting, fn: () => Promise<T>): Promise<T>
 export function withVia(data: Prisma.InputJsonValue | undefined): Prisma.InputJsonValue | undefined {
   const a = acting()
   if (!a) return data
-  const via = { agentId: a.agentId, runId: a.runId, ...(a.missionId ? { missionId: a.missionId } : {}) }
+  const via = { agentId: a.agentId, ...(a.runId ? { runId: a.runId } : {}), ...(a.missionId ? { missionId: a.missionId } : {}) }
   if (data === undefined || data === null) return { via }
   if (typeof data === "object" && !Array.isArray(data)) return { ...(data as Record<string, Prisma.InputJsonValue>), via }
   return data

@@ -9,12 +9,13 @@ import { Button } from "@/components/ui/button"
 import { RUN_STATUS_LABELS, RUN_STATUS_TONE, ACTIVE_STATUSES } from "@/features/ai/labels"
 import { ACTION_TITLES, ACTION_TOOLS, CONTACT_TOOLS, UNDOABLE_TOOLS, leadRefsIn, toolLabel, type LeadRef } from "@/features/copilot/labels"
 import { cn } from "@/lib/utils"
+import { MissionCard } from "@/components/crm/ai/mission-card"
 import { useRunStatus } from "./use-run-status"
 
 /**
  * The tool calls of a copilot answer (E24, E28), as the person sees them: a short line for what it read or did on its
- * own (with « Annuler » when it can be put back), a card to approve or refuse for what it proposes, and a live card
- * for the work handed to a specialist.
+ * own (with « Annuler » when it can be put back), a card to approve or refuse for what it proposes, a live card for the
+ * work handed to a specialist, and a mission's plan, launched from its own card.
  */
 
 type Part = UIMessage["parts"][number]
@@ -144,6 +145,7 @@ function ToolResult({ part, userId, onUndo }: { part: ToolPart; userId: string |
       </Line>
     )
   }
+  if (name === "propose_mission" && str(output?.missionId)) return <MissionCard missionId={str(output!.missionId)!} userId={userId} compact />
   if (!ACTION_TOOLS.has(name)) {
     const refs = leadRefsIn(output)
     const one = refs.length === 1 ? ` · ${refs[0].name}` : refs.length > 1 ? ` · ${refs.length} fiches` : ""

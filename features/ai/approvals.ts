@@ -7,6 +7,7 @@ import { LeadError } from "@/features/leads/errors"
 import { ACTIVE_RUN_STATUSES } from "@/lib/ai/budget"
 import { agentLabel } from "./agents"
 import { isManager, recordStep, type RunContext } from "./runs"
+import { wakeMissionOfRun } from "@/features/missions/wake"
 
 /**
  * Human approval (D18, docs/crm-v1/AGENTS-IA.md §10). A tool call that leaves the CRM (an email, a search, a link sent
@@ -142,6 +143,8 @@ export async function decideApproval(actor: CurrentUser, approvalId: string, dec
       })
     }
   })
+  // A mission waiting on this click looks again (E28): a refusal ends its step at once.
+  await wakeMissionOfRun(a.runId)
   await audit({
     action: decision.approve ? "ai.approval_approved" : "ai.approval_rejected",
     actorId: actor.id,

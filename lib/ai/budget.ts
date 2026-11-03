@@ -12,7 +12,7 @@ import { publishNotifications } from "./realtime"
  * is what was recorded (AiUsage) plus what active runs still hold, so the caps hold whatever runs in parallel.
  * Amounts are micro-euros.
  */
-export const BUDGET_DEFAULTS = { monthlyCapMicros: 100_000_000, userDailyCapMicros: 5_000_000, eurPerUsd: 0.92 } as const
+export const BUDGET_DEFAULTS = { monthlyCapMicros: 100_000_000, userDailyCapMicros: 5_000_000, eurPerUsd: 0.92, missionCapMicros: 2_000_000 } as const
 export const ALERT_THRESHOLDS = [50, 80, 100] as const
 export const ACTIVE_RUN_STATUSES = ["QUEUED", "RUNNING", "WAITING_APPROVAL"] as const
 /** Usage key of runs nobody asked for (scheduled work): no personal quota. */
@@ -25,13 +25,16 @@ export interface AiSettings {
   userDailyCapMicros: number
   eurPerUsd: number
   roleModels: RoleModels
+  /** E28 (D32): most a mission may spend before a second confirmation. */
+  missionCapMicros: number
 }
 
-const toSettings = (row: { monthlyCapMicros: number; userDailyCapMicros: number; eurPerUsd: number; roleModels: unknown } | null | undefined): AiSettings => ({
+const toSettings = (row: { monthlyCapMicros: number; userDailyCapMicros: number; eurPerUsd: number; roleModels: unknown; missionCapMicros?: number } | null | undefined): AiSettings => ({
   monthlyCapMicros: row?.monthlyCapMicros ?? BUDGET_DEFAULTS.monthlyCapMicros,
   userDailyCapMicros: row?.userDailyCapMicros ?? BUDGET_DEFAULTS.userDailyCapMicros,
   eurPerUsd: row?.eurPerUsd ?? BUDGET_DEFAULTS.eurPerUsd,
   roleModels: parseRoleModels(row?.roleModels),
+  missionCapMicros: row?.missionCapMicros ?? BUDGET_DEFAULTS.missionCapMicros,
 })
 
 /** The workspace's settings, or the defaults while nothing was saved. */
@@ -86,8 +89,8 @@ export async function ensureAiSetting(db: Db, workspaceId: string): Promise<void
 export async function reserveBudget(tx: Prisma.TransactionClient, input: { workspaceId: string; userKey: string; capMicros: number; now?: Date }): Promise<AiSettings> {
   const now = input.now ?? new Date()
   await ensureAiSetting(tx, input.workspaceId)
-  const [row] = await tx.$queryRaw<{ monthlyCapMicros: number; userDailyCapMicros: number; eurPerUsd: number; roleModels: unknown }[]>`
-    SELECT "monthlyCapMicros", "userDailyCapMicros", "eurPerUsd", "roleModels" FROM "AiSetting" WHERE "workspaceId" = ${input.workspaceId} FOR UPDATE`
+  const [row] = await tx.$queryRaw<{ monthlyCapMicros: number; userDailyCapMicros: number; eurPerUsd: number; roleModels: unknown; missionCapMicros: number }[]>`
+    SELECT "monthlyCapMicros", "userDailyCapMicros", "eurPerUsd", "roleModels", "missionCapMicros" FROM "AiSetting" WHERE "workspaceId" = ${input.workspaceId} FOR UPDATE`
   const settings = toSettings(row)
   const c = await commitments(tx, input.workspaceId, input.userKey, now)
 

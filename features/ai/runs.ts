@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { audit } from "@/lib/audit"
 import type { CurrentUser } from "@/lib/auth/guard"
 import { toCrmRole } from "@/lib/crm/roles"
+import { acting } from "@/lib/ai/acting"
 import { can, canAccessRecord } from "@/lib/rbac"
 import { LeadError } from "@/features/leads/errors"
 import { ACTIVE_RUN_STATUSES, SYSTEM_USER, addUsage, chargeRun, checkBudgetAlerts, getAiSettings, microsToEur, reserveBudget } from "@/lib/ai/budget"
@@ -14,6 +15,7 @@ import { EVALUATIONS_USAGE, agentLabel, isAgentId, type AgentId } from "./agents
 import { effectiveAgent } from "./definitions"
 import { FAMILY_INFO } from "./actions/families"
 import { cutFamilies } from "./actions/policy"
+import { wakeMissions } from "@/features/missions/wake"
 
 /**
  * AI runs (docs/crm-v1/AGENTS-IA.md §10): one execution of an agent, who it acts for, what it did and what it cost.
@@ -28,6 +30,8 @@ export interface RunContext {
   /** Usage key: the requester's id, or "system". */
   userKey: string
   leadId: string | null
+  /** E28: the mission the run works for; what it writes says so, and its cost counts against the mission's cap. */
+  missionId?: string
   /**
    * Set only while an evaluation runs (E27, features/quality/): the models pinned for some roles, used without the
    * Gateway's fallbacks whatever the workspace chose, and the frozen offers catalogue read instead of the workspace's.
@@ -59,6 +63,10 @@ export interface StartRunInput {
    * measures the agent, it does no work for the team.
    */
   evaluation?: { capMicros: number }
+  /** E28: the mission it works for; by default the one whose step is running (lib/ai/acting.ts). */
+  missionId?: string | null
+  /** Work that calls no model (a mission's action waiting for a click) holds none of the agent's cap. */
+  noModel?: boolean
 }
 
 const isUniqueViolation = (error: unknown) => (error as { code?: string } | null)?.code === "P2002"
@@ -84,9 +92,10 @@ async function createRun(workspaceId: string, requester: CurrentUser | null, inp
   // E28: a specialist's workflow needs every family of actions it declares; an agent that picks its tools only loses some.
   const cut = agent.def.picksTools || input.evaluation || isTaskInput(input.input) ? [] : cutFamilies(agent.def, agent.policy)
   if (cut.length) throw new LeadError("conflict", `L'agent « ${agent.def.label} » n'a plus le droit « ${FAMILY_INFO[cut[0]].label} » : le propriétaire peut le lui rendre dans Agents IA › Agents › Droits.`, 409)
-  const cap = input.evaluation?.capMicros ?? agent.capMicros
+  const cap = input.noModel ? 0 : (input.evaluation?.capMicros ?? agent.capMicros)
   const status = input.status ?? "QUEUED"
   const userKey = requester?.id ?? SYSTEM_USER
+  const missionId = input.missionId === undefined ? (acting()?.missionId ?? null) : input.missionId
   const run = await prisma
     .$transaction(async (tx) => {
       await reserveBudget(tx, { workspaceId, userKey, capMicros: cap })
@@ -99,6 +108,7 @@ async function createRun(workspaceId: string, requester: CurrentUser | null, inp
           leadId: input.leadId ?? null,
           campaignId: input.campaignId ?? null,
           parentRunId: input.parentRunId ?? null,
+          missionId,
           input: input.input,
           priority: input.priority ?? 0,
           capMicros: cap,
@@ -119,9 +129,9 @@ async function createRun(workspaceId: string, requester: CurrentUser | null, inp
     workspaceId,
     entityType: "AgentRun",
     entityId: run.id,
-    metadata: { agentId: input.agentId, leadId: input.leadId ?? null },
+    metadata: { agentId: input.agentId, leadId: input.leadId ?? null, ...(missionId ? { missionId } : {}) },
   })
-  return { id: run.id, workspaceId, agentId: input.agentId, requester, userKey, leadId: input.leadId ?? null }
+  return { id: run.id, workspaceId, agentId: input.agentId, requester, userKey, leadId: input.leadId ?? null, ...(missionId ? { missionId } : {}) }
 }
 
 /** Starts a run for a member: the right to use AI, the right to work on the fiche, then the agent's cap is reserved. */
@@ -144,14 +154,14 @@ export async function startSystemRun(workspaceId: string, input: StartRunInput):
 export async function loadRunContext(runId: string): Promise<RunContext> {
   const run = await prisma.agentRun.findUnique({
     where: { id: runId },
-    select: { id: true, workspaceId: true, agentId: true, leadId: true, requestedById: true, requestedBy: { select: { id: true, name: true, email: true, image: true, role: true, active: true, workspaceId: true } } },
+    select: { id: true, workspaceId: true, agentId: true, leadId: true, missionId: true, requestedById: true, requestedBy: { select: { id: true, name: true, email: true, image: true, role: true, active: true, workspaceId: true } } },
   })
   if (!run || !isAgentId(run.agentId)) throw new LeadError("not_found", "Exécution introuvable", 404)
   const u = run.requestedBy
   const role = toCrmRole(u?.role)
   const requester =
     u && u.active && role && u.workspaceId === run.workspaceId ? { id: u.id, workspaceId: run.workspaceId, name: u.name ?? u.email ?? "", email: u.email ?? "", image: u.image, role } : null
-  return { id: run.id, workspaceId: run.workspaceId, agentId: run.agentId, requester, userKey: run.requestedById ?? SYSTEM_USER, leadId: run.leadId }
+  return { id: run.id, workspaceId: run.workspaceId, agentId: run.agentId, requester, userKey: run.requestedById ?? SYSTEM_USER, leadId: run.leadId, ...(run.missionId ? { missionId: run.missionId } : {}) }
 }
 
 /** A queued run taken by the worker. False when it was cancelled or taken in the meantime. */
@@ -229,14 +239,16 @@ export type EndStatus = Extract<AgentRunStatus, "SUCCEEDED" | "FAILED" | "CANCEL
 
 /**
  * Ends an active run and releases what it still held. False when it had already ended. A worker passes its id so it
- * never ends a run another worker took over after a stall.
+ * never ends a run another worker took over after a stall. A mission waiting on the run is woken (E28).
  */
 export async function finishRun(runId: string, end: { status: EndStatus; output?: unknown; error?: string | null; lockedBy?: string }): Promise<boolean> {
-  const res = await prisma.agentRun.updateMany({
+  const ended = await prisma.agentRun.updateManyAndReturn({
     where: { id: runId, status: { in: [...ACTIVE_RUN_STATUSES] }, ...(end.lockedBy ? { lockedBy: end.lockedBy } : {}) },
     data: { status: end.status, finishedAt: new Date(), reservedMicros: 0, output: end.output === undefined ? undefined : forLog(end.output, 8_000), error: end.error?.slice(0, 2_000) ?? null },
+    select: { missionId: true },
   })
-  return res.count === 1
+  if (ended[0]?.missionId) await wakeMissions({ missionId: ended[0].missionId })
+  return ended.length === 1
 }
 
 /** Stops a run: its requester, a manager or the owner. Pending approvals are refused with it. */
@@ -273,7 +285,7 @@ export interface RunView {
 
 const leadName = (l: { company: { name: string } | null; contact: { name: string | null; email: string | null } | null }) => l.company?.name ?? l.contact?.name ?? l.contact?.email ?? "Fiche"
 
-const TASK_LABELS: Record<string, string> = { evaluation: "Évaluation", skill_test: "Test de skill", transcription: "Dictée" }
+const TASK_LABELS: Record<string, string> = { evaluation: "Évaluation", skill_test: "Test de skill", transcription: "Dictée", mission_action: "Mission" }
 const taskOf = (input: unknown) => {
   const kind = input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>).kind : null
   return typeof kind === "string" ? (TASK_LABELS[kind] ?? null) : null

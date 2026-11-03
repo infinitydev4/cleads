@@ -8,6 +8,7 @@ import type { Notification } from "@prisma/client"
  */
 export const userChannel = (userId: string) => `private-user-${userId}`
 export const RUN_EVENT = "ai-run"
+export const MISSION_EVENT = "ai-mission"
 export const NOTIFICATION_EVENT = "notification"
 
 /** A member may only listen to their own private channel. */
@@ -39,6 +40,17 @@ export async function publishRunUpdate(run: RunUpdate): Promise<void> {
   if (!pusher || !run.requestedById) return
   try {
     await pusher.trigger(userChannel(run.requestedById), RUN_EVENT, { id: run.id, agentId: run.agentId, status: run.status, leadId: run.leadId })
+  } catch (error) {
+    console.warn("[AI_REALTIME]", error instanceof Error ? error.message : error)
+  }
+}
+
+/** E28: a mission moved (a step, its status); its card reloads it. Never throws. */
+export async function publishMissionUpdate(mission: { id: string; status: string; requestedById: string | null }): Promise<void> {
+  const pusher = pusherClient()
+  if (!pusher || !mission.requestedById) return
+  try {
+    await pusher.trigger(userChannel(mission.requestedById), MISSION_EVENT, { id: mission.id, status: mission.status })
   } catch (error) {
     console.warn("[AI_REALTIME]", error instanceof Error ? error.message : error)
   }

@@ -329,7 +329,7 @@ suite("AI foundation (database)", () => {
       await prove("writer", "mistral/mistral-large-4", ["auditor", "offers", "writer"])
       await prove("fast", "openai/gpt-6-luna", ["auditor"])
       let view = await settings.updateAiSettings(u.owner, { roleModels: { writer: "mistral/mistral-large-4" }, monthlyCapEur: 50, userDailyCapEur: 2.5 })
-      expect(view.caps).toEqual({ monthlyCapEur: 50, userDailyCapEur: 2.5, eurPerUsd: 0.92 })
+      expect(view.caps).toEqual({ monthlyCapEur: 50, userDailyCapEur: 2.5, eurPerUsd: 0.92, missionCapEur: 2 })
       expect(view.roles.find((r) => r.id === "writer")).toMatchObject({ model: "mistral/mistral-large-4", isDefault: false })
       view = await settings.updateAiSettings(u.owner, { roleModels: { fast: "openai/gpt-6-luna" } })
       expect(view.roles.find((r) => r.id === "writer")?.model).toBe("mistral/mistral-large-4")
@@ -337,6 +337,8 @@ suite("AI foundation (database)", () => {
       expect((await prisma.aiSetting.findUniqueOrThrow({ where: { workspaceId: ws } })).roleModels).toEqual({ fast: "openai/gpt-6-luna" })
       expect(await prisma.auditLog.count({ where: { action: "ai.settings_updated" } })).toBe(3)
       expect(settings.updateAiSettingsSchema.safeParse({ monthlyCapEur: -1 }).success).toBe(false)
+      // E28 (D32): the cap of a mission, before its second confirmation.
+      expect(settings.updateAiSettingsSchema.safeParse({ missionCapEur: 101 }).success).toBe(false)
       expect(settings.updateAiSettingsSchema.safeParse({ roleModels: { decision: "anthropic/claude-opus-5.5" } }).success).toBe(false)
     })
 

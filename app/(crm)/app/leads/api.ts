@@ -2,6 +2,6 @@
 export async function api<T = unknown>(url: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(url, { headers: { "Content-Type": "application/json" }, ...init })
   const body = await res.json().catch(() => ({}))
-  if (!res.ok) throw Object.assign(new Error(body.error ?? "Une erreur est survenue"), { code: body.code as string | undefined, leadId: body.leadId as string | undefined })
+  if (!res.ok) throw Object.assign(new Error(body.error ?? "Une erreur est survenue"), { code: body.code as string | undefined, leadId: body.leadId as string | undefined, body: body as Record<string, unknown> })
   return body as T
 }

@@ -12,6 +12,7 @@ import { runDesigner } from "@/features/studio/handler"
 import { runStrategist } from "@/features/strategy/handler"
 import { runQualifier } from "@/features/relevance/handler"
 import { EVALUATION, runEvaluation } from "@/features/quality/run"
+import { MISSION_ACTION, registerMissionTools, runMissionAction } from "@/features/missions/task"
 import { browserRenderer } from "./browser"
 import { AgentWorker, DEFAULT_PER_AGENT } from "./runner"
 import { errorFields, log } from "./log"
@@ -28,6 +29,9 @@ registerAgentHandler("qualifier", (job) => runQualifier(job))
 registerTaskHandler(SKILL_TEST, (job) => runSkillTest(job))
 // E27: evaluations measure any agent, its pages rendered in the same browser as the Studio's.
 registerTaskHandler(EVALUATION, (job) => runEvaluation(job, { renderer }))
+// E28: missions advance in this worker; their contact actions run here once a person approved them.
+registerMissionTools()
+registerTaskHandler(MISSION_ACTION, (job) => runMissionAction(job))
 
 /** Entry point of the AI worker container (docs/crm-v1/WORKER-IA.md). */
 const env = z
@@ -51,6 +55,7 @@ const worker = new AgentWorker({
   pollBusyMs: 500,
   maintenanceMs: 30_000,
   beatMs: 15_000,
+  missionConcurrency: 2,
 })
 
 try {

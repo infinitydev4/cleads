@@ -9,6 +9,7 @@ import { PROSPECTING_ACTIONS } from "./prospecting"
 import { AI_ACTIONS } from "./ai-work"
 import { OUTREACH_ACTIONS } from "./outreach"
 import { openPageTool } from "./navigation"
+import { MISSION_TOOLS } from "@/features/missions/tools"
 
 /**
  * The catalogue of actions (E28, docs/crm-v1/AGENTS-IA.md §9): every operation of the CRM an agent may run for a
@@ -28,10 +29,11 @@ export const ACTIONS: readonly AnyToolDef[] = [
   ...PROSPECTING_ACTIONS,
   ...AI_ACTIONS,
   ...OUTREACH_ACTIONS,
+  ...MISSION_TOOLS,
 ]
 
 /** Loaded at every turn: what most questions need first. */
-export const CORE_ACTIONS: ReadonlySet<string> = new Set(["search_leads", "get_lead", "get_today", "list_campaigns", "open_page", "read_skill"])
+export const CORE_ACTIONS: ReadonlySet<string> = new Set(["search_leads", "get_lead", "get_today", "list_campaigns", "open_page", "propose_mission", "read_skill"])
 
 /** Words people use for an action, beyond its name and description (French, without accents). */
 const KEYWORDS: Record<string, string> = {
@@ -98,6 +100,9 @@ const KEYWORDS: Record<string, string> = {
   book_meeting: "rendez-vous planifier rdv reserver invitation",
   change_meeting: "rendez-vous reporter annuler confirmer",
   record_meeting_outcome: "rendez-vous resultat cloturer compte rendu absent",
+  propose_mission: "mission plan plusieurs etapes enchainer automatiser recurrente chaque semaine lancer",
+  list_missions: "missions suivi avancement bilan ou en est",
+  manage_mission: "mission pause reprendre annuler arreter recurrence",
 }
 
 const STOP = new Set(["les", "des", "une", "pour", "avec", "dans", "sur", "aux", "que", "qui", "est", "son", "ses", "leur", "mes", "nos", "vos", "the", "and"])

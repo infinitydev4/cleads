@@ -223,10 +223,17 @@ export const actOnTargetTool = defineTool({
   },
   execute: async (ctx, input) => {
     const user = personOf(ctx)
-    if (input.action !== "search") return { done: true, targetId: input.targetId, status: await actOnTarget(user, input.targetId, { action: input.action }) }
+    if (input.action !== "search") {
+      const status = await actOnTarget(user, input.targetId, { action: input.action })
+      const t = input.action === "campaign" ? await prisma.strategyTarget.findUnique({ where: { id: input.targetId }, select: { campaignId: true } }) : null
+      return { done: true, targetId: input.targetId, status, campaignId: t?.campaignId ?? null }
+    }
     const t = await targetOf(user.workspaceId, input.targetId)
     const search = { activity: input.activity ?? t.activity, location: input.location ?? t.location, maxResults: input.maxResults ?? t.maxResults }
-    return { done: true, targetId: input.targetId, status: await actOnTarget(user, input.targetId, { action: "search", search }) }
+    const status = await actOnTarget(user, input.targetId, { action: "search", search })
+    // What a mission's next steps cite: the target's campaign and search (E28).
+    const launched = await prisma.strategyTarget.findUnique({ where: { id: input.targetId }, select: { campaignId: true, searchId: true } })
+    return { done: true, targetId: input.targetId, status, campaignId: launched?.campaignId ?? null, searchId: launched?.searchId ?? null, open: launched?.searchId ? `/app/search/${launched.searchId}` : undefined }
   },
 })
 

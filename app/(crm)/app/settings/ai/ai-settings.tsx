@@ -41,6 +41,7 @@ export function AiSettings({ userId, initial, approvals: initialApprovals, runs:
   const [monthlyCap, setMonthlyCap] = useState(String(initial.caps.monthlyCapEur))
   const [dailyCap, setDailyCap] = useState(String(initial.caps.userDailyCapEur))
   const [rate, setRate] = useState(String(initial.caps.eurPerUsd))
+  const [missionCap, setMissionCap] = useState(String(initial.caps.missionCapEur))
   const [busy, setBusy] = useState(false)
   const [acting, setActing] = useState<string | null>(null)
 
@@ -57,14 +58,15 @@ export function AiSettings({ userId, initial, approvals: initialApprovals, runs:
     view.roles.some((r) => models[r.id] !== r.model) ||
     Number(monthlyCap) !== view.caps.monthlyCapEur ||
     Number(dailyCap) !== view.caps.userDailyCapEur ||
-    Number(rate) !== view.caps.eurPerUsd
+    Number(rate) !== view.caps.eurPerUsd ||
+    Number(missionCap) !== view.caps.missionCapEur
 
   async function save() {
     setBusy(true)
     try {
       const next = await api<AiSettingsView>("/api/ai/settings", {
         method: "PUT",
-        body: JSON.stringify({ roleModels: models, monthlyCapEur: Number(monthlyCap), userDailyCapEur: Number(dailyCap), eurPerUsd: Number(rate), acceptRegressions: changes.filter((r) => confirmed[r.id]).map((r) => r.id) }),
+        body: JSON.stringify({ roleModels: models, monthlyCapEur: Number(monthlyCap), userDailyCapEur: Number(dailyCap), eurPerUsd: Number(rate), missionCapEur: Number(missionCap), acceptRegressions: changes.filter((r) => confirmed[r.id]).map((r) => r.id) }),
       })
       setView(next)
       toast.success("Réglages IA enregistrés")
@@ -202,7 +204,7 @@ export function AiSettings({ userId, initial, approvals: initialApprovals, runs:
         <h2 id="ai-caps" className="text-lg font-bold">
           Plafonds
         </h2>
-        <Card className="grid gap-4 p-5 sm:grid-cols-3">
+        <Card className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-4">
           <div className="space-y-1.5">
             <Label htmlFor="ai-monthly">Plafond mensuel (€)</Label>
             <Input id="ai-monthly" type="number" min={0} max={10000} step={1} value={monthlyCap} onChange={(e) => setMonthlyCap(e.target.value)} disabled={!view.canManage} />
@@ -212,6 +214,11 @@ export function AiSettings({ userId, initial, approvals: initialApprovals, runs:
             <Label htmlFor="ai-daily">Quota par personne et par jour (€)</Label>
             <Input id="ai-daily" type="number" min={0} max={1000} step={0.5} value={dailyCap} onChange={(e) => setDailyCap(e.target.value)} disabled={!view.canManage} />
             <p className="text-xs text-muted-foreground">Dans la limite du plafond mensuel.</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ai-mission">Plafond par mission (€)</Label>
+            <Input id="ai-mission" type="number" min={0} max={100} step={0.5} value={missionCap} onChange={(e) => setMissionCap(e.target.value)} disabled={!view.canManage} />
+            <p className="text-xs text-muted-foreground">Au-delà, la personne confirme une seconde fois avant de lancer.</p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="ai-rate">Taux euro pour un dollar</Label>

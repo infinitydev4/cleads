@@ -12,6 +12,8 @@ services:
     environment:
       NODE_ENV: production
       EXTRACTOR_MCP_URL: http://api:8080/mcp
+      # E28: missions launch, follow and import searches through the Extractor's API, on the local network.
+      EXTRACTOR_URL: http://api:8080
       WORKER_ID: ai-worker-1
       # The CRM's public address, for the links the worker writes (booking page in a drafted answer, E22).
       NEXT_PUBLIC_APP_URL: ${APP_URL:-https://cleads.fr}

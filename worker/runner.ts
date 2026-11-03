@@ -1,13 +1,16 @@
 import os from "node:os"
 import { prisma } from "@/lib/prisma"
 import { publishRunUpdate, type RunUpdate } from "@/lib/ai/realtime"
+import { withActing } from "@/lib/ai/acting"
 import { LeadError } from "@/features/leads/errors"
 import { AGENT_IDS, type AgentId } from "@/features/ai/agents"
 import { RetryableError, agentHandler, handledAgents, handledTasks, taskHandler } from "@/features/ai/handlers"
 import { runMaintenance } from "@/features/ai/maintenance"
 import { HEARTBEAT_MS, claimNextRun, heartbeat, releaseRun, retryRun, workerBeat, type ClaimedRun } from "@/features/ai/queue"
 import { finishRun, loadRunContext } from "@/features/ai/runs"
+import { effectiveAgent } from "@/features/ai/definitions"
 import { executeApprovedCalls } from "@/features/ai/tools"
+import { advanceMission, claimMission } from "@/features/missions/engine"
 import { errorFields, log } from "./log"
 
 /**
@@ -26,6 +29,8 @@ export interface WorkerConfig {
   beatMs: number
   /** Lease renewal; HEARTBEAT_MS by default. */
   heartbeatMs?: number
+  /** E28: missions advanced at once; 2 by default. */
+  missionConcurrency?: number
 }
 
 /** The Studio and audits are heavy (browser, long generations): fewer at once. */
@@ -58,6 +63,7 @@ export const publicMessage = (error: unknown) =>
 export class AgentWorker {
   readonly startedAt = new Date()
   private readonly running = new Map<string, Running>()
+  private readonly missions = new Map<string, { controller: AbortController; done: Promise<void> }>()
   private stopping = false
   private loopTimer: NodeJS.Timeout | null = null
   private intervals: NodeJS.Timeout[] = []
@@ -76,7 +82,7 @@ export class AgentWorker {
 
   /** Resolves when the runs in progress have ended. */
   async idle(): Promise<void> {
-    await Promise.all([...this.running.values()].map((r) => r.done))
+    await Promise.all([...this.running.values(), ...this.missions.values()].map((r) => r.done))
   }
 
   /** Agents with a free slot on this worker. */
@@ -107,6 +113,25 @@ export class AgentWorker {
     return started
   }
 
+  /**
+   * E28: advances the missions that are due (features/missions/engine.ts), a few at a time, next to the runs: a pass
+   * waits on nothing long, it launches work and gives the mission back.
+   */
+  async tickMissions(): Promise<number> {
+    let started = 0
+    while (!this.stopping && this.missions.size < (this.cfg.missionConcurrency ?? 2)) {
+      const id = await claimMission(this.cfg.id)
+      if (!id) break
+      const controller = new AbortController()
+      const done = advanceMission(id, { workerId: this.cfg.id, signal: controller.signal })
+        .catch((error) => log("error", "mission pass failed", { missionId: id, ...errorFields(error) }))
+        .finally(() => this.missions.delete(id))
+      this.missions.set(id, { controller, done })
+      started++
+    }
+    return started
+  }
+
   private async publish(runId: string) {
     const run = await prisma.agentRun.findUnique({ where: { id: runId }, select: { id: true, agentId: true, status: true, requestedById: true, leadId: true } }).catch(() => null)
     if (run) await (this.deps.publish ?? publishRunUpdate)(run)
@@ -127,7 +152,8 @@ export class AgentWorker {
     try {
       await this.publish(claim.id)
       const ctx = await loadRunContext(claim.id)
-      const approved = await executeApprovedCalls({ run: ctx })
+      // The agent's rights matrix of now, as the owner set it (E28): an approved call of a family cut since stays undone.
+      const approved = await executeApprovedCalls({ run: ctx, policy: (await effectiveAgent(ctx.workspaceId, ctx.agentId)).policy })
       if (approved.uncertain.length) {
         await fail(`L'action « ${approved.uncertain[0].tool} » a peut-être déjà été faite : le worker s'est arrêté pendant son exécution. Vérifiez avant de la relancer.`)
         return
@@ -144,7 +170,9 @@ export class AgentWorker {
         await fail("Cet agent n'est pas encore disponible sur le worker.")
         return
       }
-      const result = await handler({ run: ctx, attempt: claim.attempts, input, approved: approved.done, signal: controller.signal })
+      const job = { run: ctx, attempt: claim.attempts, input, approved: approved.done, signal: controller.signal }
+      // A mission's run: what it starts (Jev's next batch) works for the same mission (E28).
+      const result = ctx.missionId ? await withActing({ agentId: claim.agentId, runId: claim.id, missionId: ctx.missionId }, () => handler(job)) : await handler(job)
       if (controller.signal.aborted) return
       // A handler that asked for approval left the run waiting; one that ran out of budget already ended it.
       const state = await prisma.agentRun.findUnique({ where: { id: claim.id }, select: { status: true, lockedBy: true } })
@@ -192,6 +220,7 @@ export class AgentWorker {
       let started = 0
       try {
         started = await this.tick()
+        started += await this.tickMissions()
         this.lastError = null
       } catch (error) {
         this.lastError = error instanceof Error ? error.message : String(error)
@@ -213,7 +242,9 @@ export class AgentWorker {
     this.stopping = true
     if (this.loopTimer) clearTimeout(this.loopTimer)
     for (const t of this.intervals) clearInterval(t)
-    const all = Promise.all([...this.running.values()].map((r) => r.done))
+    // A mission's pass ends after the step in progress and gives the mission back.
+    for (const m of this.missions.values()) m.controller.abort()
+    const all = Promise.all([...this.running.values(), ...this.missions.values()].map((r) => r.done))
     await Promise.race([all, new Promise((resolve) => setTimeout(resolve, graceMs))])
     for (const [runId, r] of this.running) {
       r.controller.abort()
@@ -231,6 +262,7 @@ export class AgentWorker {
       ok,
       version: this.cfg.version,
       running: this.running.size,
+      missions: this.missions.size,
       agents: handledAgents(),
       tasks: handledTasks(),
       lastTickAt: this.lastTickAt?.toISOString() ?? null,
