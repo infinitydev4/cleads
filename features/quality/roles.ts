@@ -14,6 +14,7 @@ export const SUITE_ROLES: Record<SuiteId, (agentRole: AiRole) => AiRole[]> = {
   replies: () => ["decision"],
   qualifier: () => ["decision"],
   designer: (agentRole) => [agentRole],
+  copilot: (agentRole) => [agentRole],
 }
 
 /** The role the code gives the suite's agent, before any change in Agents IA. */

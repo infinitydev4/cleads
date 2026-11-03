@@ -9,7 +9,9 @@ import { loopBudget, type LoopBudget } from "@/features/ai/loop"
 import { agentRuntime } from "@/features/ai/runtime"
 import type { RunContext } from "@/features/ai/runs"
 import { chatTools, type AnyToolDef } from "@/features/ai/tools"
+import { AGENTS } from "@/features/ai/agents"
 import { CORE_ACTIONS, rankActions } from "@/features/ai/actions/catalog"
+import { effectivePolicy } from "@/features/ai/actions/policy"
 import { toolsFor } from "./tools"
 
 /**
@@ -76,17 +78,27 @@ function weightOf(def: AnyToolDef): number {
   return w
 }
 
+export interface CopilotOptions {
+  /** The actions the last answer used, loaded with the core so the model can carry on with them. */
+  recent?: ReadonlySet<string>
+  /**
+   * An evaluation's frozen CRM (E28 lot 3, features/quality/cases/copilot.ts): each action keeps its definition, so the
+   * model reads what it reads in service, but answers from that world; and the rights matrix is the code's, whatever
+   * the workspace chose, so the cases' expectations hold everywhere.
+   */
+  world?: (def: AnyToolDef) => AnyToolDef
+}
+
 /**
- * The agent for one turn, billed to `run`. `recent`: the actions the last answer used, loaded with the core so the
- * model can carry on with them. Each step's answer is capped from what the run can still pay at the worst price of the
- * model and its fallbacks; the turn stops when even a short answer would not fit (features/ai/loop.ts).
+ * The agent for one turn, billed to `run`. Each step's answer is capped from what the run can still pay at the worst
+ * price of the model and its fallbacks; the turn stops when even a short answer would not fit (features/ai/loop.ts).
  */
-export async function copilotAgent(user: CurrentUser, run: RunContext, deps: ModelDeps = {}, opts: { recent?: ReadonlySet<string> } = {}): Promise<CopilotSetup> {
+export async function copilotAgent(user: CurrentUser, run: RunContext, deps: ModelDeps = {}, opts: CopilotOptions = {}): Promise<CopilotSetup> {
   const runtime = await agentRuntime(run)
   const role = runtime.agent.modelRole === "decision" ? "writer" : runtime.agent.modelRole
   const system = `${runtime.system}\n\n${copilotRules(user)}`
-  const policy = runtime.agent.policy
-  const defs = toolsFor(user, { skills: runtime.tools.length > 0, policy })
+  const policy = opts.world ? effectivePolicy(AGENTS.copilot, null) : runtime.agent.policy
+  const defs = toolsFor(user, { skills: runtime.tools.length > 0, policy }).map((d) => opts.world?.(d) ?? d)
   const loadedAtStart = (name: string) => CORE_ACTIONS.has(name) || !!opts.recent?.has(name)
   // Loaded now, or named in the conversation (a call, a search result): the most this step's tools can weigh.
   const toolsTokens = (messages: readonly ModelMessage[]) => {

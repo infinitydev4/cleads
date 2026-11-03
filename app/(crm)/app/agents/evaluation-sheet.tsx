@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { cn } from "@/lib/utils"
 import { ACTIVE_STATUSES, RUN_STATUS_LABELS, RUN_STATUS_TONE, formatEur } from "@/features/ai/labels"
-import { MEASURES, SUITES_INFO, VERDICT_LABELS, formatMeasure, formatRatio, formatScore, type ContenderResult } from "@/features/quality/labels"
+import { CALL_STATE_LABELS, MEASURES, SUITES_INFO, VERDICT_LABELS, formatMeasure, formatRatio, formatScore, type ContenderResult } from "@/features/quality/labels"
 import type { CaseView, EvaluationDetail } from "@/features/quality/service"
 import { signalLabel } from "@/features/offers/signals"
 import { api } from "../leads/api"
@@ -67,6 +67,35 @@ function CaseBody({ suite, row }: { suite: EvaluationDetail["suite"]; row: CaseV
           </p>
           <p className="text-muted-foreground">Pack : {list(d.pack).join(", ")}</p>
           {list(d.forbidden).length > 0 && <p className="text-destructive-text">Exclue mais recommandée : {list(d.forbidden).join(", ")}</p>}
+        </div>
+      )
+    case "copilot":
+      return (
+        <div className="space-y-2">
+          <p className="text-muted-foreground">
+            {String(d.persona ?? "")}
+            {typeof d.page === "string" && ` · ${d.page}`}
+          </p>
+          {Array.isArray(d.calls) && d.calls.length > 0 && (
+            <ol className="space-y-0.5 text-xs">
+              {(d.calls as { tool: string; state: string; summary?: string; error?: string }[]).map((c, i) => (
+                <li key={i}>
+                  <span className="text-muted-foreground">{CALL_STATE_LABELS[c.state] ?? c.state}</span> · <span className="font-mono">{c.tool}</span>
+                  {(c.summary ?? c.error) && <span className="text-muted-foreground"> — {c.summary ?? c.error}</span>}
+                </li>
+              ))}
+            </ol>
+          )}
+          {list(d.plan).length > 0 && <p className="text-muted-foreground">Plan : {list(d.plan).join(" · ")}</p>}
+          <p className="whitespace-pre-wrap rounded-md bg-muted p-2">{String(d.answer || "(aucun texte)")}</p>
+          <ul className="flex flex-wrap gap-1">
+            {(Array.isArray(d.checks) ? (d.checks as { name: string; ok: boolean }[]) : []).map((c) => (
+              <li key={c.name}>
+                <Badge variant={c.ok ? "success" : "warning"}>{c.name}</Badge>
+              </li>
+            ))}
+          </ul>
+          {typeof d.comment === "string" && d.comment && <p className="text-muted-foreground">Le juge : {d.comment}</p>}
         </div>
       )
     case "writer":

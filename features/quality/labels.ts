@@ -4,14 +4,14 @@ import type { AgentId } from "@/features/ai/agents"
  * AI quality (E27, docs/crm-v1/AGENTS-IA.md §20): what each evaluation suite measures, in words for people. Safe to
  * import from the browser; the sets themselves stay on the server (features/quality/suites.ts).
  */
-export const SUITE_IDS = ["auditor", "offers", "writer", "replies", "qualifier", "designer"] as const satisfies readonly AgentId[]
+export const SUITE_IDS = ["auditor", "offers", "writer", "replies", "qualifier", "designer", "copilot"] as const satisfies readonly AgentId[]
 export type SuiteId = (typeof SUITE_IDS)[number]
 export const isSuiteId = (v: unknown): v is SuiteId => typeof v === "string" && (SUITE_IDS as readonly string[]).includes(v)
 
 /** The contender that uses no model: the coded rules a decision is compared with. */
 export const RULES = "rules"
 
-/** The model that grades free answers (emails, pages), whatever is compared: grades stay comparable over time. */
+/** The model that grades free answers (emails, pages, the copilot's answers), whatever is compared: grades stay comparable over time. */
 export const JUDGE_MODEL = "anthropic/claude-sonnet-5.5"
 
 /** Below this gap with the model in service, two scores are equivalent; beyond, better or a regression. */
@@ -97,6 +97,15 @@ export const SUITES_INFO: Record<SuiteId, SuiteInfo> = {
     decision: false,
     team: false,
   },
+  copilot: {
+    id: "copilot",
+    label: "Copilote",
+    set: "45 demandes sur un CRM figé, par cinq membres de l'équipe",
+    score: "Actions et arguments justes, retenue, et grille du juge",
+    measures: ["actions", "arguments", "plans", "refusals", "grounded", "answer", "steps", "cost", "duration"],
+    decision: false,
+    team: false,
+  },
 }
 
 export type MeasureKey =
@@ -119,6 +128,13 @@ export type MeasureKey =
   | "critique"
   | "axe"
   | "scripts"
+  | "actions"
+  | "arguments"
+  | "plans"
+  | "refusals"
+  | "grounded"
+  | "answer"
+  | "steps"
   | "cost"
   | "duration"
 
@@ -143,9 +159,19 @@ export const MEASURES: Record<MeasureKey, { label: string; hint: string; unit: "
   critique: { label: "Critique visuelle", hint: "Hiérarchie, lisibilité, contraste, mobile, marque, conversion (sur 5)", unit: "grade", higherIsBetter: true },
   axe: { label: "Défauts d'accessibilité", hint: "Violations graves ou critiques relevées par axe-core, par page", unit: "count", higherIsBetter: false },
   scripts: { label: "Scripts retirés", hint: "Pages où le modèle a écrit un script que le nettoyage a retiré : la page publiée n'en a jamais", unit: "share", higherIsBetter: false },
+  actions: { label: "Bonnes actions", hint: "Demandes où le copilote a pris ou proposé les actions attendues", unit: "share", higherIsBetter: true },
+  arguments: { label: "Arguments justes", hint: "Fiches, dates, membres et filtres justes dans les actions prises", unit: "share", higherIsBetter: true },
+  plans: { label: "Plans valides", hint: "Missions proposées qui passent les contrôles et suivent les étapes attendues", unit: "share", higherIsBetter: true },
+  refusals: { label: "Retenue juste", hint: "Demandes hors droits, ambiguës ou piégées : rien fait à tort, consigne cachée ignorée (objectif : 100 %)", unit: "share", higherIsBetter: true },
+  grounded: { label: "Sans fait inventé", hint: "Réponses dont le juge trouve chaque fait dans ce que le copilote a lu", unit: "share", higherIsBetter: true },
+  answer: { label: "Réponse (juge)", hint: "Pertinence, exactitude, honnêteté, clarté (sur 5)", unit: "grade", higherIsBetter: true },
+  steps: { label: "Étapes par demande", hint: "Appels au modèle en moyenne pour une demande (10 au plus)", unit: "count", higherIsBetter: false },
   cost: { label: "Coût par cas", hint: "Ce que le modèle comparé a coûté, juge à part", unit: "eur", higherIsBetter: false },
   duration: { label: "Durée médiane", hint: "Temps médian d'un cas", unit: "ms", higherIsBetter: false },
 }
+
+/** What became of a copilot's call in an evaluation (features/quality/cases/copilot.ts). */
+export const CALL_STATE_LABELS: Record<string, string> = { done: "Fait", proposed: "Carte à valider", refused: "Refusé", failed: "Erreur", pending: "Sans suite" }
 
 export const ROLE_OF_RULES = "Règles codées (sans modèle)"
 export const contenderLabel = (id: string, modelLabel: (id: string) => string) => (id === RULES ? ROLE_OF_RULES : modelLabel(id))

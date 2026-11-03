@@ -86,7 +86,7 @@ async function overBudget(ctx: RunContext): Promise<never> {
  * The model a call uses: the one an evaluation pinned for the role, alone (a fallback answering instead would measure
  * another model), else the workspace's choice with its Gateway fallbacks.
  */
-function modelFor(ctx: RunContext, role: AiRole, roleModels: RoleModels): { model: string; fallbacks: string[] } {
+export function modelFor(ctx: RunContext, role: AiRole, roleModels: RoleModels): { model: string; fallbacks: string[] } {
   const pinned = ctx.evaluation?.models[role]
   return pinned ? { model: pinned, fallbacks: [] } : resolveRole(role, roleModels)
 }
