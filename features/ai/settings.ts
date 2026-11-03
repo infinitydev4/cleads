@@ -8,7 +8,11 @@ import { commitments, ensureAiSetting, eurToMicros, getAiSettings, microsToEur, 
 import { aiConfigured } from "@/lib/ai/gateway"
 import { AI_ROLES, ROLES, modelLabel, resolveRole, roleModelsSchema, type AiRole, type RoleModels } from "@/lib/ai/models"
 import { formatPrice, priceTable } from "@/lib/ai/pricing"
+import { evidenceSummary, requireEvidence } from "@/features/quality/gate"
+import { SUITE_IDS } from "@/features/quality/labels"
+import { suitesUsing } from "@/features/quality/roles"
 import { agentLabel } from "./agents"
+import { effectiveAgent } from "./definitions"
 import { workerStatus, type WorkerStatus } from "./queue"
 import { isManager } from "./runs"
 
@@ -21,6 +25,8 @@ export interface RoleView {
   model: string
   modelLabel: string
   isDefault: boolean
+  /** The role's own model: going back to it needs no evaluation. */
+  defaultModel: string
   fallbacks: { id: string; label: string }[]
   choices: { id: string; label: string; price: string }[]
 }
@@ -101,6 +107,7 @@ export async function aiSettingsView(actor: CurrentUser): Promise<AiSettingsView
         model,
         modelLabel: modelLabel(model),
         isDefault: model === def.default,
+        defaultModel: def.default,
         fallbacks: fallbacks.map((m) => ({ id: m, label: modelLabel(m) })),
         choices: def.choices.map((m) => ({ id: m, label: modelLabel(m), price: formatPrice(prices[m]) })),
       }
@@ -130,16 +137,32 @@ export const updateAiSettingsSchema = z
     monthlyCapEur: euros(10_000, "Plafond mensuel").optional(),
     userDailyCapEur: euros(1_000, "Quota quotidien").optional(),
     eurPerUsd: z.number({ message: "Taux : un nombre" }).min(0.5, "Taux entre 0,5 et 2").max(2, "Taux entre 0,5 et 2").optional(),
+    /** Roles whose new model scored below the one in service, changed knowingly (E27). */
+    acceptRegressions: z.array(z.enum(AI_ROLES)).optional(),
   })
   .strict()
 export type UpdateAiSettingsInput = z.infer<typeof updateAiSettingsSchema>
 
-/** Owner only. Overrides equal to a role's default are dropped, so a later change of default applies. */
+/**
+ * Owner only. Overrides equal to a role's default are dropped, so a later change of default applies. A role moved to a
+ * model other than its default needs that model's evaluation on every suite the role touches (E27,
+ * features/quality/gate.ts); the proof is kept in the audit log.
+ */
 export async function updateAiSettings(actor: CurrentUser, input: UpdateAiSettingsInput, ip?: string | null): Promise<AiSettingsView> {
   if (!can(actor.role, "ai:manage")) throw new LeadError("forbidden", "Seul le propriétaire règle l'IA.", 403)
   const before = await getAiSettings(actor.workspaceId)
   const roleModels: RoleModels = { ...before.roleModels, ...input.roleModels }
   for (const role of AI_ROLES) if (roleModels[role] === ROLES[role].default) delete roleModels[role]
+  const evidence = []
+  const changed = AI_ROLES.filter((role) => resolveRole(role, roleModels).model !== resolveRole(role, before.roleModels).model && roleModels[role])
+  if (changed.length) {
+    const agentRoles = Object.fromEntries(await Promise.all(SUITE_IDS.map(async (id) => [id, (await effectiveAgent(actor.workspaceId, id)).modelRole] as const)))
+    for (const role of changed) {
+      const model = roleModels[role]!
+      const proof = await requireEvidence(actor.workspaceId, { role, model, suites: suitesUsing(role, agentRoles), what: `confier « ${ROLES[role].label} » à ${modelLabel(model)}` }, !!input.acceptRegressions?.includes(role))
+      evidence.push(evidenceSummary(proof))
+    }
+  }
   const after = {
     roleModels,
     monthlyCapMicros: input.monthlyCapEur === undefined ? before.monthlyCapMicros : eurToMicros(input.monthlyCapEur),
@@ -153,7 +176,7 @@ export async function updateAiSettings(actor: CurrentUser, input: UpdateAiSettin
     actorId: actor.id,
     workspaceId: actor.workspaceId,
     entityType: "AiSetting",
-    metadata: { before: { ...before }, after },
+    metadata: { before: { ...before }, after, ...(evidence.length ? { evidence } : {}) },
     ip,
   })
   return aiSettingsView(actor)

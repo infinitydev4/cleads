@@ -13,6 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { FormField } from "@/components/crm/form-field"
+import { ModelProof, proofKey, proofReady, useModelProofs } from "@/components/crm/ai/model-proof"
+import { isSuiteId } from "@/features/quality/labels"
 import { CHANGE_LABELS, formatEur } from "@/features/ai/labels"
 import type { AgentView, AgentsPage } from "@/features/ai/definitions"
 import type { SkillView } from "@/features/ai/skills/service"
@@ -111,6 +113,14 @@ function AgentDialog({ agent, skills, page, onClose }: { agent: AgentView; skill
   const [enabled, setEnabled] = useState(agent.enabled)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
+  // Another role means another model: an agent with an evaluation suite needs it measured first (E27).
+  const [confirmed, setConfirmed] = useState(false)
+  const target = agent.modelRoles.find((r) => r.id === modelRole)
+  const current = agent.modelRoles.find((r) => r.id === agent.modelRole)
+  const query = isSuiteId(agent.id) && modelRole !== agent.modelRole && modelRole !== agent.modelRoles[0]?.id && target?.model !== current?.model ? { agent: agent.id, role: modelRole } : null
+  const proofs = useModelProofs(query ? [query] : [])
+  const proof = query ? proofs[proofKey(query)] : undefined
+  const blocked = !!query && !proofReady(proof, confirmed)
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
@@ -122,6 +132,7 @@ function AgentDialog({ agent, skills, page, onClose }: { agent: AgentView; skill
     }
     if (page.canEditSettings) {
       if (modelRole !== agent.modelRole) body.modelRole = modelRole
+      if (query && confirmed) body.acceptRegression = true
       if (Number(maxSteps) !== agent.maxSteps) body.maxSteps = Math.round(Number(maxSteps))
       if (Number(maxCost) !== agent.maxCostEur) body.maxCostEur = Number(maxCost)
       if (enabled !== agent.enabled) body.enabled = enabled
@@ -219,6 +230,7 @@ function AgentDialog({ agent, skills, page, onClose }: { agent: AgentView; skill
                 <Input type="number" min={0.001} max={agent.codeLimits.maxCostEur} step={0.01} value={maxCost} onChange={(e) => setMaxCost(e.target.value)} disabled={!page.canEditSettings} />
               </FormField>
             </div>
+            {query && <ModelProof proof={proof} confirmed={confirmed} onConfirm={setConfirmed} />}
             <label className="flex items-center gap-3 text-sm">
               <Switch checked={enabled} onCheckedChange={setEnabled} disabled={!page.canEditSettings} aria-label="Agent activé" />
               {enabled ? "Activé : l’équipe peut le lancer" : "Désactivé : personne ne peut le lancer"}
@@ -251,7 +263,7 @@ function AgentDialog({ agent, skills, page, onClose }: { agent: AgentView; skill
             <Button type="button" variant="ghost" onClick={onClose}>
               Annuler
             </Button>
-            <Button type="submit" loading={busy}>
+            <Button type="submit" loading={busy} disabled={blocked}>
               Enregistrer
             </Button>
           </DialogFooter>

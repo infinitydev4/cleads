@@ -40,7 +40,9 @@ La file est la **table `AgentRun`** elle-même :
 
 **Agents.** Chaque epic métier (E20 à E25) enregistre le code de son agent (`registerAgentHandler`, dans `worker/main.ts`), et le worker ne prend que les agents qu'il connaît. Sont branchés : l'Auditeur digital (`auditor`, E20), le Conseiller offres (`offers`, E21), le Rédacteur outreach (`writer`), l'Analyste réponses (`replies`, E22), le Designer web (`designer`, E23), le Stratège marché (`strategist`) et l'Analyste qualification (`qualifier`, E25). Le champ `agents` de `/healthz` les liste. Le Stratège et le tri tournent un à la fois chacun.
 
-**Tâches** (E19). Une tâche est un travail que n'importe quel agent rédacteur peut faire, reconnu au champ `kind` de l'entrée de l'exécution. Elle est enregistrée avec `registerTaskHandler`. La seule tâche pour l'instant est le **test d'un skill sur une fiche** (`skill_test`, `features/ai/skill-test.ts`).
+**Tâches** (E19, E27). Une tâche est un travail que n'importe quel agent peut faire, reconnu au champ `kind` de l'entrée de l'exécution. Elle est enregistrée avec `registerTaskHandler`. Il y en a deux :
+- le **test d'un skill sur une fiche** (`skill_test`, `features/ai/skill-test.ts`) ;
+- l'**évaluation d'un agent** (`evaluation`, `features/quality/run.ts`) : ses cas tournent les uns après les autres, quelques-uns à la fois pour les décisions, dans le Chromium du worker pour les captures et les pages. Elle passe après le vrai travail (priorité −1) mais occupe une place de l'agent tant qu'elle tourne.
 - Le worker prend une exécution si c'est un agent qu'il connaît, ou si c'est une tâche qu'il connaît, pour un agent qui a une place libre.
 - Les autres exécutions restent en file.
 - Le champ `tasks` de `/healthz` liste les tâches connues.

@@ -170,7 +170,7 @@ async function writeBrief(job: HandlerContext, site: Site, deps: DesignerDeps): 
 
 // ── Build ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-interface BuiltPage {
+export interface BuiltPage {
   body: string
   html: string
   report: SanitizeReport
@@ -215,7 +215,8 @@ async function ensureFonts(siteId: string, brief: Brief, fetchImpl?: typeof fetc
   return notes
 }
 
-async function buildPage(text: string, opts: { assets: Map<string, { width: number | null; height: number | null; kind: string }>; theme: PageTheme; fontCss: string; company: string; description: string }): Promise<BuiltPage | null> {
+/** The model's answer made into a page: sanitised, styled, checked. Evaluations (E27) build theirs the same way. */
+export async function buildPage(text: string, opts: { assets: Map<string, { width: number | null; height: number | null; kind: string }>; theme: PageTheme; fontCss: string; company: string; description: string }): Promise<BuiltPage | null> {
   const raw = extractBody(text)
   if (!raw) return null
   const { html: body, report } = sanitizeBody(raw, { assets: opts.assets })
@@ -257,7 +258,8 @@ function best(candidates: readonly Candidate[]): Candidate {
 
 const isRunOver = (error: unknown) => error instanceof LeadError && (error.code === "budget_exceeded" || error.code === "conflict")
 
-async function critiqueOf(ctx: RunContext, system: string, page: BuiltPage, rendered: RenderedPage, brief: Brief, company: string, signal: AbortSignal, deps: DesignerDeps): Promise<{ critique: Critique | null; note: string | null }> {
+/** The visual critique of a render; evaluations (E27) give it a context that pins the judge's model. */
+export async function critiqueOf(ctx: RunContext, system: string, page: BuiltPage, rendered: RenderedPage, brief: Brief, company: string, signal: AbortSignal, deps: DesignerDeps): Promise<{ critique: Critique | null; note: string | null }> {
   if ((await remainingMicros(ctx.id)) < CRITIQUE_RESERVE_MICROS) return { critique: null, note: "Critique visuelle non faite : le plafond de l’exécution est presque atteint." }
   const desktop = rendered.tiles.filter((t) => t.label.startsWith("ordinateur")).length
   try {

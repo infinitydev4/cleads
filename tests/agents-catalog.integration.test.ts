@@ -3,6 +3,7 @@
 // Models are mocks: no call ever leaves the machine.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { MockLanguageModelV4 } from "ai/test"
+import { proveModel } from "./helpers/evaluation-proof"
 import { resetDatabase } from "./helpers/reset-db"
 
 const url = process.env.TEST_DATABASE_URL
@@ -262,6 +263,8 @@ suite("Agents, skills and offers (database)", () => {
     })
 
     it("gives every new run the cheaper role and the lower cap, and stops a disabled agent", async () => {
+      // E27: the Auditeur measured with the fast role's model first.
+      await proveModel(prisma, { workspaceId: ws, requestedById: u.owner.id, suites: ["auditor"], role: "writer", baseline: "anthropic/claude-sonnet-5.5", model: "anthropic/claude-haiku-5.5" })
       await definitions.updateAgentDefinition(u.owner, "auditor", { modelRole: "fast", maxCostEur: 0.1 })
       const run = await runs.startRun(u.sdr, { agentId: "auditor", leadId })
       expect(await prisma.agentRun.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({ capMicros: 100_000, reservedMicros: 100_000 })

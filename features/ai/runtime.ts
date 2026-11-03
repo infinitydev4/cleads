@@ -88,9 +88,14 @@ export async function agentRuntime(run: Pick<RunContext, "workspaceId" | "agentI
  * Instructions for one step of a coded workflow, which calls a model without tools: the skills always on, plus the
  * ones the workflow picks for this step, all written in full (an agent without tools cannot read a catalogue).
  */
-export async function workflowInstructions(run: Pick<RunContext, "workspaceId" | "agentId">, pick: readonly string[]): Promise<AgentRuntime> {
+export async function workflowInstructions(run: Pick<RunContext, "workspaceId" | "agentId" | "evaluation">, pick: readonly string[]): Promise<AgentRuntime> {
   await ensureAgentCatalog(run.workspaceId)
-  const [agent, skills, picked] = await Promise.all([effectiveAgent(run.workspaceId, run.agentId), loadAgentSkills(run.workspaceId, run.agentId), loadSkillsByName(run.workspaceId, run.agentId, pick)])
+  const offers = run.evaluation?.offers
+  const [agent, skills, picked] = await Promise.all([
+    effectiveAgent(run.workspaceId, run.agentId),
+    loadAgentSkills(run.workspaceId, run.agentId, undefined, offers),
+    loadSkillsByName(run.workspaceId, run.agentId, pick, undefined, offers),
+  ])
   const all = [...skills.always, ...picked.filter((p) => !skills.always.some((a) => a.name === p.name))]
   return { agent, system: composeInstructions(agent, all, []), skills: all.map((s) => ({ name: s.name, version: s.version })), tools: [] }
 }

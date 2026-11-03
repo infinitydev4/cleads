@@ -5,6 +5,7 @@ import { useState } from "react"
 import { CheckCircle2, CircleAlert } from "lucide-react"
 import { toast } from "sonner"
 import { ApprovalCard } from "@/components/crm/ai/approval-card"
+import { ModelProof, proofKey, proofReady, useModelProofs } from "@/components/crm/ai/model-proof"
 import { RunCard } from "@/components/crm/ai/run-card"
 import { SpendList } from "@/components/crm/ai/spend-list"
 import { useLiveRuns } from "@/components/crm/ai/use-live-runs"
@@ -43,6 +44,13 @@ export function AiSettings({ userId, initial, approvals: initialApprovals, runs:
   const [busy, setBusy] = useState(false)
   const [acting, setActing] = useState<string | null>(null)
 
+  // A role moved to a model other than its own needs that model's evaluation first (E27).
+  const [confirmed, setConfirmed] = useState<Partial<Record<AiRole, boolean>>>({})
+  const changes = view.roles.filter((r) => models[r.id] !== r.model && models[r.id] !== r.defaultModel)
+  const proofs = useModelProofs(changes.map((r) => ({ role: r.id, model: models[r.id] })))
+  const proofOf = (r: (typeof changes)[number]) => proofs[proofKey({ role: r.id, model: models[r.id] })]
+  const unproven = changes.filter((r) => !proofReady(proofOf(r), !!confirmed[r.id]))
+
   const month = view.month
   const tone = month.percent >= 100 ? "bg-destructive" : month.percent >= 80 ? "bg-warning" : "bg-primary"
   const dirty =
@@ -56,7 +64,7 @@ export function AiSettings({ userId, initial, approvals: initialApprovals, runs:
     try {
       const next = await api<AiSettingsView>("/api/ai/settings", {
         method: "PUT",
-        body: JSON.stringify({ roleModels: models, monthlyCapEur: Number(monthlyCap), userDailyCapEur: Number(dailyCap), eurPerUsd: Number(rate) }),
+        body: JSON.stringify({ roleModels: models, monthlyCapEur: Number(monthlyCap), userDailyCapEur: Number(dailyCap), eurPerUsd: Number(rate), acceptRegressions: changes.filter((r) => confirmed[r.id]).map((r) => r.id) }),
       })
       setView(next)
       toast.success("Réglages IA enregistrés")
@@ -184,6 +192,7 @@ export function AiSettings({ userId, initial, approvals: initialApprovals, runs:
                 <p className="text-sm font-medium">{role.modelLabel}</p>
               )}
               <p className="text-xs text-muted-foreground">Secours : {role.fallbacks.map((f) => f.label).join(", ") || "aucun"}</p>
+              {changes.includes(role) && <ModelProof proof={proofOf(role)} confirmed={!!confirmed[role.id]} onConfirm={(v) => setConfirmed((c) => ({ ...c, [role.id]: v }))} />}
             </Card>
           ))}
         </div>
@@ -211,8 +220,9 @@ export function AiSettings({ userId, initial, approvals: initialApprovals, runs:
           </div>
         </Card>
         {view.canManage ? (
-          <div className="flex justify-end">
-            <Button onClick={save} disabled={!dirty || busy}>
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            {unproven.length > 0 && <p className="text-sm text-muted-foreground">Chaque changement de modèle s’appuie sur une évaluation chiffrée : voir sous {unproven.map((r) => `« ${r.label} »`).join(", ")}.</p>}
+            <Button onClick={save} disabled={!dirty || busy || unproven.length > 0}>
               {busy ? "Enregistrement…" : "Enregistrer"}
             </Button>
           </div>

@@ -5,7 +5,7 @@ import type { CurrentUser } from "@/lib/auth/guard"
 import { can } from "@/lib/rbac"
 import { LeadError } from "@/features/leads/errors"
 import { activeOffers } from "@/features/offers/service"
-import { renderOffersSkill } from "@/features/offers/skill"
+import { renderOffersSkill, type SkillOffer } from "@/features/offers/skill"
 import { AGENTS, isAgentId, type AgentId } from "../agents"
 import { SKILL_LIMITS, SkillFormatError, cleanSkillPath, parseSkillMd, serializeSkillMd, type SkillFile } from "./skill-md"
 import type { CreateSkillInput, ImportSkillInput, UpdateSkillInput } from "./schemas"
@@ -92,8 +92,9 @@ const toView = (s: Row, people: Map<string, string>): SkillView => ({
 })
 
 /** The text a generated skill has right now. */
-async function contentOf(workspaceId: string, skill: { generator: string | null }, stored: string, db: Db = prisma): Promise<string> {
-  return skill.generator === "offers" ? renderOffersSkill(await activeOffers(workspaceId, db)) : stored
+/** A generated skill is written now, from the workspace's active offers, or from the frozen catalogue an evaluation reads. */
+async function contentOf(workspaceId: string, skill: { generator: string | null }, stored: string, db: Db = prisma, offers?: readonly SkillOffer[]): Promise<string> {
+  return skill.generator === "offers" ? renderOffersSkill(offers ?? (await activeOffers(workspaceId, db))) : stored
 }
 
 export async function listSkills(actor: CurrentUser, opts: { archived?: boolean } = {}): Promise<SkillView[]> {
@@ -263,7 +264,7 @@ export interface LoadedSkill {
 }
 
 /** The skills an agent has, live: archived ones are left out, generated ones are written now. */
-export async function loadAgentSkills(workspaceId: string, agentId: AgentId, db: Db = prisma): Promise<{ always: LoadedSkill[]; onDemand: { name: string; description: string }[] }> {
+export async function loadAgentSkills(workspaceId: string, agentId: AgentId, db: Db = prisma, offers?: readonly SkillOffer[]): Promise<{ always: LoadedSkill[]; onDemand: { name: string; description: string }[] }> {
   const links = await db.agentSkill.findMany({
     where: { workspaceId, agentId, skill: { archivedAt: null } },
     select: { mode: true, skill: { select: { id: true, name: true, description: true, version: true, generator: true } } },
@@ -280,7 +281,7 @@ export async function loadAgentSkills(workspaceId: string, agentId: AgentId, db:
         name: l.skill.name,
         version: l.skill.version,
         description: l.skill.description,
-        content: await contentOf(workspaceId, l.skill, byId.get(l.skill.id)?.content ?? "", db),
+        content: await contentOf(workspaceId, l.skill, byId.get(l.skill.id)?.content ?? "", db, offers),
         files: filesOf(byId.get(l.skill.id)?.files),
       }))
     ),
@@ -292,7 +293,7 @@ export async function loadAgentSkills(workspaceId: string, agentId: AgentId, db:
  * Skills a coded workflow chooses for one step (the audit loads its audit skills and the sector's playbook), among those
  * the team gave to the agent: a skill taken away from the agent is not used, whatever the code asks.
  */
-export async function loadSkillsByName(workspaceId: string, agentId: AgentId, names: readonly string[], db: Db = prisma): Promise<LoadedSkill[]> {
+export async function loadSkillsByName(workspaceId: string, agentId: AgentId, names: readonly string[], db: Db = prisma, offers?: readonly SkillOffer[]): Promise<LoadedSkill[]> {
   if (!names.length) return []
   const links = await db.agentSkill.findMany({
     where: { workspaceId, agentId, skill: { name: { in: [...names] }, archivedAt: null } },
@@ -308,7 +309,7 @@ export async function loadSkillsByName(workspaceId: string, agentId: AgentId, na
       name: l.skill.name,
       version: l.skill.version,
       description: l.skill.description,
-      content: await contentOf(workspaceId, l.skill, byId.get(l.skill.id)?.content ?? "", db),
+      content: await contentOf(workspaceId, l.skill, byId.get(l.skill.id)?.content ?? "", db, offers),
       files: filesOf(byId.get(l.skill.id)?.files),
     }))
   )
