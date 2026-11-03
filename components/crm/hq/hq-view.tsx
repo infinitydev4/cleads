@@ -2,6 +2,7 @@
 
 import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import dynamic from "next/dynamic"
+import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Loader2 } from "lucide-react"
 import { AGENTS } from "@/features/ai/agents"
@@ -68,6 +69,23 @@ function NoScene({ reason }: { reason: string }) {
       </div>
     </div>
   )
+}
+
+/**
+ * E28: `?zone=agents` frames a space, then leaves the address: how the copilot (open_page) or a link brings someone to a
+ * space of the 3D view.
+ */
+function useZoneParam(store: HqStore) {
+  const params = useSearchParams()
+  const asked = params.get("zone")
+  useEffect(() => {
+    const zone = asked ? ZONES.find((z) => z.id === asked) : null
+    if (!zone) return
+    selectZone(store, zone.id)
+    const url = new URL(window.location.href)
+    url.searchParams.delete("zone")
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}`)
+  }, [asked, store])
 }
 
 /** Keyboard: 1-9 then 0 spaces, ← → next / previous, Échap back (then the whole site), Début whole site, + − zoom. */
@@ -281,6 +299,7 @@ export function HqView({ initial }: { initial: HqOverview }) {
   }, [store])
 
   useShortcuts(store)
+  useZoneParam(store)
   useAgencyLive(store, initial.viewer.id)
   useWindowLinks()
   const onWindowClosed = useCallback(() => void refresh(), [refresh])

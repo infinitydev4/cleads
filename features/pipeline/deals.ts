@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client"
 import type { CurrentUser } from "@/lib/auth/guard"
 import { LeadError } from "@/features/leads/errors"
 import { DEAL_OWNER_ROLES, OPEN_STAGES } from "./rules"
+import { withVia } from "@/lib/ai/acting"
 
 type Tx = Prisma.TransactionClient
 
@@ -14,7 +15,7 @@ export async function lockLead(tx: Tx, leadId: string) {
 }
 
 export async function logDeal(tx: Tx, user: CurrentUser, input: { leadId: string; dealId?: string; body: string; data?: Prisma.InputJsonValue }) {
-  await tx.activity.create({ data: { workspaceId: user.workspaceId, leadId: input.leadId, dealId: input.dealId, actorId: user.id, actorKind: "USER", kind: "SYSTEM", body: input.body, data: input.data } })
+  await tx.activity.create({ data: { workspaceId: user.workspaceId, leadId: input.leadId, dealId: input.dealId, actorId: user.id, actorKind: "USER", kind: "SYSTEM", body: input.body, data: withVia(input.data) } })
 }
 
 /** A deal owner must be an active member who can carry opportunities. */

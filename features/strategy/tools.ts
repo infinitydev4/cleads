@@ -25,6 +25,7 @@ export const campaignMetricsTool = defineTool({
   permission: "campaign:read",
   approval: "auto",
   costClass: "free",
+  family: "read_crm",
   input: z.object({ includeArchived: z.boolean().optional().describe("Inclure les campagnes archivées (leurs résultats restent instructifs)") }),
   execute: async (ctx, input) => {
     const user = personOf(ctx)

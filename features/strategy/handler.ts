@@ -9,7 +9,7 @@ import type { HandlerContext } from "@/features/ai/handlers"
 import { loopBudget } from "@/features/ai/loop"
 import { finishRun } from "@/features/ai/runs"
 import { agentRuntime } from "@/features/ai/runtime"
-import { sdkTools, type ToolContext } from "@/features/ai/tools"
+import { isOpen, sdkTools, type ToolContext } from "@/features/ai/tools"
 import { activeOffers, assertActiveOffers } from "@/features/offers/service"
 import { listOffersTool } from "@/features/offers/tools"
 import { cleanTargets, strategyPrompt } from "./rules"
@@ -76,13 +76,17 @@ export async function runStrategist(job: HandlerContext, deps: StrategyDeps = {}
     throw new LeadError("budget_exceeded", "Le plafond du Stratège ne suffit pas pour une proposition : relevez-le dans Agents IA.", 429, { scope: "run" })
   }
 
-  // The Extractor's tools are a plus: without them, the Stratège works from the CRM and says so.
-  const extractor = await (deps.extractorTools ?? openExtractorTools)({ run: ctx }).catch((error: unknown) => {
-    console.warn("[STRATEGY] Extractor MCP unavailable", error instanceof Error ? error.message : error)
-    return NO_TOOLS
-  })
+  // E28: the rights matrix may cut a family; the Extractor's tools are a plus, without them the Stratège works from the CRM.
+  const policy = runtime.agent.policy
+  const extractor = !isOpen({ family: "read_web" }, policy)
+    ? NO_TOOLS
+    : await (deps.extractorTools ?? openExtractorTools)({ run: ctx, policy }).catch((error: unknown) => {
+        console.warn("[STRATEGY] Extractor MCP unavailable", error instanceof Error ? error.message : error)
+        return NO_TOOLS
+      })
   try {
-    const tools: ToolSet = { ...sdkTools([listOffersTool, campaignMetricsTool, ...runtime.tools], { run: ctx }), ...extractor.tools }
+    const own = [listOffersTool, campaignMetricsTool, ...runtime.tools].filter((d) => isOpen(d, policy))
+    const tools: ToolSet = { ...sdkTools(own, { run: ctx, policy }), ...extractor.tools }
     const agent = new ToolLoopAgent({
       model: (deps.languageModel ? deps.languageModel(budget.model) : budget.model) as LanguageModel,
       instructions: system,

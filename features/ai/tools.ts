@@ -1,20 +1,31 @@
-import { tool, type Tool, type ToolApprovalStatus } from "ai"
+import { tool, type JSONValue, type Tool, type ToolApprovalStatus } from "ai"
 import type { Prisma } from "@prisma/client"
 import type { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { can, type Permission } from "@/lib/rbac"
 import { forLog } from "@/lib/ai/untrusted"
+import { withActing } from "@/lib/ai/acting"
 import { LeadError } from "@/features/leads/errors"
 import { requestApproval } from "./approvals"
 import { recordStep, type RunContext } from "./runs"
+import { AGENTS } from "./agents"
+import { FAMILY_INFO, type ActionFamily } from "./actions/families"
+import { effectivePolicy, modeOf, type AgentPolicy } from "./actions/policy"
 
 /**
  * The tools agents may use (docs/crm-v1/AGENTS-IA.md §9). A tool calls an existing service and never the database
- * directly; it states the right it needs, checked against the person the run acts for, and whether a person must
- * approve it first. A tool that acts outside the CRM always waits for approval.
+ * directly; it states the right it needs, checked against the person the run acts for, its family in the agents'
+ * rights matrix (E28), and whether a person must approve it first. A tool that acts outside the CRM always waits for
+ * approval.
  */
 export type ApprovalPolicy = "auto" | "user"
 export type CostClass = "free" | "metered" | "external"
+
+/**
+ * When a call runs (E28): without a click, after a click (the action's card, or the plan that contains it), or after
+ * its own click whatever else was validated (what contacts a prospect).
+ */
+export type ApprovalLevel = "auto" | "confirm" | "explicit"
 
 /** Rights no agent may use, whatever it is asked. */
 export const FORBIDDEN_FOR_AGENTS: readonly Permission[] = [
@@ -33,6 +44,8 @@ export const FORBIDDEN_FOR_AGENTS: readonly Permission[] = [
 
 export interface ToolContext {
   run: RunContext
+  /** The agent's rights matrix for this run (features/ai/definitions.ts); the code's when not given. */
+  policy?: AgentPolicy
 }
 
 export interface ToolDef<I, O> {
@@ -44,6 +57,8 @@ export interface ToolDef<I, O> {
   permission: Permission | null
   approval: ApprovalPolicy
   costClass: CostClass
+  /** Its family of actions; null only for a tool that touches no CRM data (reading a skill). */
+  family: ActionFamily | null
   input: z.ZodType<I>
   /**
    * For the person who approves: what will happen, in one sentence. Required when approval is "user". It may read the
@@ -51,6 +66,10 @@ export interface ToolDef<I, O> {
    */
   summarize?: (input: I, ctx: ToolContext) => string | Promise<string>
   execute: (ctx: ToolContext, input: I) => Promise<O>
+  /** Puts back what a call without a click changed, from its output; offered on the call's card. */
+  undo?: (ctx: ToolContext, output: O) => Promise<void>
+  /** What the model reads of the output, when the output keeps more for the card (the fiches an undo puts back). */
+  forModel?: (output: O) => unknown
 }
 
 // Tools of different shapes live in one list, so the generic stays open.
@@ -66,8 +85,25 @@ export function defineTool<I, O>(def: ToolDef<I, O>): Readonly<ToolDef<I, O>> {
   if (def.permission && FORBIDDEN_FOR_AGENTS.includes(def.permission)) throw new Error(`Outil « ${def.name} » : le droit ${def.permission} est interdit aux agents`)
   if (def.costClass === "external" && def.approval !== "user") throw new Error(`Outil « ${def.name} » : une action hors du CRM passe toujours par une validation`)
   if (def.approval === "user" && !def.summarize) throw new Error(`Outil « ${def.name} » : un résumé est obligatoire pour la validation`)
+  if (def.family === null && def.permission !== null) throw new Error(`Outil « ${def.name} » : un outil qui demande un droit appartient à une famille d'actions`)
+  if (def.family && def.approval === "auto" && FAMILY_INFO[def.family].floor !== "auto") throw new Error(`Outil « ${def.name} » : la famille « ${def.family} » attend toujours un clic`)
+  if (def.undo && def.approval !== "auto") throw new Error(`Outil « ${def.name} » : seule une action sans clic s'annule depuis sa carte`)
   return Object.freeze(def)
 }
+
+/** The level the tool itself asks for. */
+export const levelOf = (def: Pick<AnyToolDef, "approval" | "costClass">): ApprovalLevel => (def.costClass === "external" ? "explicit" : def.approval === "user" ? "confirm" : "auto")
+
+const policyOf = (ctx: ToolContext): AgentPolicy => ctx.policy ?? effectivePolicy(AGENTS[ctx.run.agentId], null)
+
+/** The level a call runs at for this agent: the matrix can make a call wait for a click, never skip one. */
+export function approvalOf(def: AnyToolDef, ctx: ToolContext): ApprovalLevel {
+  const level = levelOf(def)
+  return level === "auto" && def.family && modeOf(policyOf(ctx), def.family) === "confirm" ? "confirm" : level
+}
+
+/** Whether the agent may use the tool at all: a family it does not declare, or that the owner cut, is closed. */
+export const isOpen = (def: Pick<AnyToolDef, "family">, policy: AgentPolicy) => !def.family || modeOf(policy, def.family) !== "off"
 
 export type ToolResult<O> = { status: "done"; output: O } | { status: "pending_approval"; approvalId: string }
 
@@ -87,7 +123,12 @@ export function clearTools() {
   registry.clear()
 }
 
+/** The person's right, then the agent's matrix: checked when the call is offered, asked for and made. */
 function checkRight(def: AnyToolDef, ctx: ToolContext) {
+  if (def.family && !isOpen(def, policyOf(ctx))) {
+    const label = AGENTS[ctx.run.agentId]?.label ?? "Cet agent"
+    throw new LeadError("forbidden", `${label} n'a pas le droit « ${FAMILY_INFO[def.family].label} » dans cet espace : le propriétaire le règle dans Agents IA › Agents › Droits.`, 403)
+  }
   if (!def.permission) return
   const requester = ctx.run.requester
   if (!requester || !can(requester.role, def.permission)) {
@@ -100,7 +141,7 @@ async function executeTool<I, O>(def: ToolDef<I, O>, ctx: ToolContext, input: I)
   checkRight(def, ctx)
   const started = Date.now()
   try {
-    const output = await def.execute(ctx, input)
+    const output = await withActing({ agentId: ctx.run.agentId, runId: ctx.run.id, tool: def.name }, () => def.execute(ctx, input))
     await recordStep(ctx.run, { type: "TOOL", name: def.name, input, output, durationMs: Date.now() - started })
     return output
   } catch (error) {
@@ -113,8 +154,8 @@ async function executeTool<I, O>(def: ToolDef<I, O>, ctx: ToolContext, input: I)
 export async function runTool<I, O>(def: ToolDef<I, O>, ctx: ToolContext, rawInput: unknown): Promise<ToolResult<O>> {
   const input = def.input.parse(rawInput)
   checkRight(def, ctx)
-  if (def.approval === "user") {
-    const approvalId = await requestApproval(ctx.run, { tool: def.name, permission: def.permission, payload: input as Prisma.InputJsonValue, summary: await def.summarize!(input, ctx) })
+  if (approvalOf(def, ctx) !== "auto") {
+    const approvalId = await requestApproval(ctx.run, { tool: def.name, permission: def.permission, payload: input as Prisma.InputJsonValue, summary: def.summarize ? await def.summarize(input, ctx) : `Utiliser « ${def.name} ».` })
     return { status: "pending_approval", approvalId }
   }
   return { status: "done", output: await executeTool(def, ctx, input) }
@@ -181,6 +222,13 @@ export async function executeApprovedCalls(ctx: ToolContext): Promise<ApprovedCa
 /** The answer an agent receives when its call waits for a person: it must not assume the action happened. */
 export const PENDING_APPROVAL_ANSWER = { pendingApproval: true, message: "Action soumise à la validation d'une personne : elle n'est pas faite. Ne la considère pas comme réalisée." }
 
+/** The model reads `forModel(output)` instead of the whole output; the approval answer goes through as it is. */
+function modelOutput(def: AnyToolDef): Pick<Tool, "toModelOutput"> {
+  if (!def.forModel) return {}
+  const forModel = def.forModel
+  return { toModelOutput: ({ output }) => ({ type: "json", value: (output === PENDING_APPROVAL_ANSWER ? output : forModel(output)) as JSONValue }) }
+}
+
 /** The same tools for an AI SDK agent (ToolLoopAgent, generateText). */
 export function sdkTools(defs: readonly AnyToolDef[], ctx: ToolContext): Record<string, Tool> {
   return Object.fromEntries(
@@ -193,6 +241,7 @@ export function sdkTools(defs: readonly AnyToolDef[], ctx: ToolContext): Record<
           const result = await runTool(def, ctx, input)
           return result.status === "done" ? result.output : PENDING_APPROVAL_ANSWER
         },
+        ...modelOutput(def),
       }),
     ])
   )
@@ -212,12 +261,14 @@ export function chatTools(defs: readonly AnyToolDef[], ctx: ToolContext): { tool
       description: def.description,
       inputSchema: def.input,
       execute: async (input: unknown) => executeTool(def, ctx, def.input.parse(input)),
+      ...modelOutput(def),
     })
-    if (def.approval !== "user") continue
+    if (approvalOf(def, ctx) === "auto") continue
     toolApproval[def.name] = async (input) => {
       try {
         checkRight(def, ctx)
-        return { type: "user-approval", reason: (await def.summarize!(def.input.parse(input), ctx)).trim().slice(0, 500) }
+        const summary = def.summarize ? await def.summarize(def.input.parse(input), ctx) : `Utiliser « ${def.name} ».`
+        return { type: "user-approval", reason: summary.trim().slice(0, 500) }
       } catch (error) {
         return { type: "denied", reason: errorText(error).slice(0, 300) }
       }

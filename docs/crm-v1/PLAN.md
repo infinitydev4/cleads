@@ -65,6 +65,14 @@ Détails et conséquences techniques : [AGENTS-IA.md](AGENTS-IA.md).
 | D25 | Suivi des maquettes | **Visite du lien enregistrée** (date, nombre ; ni cookie ni pixel dans l'email), closer notifié | Rappeler au bon moment ; à mentionner dans la politique de confidentialité. |
 | D26 | IA dans le QG 3D | **Deux nouveaux espaces** : « Agents IA » et « Studio Web » | La 3D reste fonctionnelle : agents à leur poste, validations, maquettes. |
 | D27 | Extractor et agents | **MCP en lecture** pour les agents ; les écritures passent par le service CRM | Aucun job lancé pour un agent n'échappe au CRM, aux campagnes ni au journal. |
+| D28 | Validation des actions du copilote (E28, 3 novembre 2026) | **Un clic par plan** : lectures, navigation, notes, tâches et étiquettes sans clic ; les autres changements internes d'un clic, celui de l'action ou du plan qui la contient ; ce qui contacte un prospect, toujours son propre clic | La recherche Extractor est validée par le clic de l'action ou du plan (principe 3 précisé). |
+| D29 | Emails et séquences par le copilote | **Inscription en séquence après un clic** qui montre la séquence et les destinataires ; un email isolé se relit et s'envoie depuis la fiche | Rien ne part sans une personne qui a vu les destinataires. |
+| D30 | MCP du CRM | **Copilote d'abord** : il appelle le catalogue d'actions sans détour réseau ; un serveur MCP du CRM (même catalogue, un jeton par membre) vient à l'epic suivant | Un seul catalogue, deux portes d'entrée. |
+| D31 | Périmètre d'E28 | **Droits par agent, navigation pilotée, saisie vocale, missions récurrentes** | — |
+| D32 | Plafond d'une mission | **2 €** d'IA, réglable par le propriétaire, seconde confirmation au-delà | Budget < 100 € par mois. |
+| D33 | Modèle du copilote | **Sonnet 5.5**, puis mesure d'Opus 5.5 par l'évaluation du copilote (règle d'E27) | Opus coûte deux fois plus. |
+| D34 | Autres agents | **Le copilote orchestre** : les spécialistes gardent leurs outils ; la matrice couvre tous les agents mais n'ouvre d'actions nouvelles qu'au copilote | Moindre privilège. |
+| D35 | Missions récurrentes | **Chaque passage cherche, importe et trie seul**, puis attend un clic avant toute inscription en séquence | Les destinataires changent d'une semaine à l'autre. |
 
 ---
 
@@ -547,7 +555,7 @@ Seconde vue du CRM, isométrique et interactive, à côté de la vue 2D qui rest
 - **Critères** : aucune régression de la vue 2D (tests et parcours dans le navigateur) ; aucun chiffre sans définition ; fluide sur un portable récent.
 
 ### Couche agentique IA (E17 à E27, décidée le 2 novembre 2026)
-Décisions D13 à D27 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17 à E27 sont faits.
+Décisions D13 à D35 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17 à E27 sont faits ; E28 est en cours (lot 1 fait).
 
 ### E17 — Socle IA · **M** *(absorbe E13)*
 > **Avancement (branche `feat/e17-socle-ia`)** — fait :
@@ -989,6 +997,22 @@ Deux entrées dans `features/hq/zones.ts` (touches 9 et 0), plateforme agrandie,
 - Non-régression obligatoire avant de changer le modèle d'un rôle ; comparatif Jev / Haiku / règles sur nos données.
 - **Critères** : chaque changement de modèle s'appuie sur une évaluation chiffrée.
 
+### E28 — Le copilote qui agit · **L**, en trois lots *(décidé le 3 novembre 2026, D28 à D35)*
+Le copilote exécute les actions du CRM sur une simple demande (« Recherche 1 000 architectes à Nantes », « 100 entreprises à Nantes susceptibles d'acheter un site, choisis les secteurs »), dans le respect des droits de la personne et d'une matrice de droits par agent. Chaque lot a sa branche, sa PR et son déploiement.
+
+> **Lot 1 — catalogue, droits par agent, navigation, voix (branche `feat/e28-actions`)** — fait :
+> - **catalogue d'actions** (`features/ai/actions/`) : 64 actions en neuf familles, chacune appelant un service existant au nom de la personne ; le copilote en charge un noyau et trouve le reste à la demande (`find_actions`, `toolSearch` de l'AI SDK 7, recherche maison en français) ; les actions du dernier message restent chargées ;
+> - **niveaux** : lectures, navigation, notes, appels, tâches et étiquettes sans clic (avec « Annuler » quand c'est possible) ; autres changements d'un clic ; ce qui contacte un prospect (inscription en séquence, reprise d'une séquence, rendez-vous, lien de maquette) toujours de son propre clic, avec un avertissement sur la carte ;
+> - **matrice des droits** (`AgentDefinition.actionPolicy`, Agents IA › Agents › « Droits des agents ») : le propriétaire coupe une famille ou la fait attendre un clic ; un spécialiste dont une famille est coupée ne s'exécute plus ;
+> - **traçabilité** : tout ce qu'un agent fait pour une personne porte « via le Copilote » dans le journal d'audit et l'historique des fiches (`lib/ai/acting.ts`) ;
+> - **navigation pilotée** (`open_page`, dont `?zone=` pour un espace du QG 3D) et **dictée** (`POST /api/ai/transcribe`, Voxtral par la passerelle, l'audio n'est pas gardé) ;
+> - copilote : 10 étapes et 0,20 € par tour, 3 000 jetons par étape ; mise en cache automatique de la passerelle pour tous les agents ;
+> - migration `20261112090000_copilot_actions` ; le worker doit être redéployé (cache de la passerelle).
+>
+> **Vérifié** : `tests/actions.test.ts`, `tests/copilot-actions.integration.test.ts`, tests du copilote mis à jour ; suite complète, `tsc`, lint, build du site et du worker.
+>
+> **À faire** : lot 2, missions (plan validé d'un clic, moteur du worker, missions récurrentes, onglet Missions, skill `missions-cleads`) ; lot 3, évaluation du copilote ; puis E29, serveur MCP du CRM.
+
 ### Ordre conseillé
 | Jalon | Epics | Résultat visible |
 |---|---|---|
@@ -1004,6 +1028,7 @@ Deux entrées dans `features/hq/zones.ts` (touches 9 et 0), plateforme agrandie,
 | **M8 Studio** | E23 | Une landing de démonstration à montrer au prospect |
 | **M9 Copilote et sourcing** | E24, E25 | Un assistant partout, des campagnes proposées par l'IA |
 | **M10 QG IA** | E26 | L'agence IA visible dans le QG 3D |
+| **M11 Copilote opérateur** | E28, puis E29 | Le copilote agit dans tout le CRM, puis le CRM s'ouvre en MCP |
 
 E1 peut démarrer en parallèle d'E0 ; E5 peut commencer dès que E3 fixe le modèle. M6 ne dépend pas de M5, mais mieux vaut disposer des sauvegardes et de la supervision d'E14 avant d'ouvrir les agents à toute l'équipe.
 

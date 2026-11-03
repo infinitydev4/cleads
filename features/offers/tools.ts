@@ -11,6 +11,7 @@ export const listOffersTool = defineTool({
   permission: null,
   approval: "auto",
   costClass: "free",
+  family: "read_crm",
   input: z.object({ category: z.enum(OFFER_CATEGORIES).optional() }),
   execute: async (ctx, input) =>
     (await activeOffers(ctx.run.workspaceId))

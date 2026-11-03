@@ -12,7 +12,7 @@ import { finishRun, startRun, type RunContext } from "@/features/ai/runs"
 import { copilotAgent, type CopilotSetup } from "./agent"
 import { describePage, parsePage } from "./context"
 import { closeTurn, conversationFor, createConversation, followLeads, loadMessages, releaseTurn, saveMessage, takeTurn } from "./conversations"
-import { ACTION_TOOLS, leadIdsOf } from "./labels"
+import { ACTION_TOOLS, leadIdsOf, recentTools } from "./labels"
 import { answersSchema, applyAnswers, forModel, pendingApprovals, questionSchema, questionText, refusePending, type CopilotMessage, type CopilotMetadata } from "./messages"
 
 /**
@@ -169,7 +169,7 @@ function failureText(error: unknown, setup: CopilotSetup): string {
 }
 
 async function stream(user: CurrentUser, run: RunContext, conversationId: string, history: CopilotMessage[], signal: AbortSignal | undefined, deps: TurnDeps): Promise<Response> {
-  const setup = await copilotAgent(user, run, deps)
+  const setup = await copilotAgent(user, run, deps, { recent: recentTools(history) })
   // The time already spent preparing the turn (rights, conversation, instructions) counts against the platform's limit.
   const spent = Date.now() - (deps.startedAt ?? Date.now())
   const deadline = AbortSignal.timeout(Math.max((deps.deadlineMs ?? TURN_DEADLINE_MS) - spent, Math.min(MIN_TURN_MS, deps.deadlineMs ?? MIN_TURN_MS)))

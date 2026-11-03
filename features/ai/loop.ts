@@ -32,8 +32,8 @@ export interface LoopOptions {
   system: string
   /** Room for one step's answer, reasoning included. */
   stepTokens: number
-  /** What the tools' descriptions and schemas weigh in each request. */
-  toolsTokens: number
+  /** What the tools' descriptions and schemas weigh in each request; for tools loaded on demand, from the messages. */
+  toolsTokens: number | ((messages: readonly ModelMessage[]) => number)
   /** Steps are recorded as `${stepName}-${n}`. */
   stepName: string
 }
@@ -43,7 +43,8 @@ export async function loopBudget(run: RunContext, opts: LoopOptions, deps: Model
   const { model, fallbacks } = resolveRole(opts.role, settings.roleModels)
   const candidates = [model, ...fallbacks]
   const worst = worstPrice(candidates, prices)
-  const inputOf = (messages: readonly ModelMessage[]) => estimateTokens(opts.system) + opts.toolsTokens + estimateTokens(JSON.stringify(messages))
+  const toolsOf = (messages: readonly ModelMessage[]) => (typeof opts.toolsTokens === "function" ? opts.toolsTokens(messages) : opts.toolsTokens)
+  const inputOf = (messages: readonly ModelMessage[]) => estimateTokens(opts.system) + toolsOf(messages) + estimateTokens(JSON.stringify(messages))
   const room = async (inputTokens: number) => maxOutputTokensWithin(worst, await remainingMicros(run.id), inputTokens, settings.eurPerUsd)
   let over = false
   /** Input of the step that just ran: the next one reads it again, plus what the step added. */

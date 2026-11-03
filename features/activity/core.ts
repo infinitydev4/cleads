@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client"
 import type { CurrentUser } from "@/lib/auth/guard"
 import { canAccessRecord } from "@/lib/rbac"
 import { TEAM_TZ, startOfDay } from "@/lib/crm/day"
+import { withVia } from "@/lib/ai/acting"
 
 export type Tx = Prisma.TransactionClient
 
@@ -10,7 +11,7 @@ export const formatDay = (d: Date) => dayLabel.format(d)
 
 /** Every write to a fiche's history goes through here, so nothing happens without leaving a trace. */
 export async function logTask(tx: Tx, user: CurrentUser, leadId: string, body: string, data?: Prisma.InputJsonValue, dealId?: string | null) {
-  await tx.activity.create({ data: { workspaceId: user.workspaceId, leadId, dealId: dealId ?? undefined, actorId: user.id, actorKind: "USER", kind: "TASK", body, data } })
+  await tx.activity.create({ data: { workspaceId: user.workspaceId, leadId, dealId: dealId ?? undefined, actorId: user.id, actorKind: "USER", kind: "TASK", body, data: withVia(data) } })
 }
 
 /** The instant a task due on a calendar day is stored at: that day's start in Paris. */

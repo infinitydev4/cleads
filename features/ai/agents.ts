@@ -1,4 +1,5 @@
 import { ROLES, type AiRole } from "@/lib/ai/models"
+import { allowedModes, isFamily, type ActionFamily, type FamilyMode } from "./actions/families"
 
 /**
  * The agents of the AI agency (docs/crm-v1/AGENTS-IA.md §7). The code fixes who they are: their expert role (persona),
@@ -25,6 +26,13 @@ export interface AgentDef {
   available: boolean
   /** Tools it works with (features/ai/tools.ts), registered by its epic. */
   tools: readonly string[]
+  /**
+   * E28: the families of actions it works with and their level in the code (features/ai/actions/families.ts). The
+   * owner can cut one or make it wait for a click (Agents IA › Droits); a family it does not declare is never open.
+   */
+  families: Readonly<Partial<Record<ActionFamily, FamilyMode>>>
+  /** It picks its own tools in a loop (copilot, Stratège): a family can be made to wait for a click, not only cut. */
+  picksTools?: boolean
   /** Skills given to it when the V1 catalogue is installed (features/ai/catalog.ts). */
   skills: readonly { name: string; mode: SkillModeKey }[]
   /** What it produces. */
@@ -60,7 +68,11 @@ export function defineAgent(def: AgentDef): Readonly<AgentDef> {
   for (const s of def.skills) if (!SKILL_NAME.test(s.name)) fail(`skill « ${s.name} » : nom en kebab-case`)
   if (new Set(def.skills.map((s) => s.name)).size !== def.skills.length) fail("skill en double")
   if (def.skills.length && !usesSkills(def)) fail("un agent de décision n'a pas de skills")
-  return Object.freeze({ ...def, modelRoles: Object.freeze([...def.modelRoles]), tools: Object.freeze([...def.tools]), skills: Object.freeze(def.skills.map((s) => Object.freeze({ ...s }))), limits: Object.freeze({ ...def.limits }) })
+  for (const [family, mode] of Object.entries(def.families)) {
+    if (!isFamily(family)) fail(`famille d'actions « ${family} » inconnue`)
+    else if (!allowedModes(family, !!def.picksTools).includes(mode as FamilyMode) || mode === "off") fail(`famille « ${family} » : niveau « ${mode} » impossible`)
+  }
+  return Object.freeze({ ...def, modelRoles: Object.freeze([...def.modelRoles]), tools: Object.freeze([...def.tools]), families: Object.freeze({ ...def.families }), skills: Object.freeze(def.skills.map((s) => Object.freeze({ ...s }))), limits: Object.freeze({ ...def.limits }) })
 }
 
 const PLAYBOOKS = ["playbook-artisans-batiment", "playbook-restaurants", "playbook-sante", "playbook-architectes"] as const
@@ -81,6 +93,7 @@ export const AGENTS: Record<AgentId, Readonly<AgentDef>> = {
     epic: "E20",
     available: true,
     tools: ["fetch_page", "pagespeed", "screenshot", "detect_stack", "find_socials", "dirigeants", "get_business", "save_audit", "read_skill"],
+    families: { read_crm: "auto", read_web: "auto", ai_work: "confirm" },
     skills: onDemand("audit-seo-local", "audit-geo-site", "audit-ux-conversion", "presence-sociale", "preparation-ads", ...PLAYBOOKS),
     output: "Audit sourcé : sous-scores, forces, faiblesses, opportunités, résumé en trois points",
     approval: "Aucune : l'audit reste dans le CRM",
@@ -100,6 +113,7 @@ export const AGENTS: Record<AgentId, Readonly<AgentDef>> = {
     epic: "E21",
     available: true,
     tools: ["get_audit", "list_offers", "save_recommendations", "read_skill"],
+    families: { read_crm: "auto", ai_work: "confirm" },
     skills: [{ name: "offres-cleads", mode: "always" }, ...onDemand("script-appel-15min", "preparation-ads", ...PLAYBOOKS)],
     output: "Offres recommandées avec leurs preuves, script d'appel de 15 minutes, objections, angle d'email",
     approval: "Aucune : la personne accepte ou refuse chaque offre",
@@ -120,6 +134,7 @@ export const AGENTS: Record<AgentId, Readonly<AgentDef>> = {
     epic: "E22",
     available: true,
     tools: ["get_lead", "get_audit", "get_recommendations", "draft_email", "read_skill"],
+    families: { read_crm: "auto", ai_work: "confirm" },
     skills: [{ name: "cold-email-fr", mode: "always" }, ...onDemand("offres-cleads", ...PLAYBOOKS)],
     output: "Brouillon d'email à relire",
     approval: "L'envoi, toujours relu par une personne",
@@ -136,6 +151,7 @@ export const AGENTS: Record<AgentId, Readonly<AgentDef>> = {
     epic: "E22",
     available: true,
     tools: ["classify_reply"],
+    families: { read_crm: "auto", ai_work: "confirm" },
     skills: [],
     output: "Classe de la réponse, urgence et probabilité",
     approval: "Sous le seuil de confiance, une personne tranche",
@@ -155,6 +171,7 @@ export const AGENTS: Record<AgentId, Readonly<AgentDef>> = {
     epic: "E23",
     available: true,
     tools: ["collect_site", "build_page", "render_preview", "critique_page", "publish_preview", "read_skill"],
+    families: { read_crm: "auto", read_web: "auto", ai_work: "confirm" },
     skills: [{ name: "charte-studio", mode: "always" }, ...onDemand("audit-ux-conversion", ...PLAYBOOKS)],
     output: "Landing de démonstration, avec captures et scores avant / après",
     approval: "Le partage du lien avec le prospect",
@@ -163,37 +180,87 @@ export const AGENTS: Record<AgentId, Readonly<AgentDef>> = {
   copilot: defineAgent({
     id: "copilot",
     label: "Copilote",
-    mission: "Répond sur les données du CRM que la personne voit et délègue aux autres agents.",
-    persona: `Tu es le chef d'agence : tu aides la personne connectée à travailler ses données du CRM (fiches, campagnes, rendez-vous, emails) et tu confies les tâches longues aux agents spécialisés.
-- Tu ne réponds qu'avec ce que la personne a le droit de voir, et tu cites les fiches concernées.
-- Tu proposes des actions ; tout ce qui sort du CRM attend sa validation.
+    mission: "Répond sur les données du CRM que la personne voit et agit pour elle : fiches, campagnes, recherches, séquences, rendez-vous, en déléguant aux agents spécialisés.",
+    persona: `Tu es le chef d'agence : tu aides la personne connectée à travailler dans le CRM (fiches, campagnes, recherches de prospects, séquences, rendez-vous, emails) et tu agis pour elle quand elle le demande, en confiant les tâches longues aux agents spécialisés.
+- Tu ne réponds et n'agis qu'avec ce que la personne a le droit de voir et de faire, et tu cites les fiches concernées.
+- Tu agis par tes outils et tu dis ce qui va se passer ; ce qui change le CRM attend son clic, et ce qui contacte un prospect attend toujours le sien.
 - Tu réponds en français, brièvement, et tu dis quand tu ne sais pas.`,
     modelRole: "writer",
-    modelRoles: ["writer", "fast"],
-    epic: "E24",
+    modelRoles: ["writer", "fast", "designer"],
+    epic: "E28",
     available: true,
     tools: [
       "search_leads",
       "get_lead",
+      "get_timeline",
       "get_lead_audit",
       "get_lead_offers",
       "get_today",
       "list_meetings",
+      "list_slots",
       "get_pipeline",
       "list_campaigns",
       "get_campaign",
+      "get_campaign_sorting",
+      "get_strategy",
+      "list_searches",
+      "get_search",
+      "preview_import",
+      "list_sequences",
+      "list_replies",
+      "get_metrics",
+      "list_team",
+      "list_sectors",
+      "search_prospect_base",
+      "extractor_health",
+      "list_offers",
       "read_skill",
-      "create_task",
+      "open_page",
       "add_note",
+      "log_call",
+      "create_task",
+      "complete_task",
+      "reschedule_task",
+      "tag_leads",
+      "untag_leads",
+      "create_lead",
+      "update_lead",
+      "set_lead_status",
+      "assign_leads",
+      "file_in_campaign",
+      "qualify_lead",
+      "move_deal",
+      "create_campaign",
+      "update_campaign",
+      "start_search",
+      "cancel_search",
+      "import_search",
+      "sort_campaign",
       "start_audit",
       "suggest_offers",
+      "decide_offer",
       "draft_email",
+      "draft_reply",
       "start_studio",
+      "studio_build",
+      "studio_revise",
+      "share_studio_link",
+      "propose_targets",
+      "act_on_target",
+      "enroll_in_sequence",
+      "stop_enrollment",
+      "pause_sequence",
+      "resume_sequence",
+      "book_meeting",
+      "change_meeting",
+      "record_meeting_outcome",
     ],
+    families: { read_crm: "auto", read_web: "auto", notes: "auto", records: "confirm", campaigns: "confirm", prospecting: "confirm", ai_work: "confirm", outreach: "confirm", navigation: "auto" },
+    picksTools: true,
     skills: onDemand("offres-cleads", ...PLAYBOOKS),
-    output: "Réponses et actions proposées",
-    approval: "Chaque action, d'un clic dans la conversation",
-    limits: { maxSteps: 6, maxCostEur: 0.1 },
+    output: "Réponses, actions et travaux confiés aux agents",
+    approval: "Les changements d'un clic dans la conversation ; ce qui contacte un prospect, toujours de son propre clic",
+    limits: { maxSteps: 10, maxCostEur: 0.2 },
   }),
   strategist: defineAgent({
     id: "strategist",
@@ -208,6 +275,8 @@ export const AGENTS: Record<AgentId, Readonly<AgentDef>> = {
     epic: "E25",
     available: true,
     tools: ["list_offers", "campaign_metrics", "list_sectors", "search_prospect_base", "read_skill"],
+    families: { read_crm: "auto", read_web: "auto" },
+    picksTools: true,
     skills: [{ name: "offres-cleads", mode: "always" }, ...onDemand(...PLAYBOOKS)],
     output: "Cibles argumentées : secteur, zones, douleurs, offre phare, angle, campagne et recherche proposées",
     approval: "Chaque campagne et chaque recherche, d'un clic : il ne lance rien lui-même",
@@ -224,6 +293,7 @@ export const AGENTS: Record<AgentId, Readonly<AgentDef>> = {
     epic: "E25",
     available: true,
     tools: [],
+    families: { read_crm: "auto", ai_work: "confirm" },
     skills: [],
     output: "Pertinence de chaque fiche importée pour sa campagne, avec sa probabilité",
     approval: "Sous le seuil de confiance, une personne tranche",
@@ -237,4 +307,10 @@ export const isAgentId = (value: unknown): value is AgentId => typeof value === 
 export const EVALUATIONS_USAGE = "evaluations"
 
 export const agentLabel = (id: string) => (isAgentId(id) ? AGENTS[id].label : id === EVALUATIONS_USAGE ? "Évaluations" : id)
+
+/** E28: "via le Copilote", "via l’Auditeur digital": what an action done by an agent for a person says. */
+export function viaAgent(id: string): string {
+  const label = agentLabel(id)
+  return `via ${/^[aeiouyéèêh]/i.test(label) ? "l’" : "le "}${label}`
+}
 export const agentCapMicros = (id: AgentId) => Math.round(AGENTS[id].limits.maxCostEur * 1_000_000)

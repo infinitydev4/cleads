@@ -56,6 +56,21 @@ export interface BusinessFilters {
   min_completeness?: number
 }
 
+export interface BaseFilters {
+  limit?: number
+  /** Business name contains this text. */
+  q?: string
+  /** Exact city name. */
+  city?: string
+  /** Postal code prefix (44, 44000). */
+  postal_code?: string
+  /** Category contains this text. */
+  category?: string
+  useful?: boolean
+  has_email?: boolean
+  has_website?: boolean
+}
+
 type Fetch = typeof fetch
 
 export class ExtractorClient {
@@ -123,6 +138,15 @@ export class ExtractorClient {
 
   jobErrors(id: string) {
     return this.request("GET", `/v1/jobs/${encodeURIComponent(id)}/errors`, jobErrorsSchema)
+  }
+
+  /** E28: the consolidated base (every business found by every job), to reuse earlier searches before a new one. */
+  searchBase(filters: BaseFilters = {}) {
+    const q = new URLSearchParams()
+    q.set("limit", String(filters.limit ?? 20))
+    for (const key of ["q", "city", "postal_code", "category"] as const) if (filters[key]) q.set(key, filters[key]!)
+    for (const key of ["useful", "has_email", "has_website"] as const) if (filters[key]) q.set(key, "true")
+    return this.request("GET", `/v1/businesses?${q}`, businessesPageSchema)
   }
 
   businesses(id: string, filters: BusinessFilters = {}) {

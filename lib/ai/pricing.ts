@@ -120,6 +120,21 @@ export function worstPrice(models: readonly string[], table: Record<string, Mode
   }
 }
 
+/**
+ * E28: dictation, billed by the minute of audio (USD). A prudent figure until the Gateway's own price for the model is
+ * read on a first real call; a model missing here is billed at the dearest one.
+ */
+export const TRANSCRIPTION_USD_PER_MINUTE: Record<string, number> = {
+  "mistral/voxtral-mini-transcribe-3": 0.003,
+  "openai/gpt-4o-mini-transcribe": 0.003,
+  "openai/whisper-1": 0.006,
+}
+
+export function transcriptionMicros(model: string, seconds: number, eurPerUsd: number): number {
+  const perMinute = TRANSCRIPTION_USD_PER_MINUTE[model] ?? Math.max(...Object.values(TRANSCRIPTION_USD_PER_MINUTE))
+  return Math.ceil((Math.max(seconds, 1) / 60) * perMinute * eurPerUsd * 1e6)
+}
+
 /** Rough size of a prompt: 1 token ≈ 3 characters of French, a little pessimistic on purpose. */
 export const estimateTokens = (text: string) => Math.ceil(text.length / 3)
 

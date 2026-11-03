@@ -15,6 +15,8 @@ export function gatewayOptions(input: { models: readonly JSONValue[]; userKey: s
     gateway: {
       models: [...input.models],
       disallowPromptTraining: true,
+      // E28: the Gateway caches the stable start of each request (instructions, tools) where the provider allows it.
+      caching: "auto",
       user: input.userKey,
       tags: [`agent:${input.agentId}`],
     },

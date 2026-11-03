@@ -163,6 +163,7 @@ suite("AI worker (database)", () => {
         permission: "email:send",
         approval: "user",
         costClass: "external",
+        family: "ai_work",
         input: z.object({ to: z.string() }),
         summarize: (i) => `Envoyer un email à ${i.to}`,
         execute: async (_ctx, i) => {

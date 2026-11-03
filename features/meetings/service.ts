@@ -20,6 +20,7 @@ import {
 } from "./rules"
 import { bookingLink, manageLink, sendMeetingMail, whenLabel } from "./emails"
 import { signMeetingToken, verifyMeetingToken } from "./token"
+import { withVia } from "@/lib/ai/acting"
 
 type Tx = Prisma.TransactionClient
 const who = (u: { name?: string | null; email?: string | null } | null | undefined) => u?.name || u?.email || "—"
@@ -169,11 +170,11 @@ async function lockMeetings(tx: Tx, workspaceId: string) {
 
 async function logMeeting(tx: Tx, ctx: Ctx, leadId: string | null, body: string, data: Prisma.InputJsonValue, dealId?: string | null) {
   if (!leadId) return
-  await tx.activity.create({ data: { workspaceId: ctx.workspaceId, leadId, dealId: dealId ?? undefined, actorId: ctx.actorId, actorKind: ctx.actorId ? "USER" : "SYSTEM", kind: "MEETING", body, data } })
+  await tx.activity.create({ data: { workspaceId: ctx.workspaceId, leadId, dealId: dealId ?? undefined, actorId: ctx.actorId, actorKind: ctx.actorId ? "USER" : "SYSTEM", kind: "MEETING", body, data: withVia(data) } })
 }
 
 async function logDealMove(tx: Tx, ctx: Ctx, leadId: string, dealId: string, body: string, data: Prisma.InputJsonValue) {
-  await tx.activity.create({ data: { workspaceId: ctx.workspaceId, leadId, dealId, actorId: ctx.actorId, actorKind: ctx.actorId ? "USER" : "SYSTEM", kind: "SYSTEM", body, data } })
+  await tx.activity.create({ data: { workspaceId: ctx.workspaceId, leadId, dealId, actorId: ctx.actorId, actorKind: ctx.actorId ? "USER" : "SYSTEM", kind: "SYSTEM", body, data: withVia(data) } })
 }
 
 async function assertNoOverlap(tx: Tx, hostId: string, start: Date, end: Date, ignoreId?: string) {

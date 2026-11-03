@@ -1,5 +1,6 @@
 import type { AuditActorKind, Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
+import { withVia } from "@/lib/ai/acting"
 
 export interface AuditEntry {
   /** `domain.verb`, e.g. `auth.login_failed`, `team.role_changed`. */
@@ -30,7 +31,8 @@ export async function audit(entry: AuditEntry): Promise<void> {
         entityType: entry.entityType,
         entityId: entry.entityId,
         subject: entry.subject?.toLowerCase(),
-        metadata: entry.metadata,
+        // E28: an action an agent did for the person says so; the person stays the author.
+        metadata: withVia(entry.metadata),
         ip: entry.ip ?? null,
       },
     })
