@@ -179,8 +179,8 @@ export function toActivity(a: ActivityRow): LeadDetail["activities"][number] {
     outcome: typeof d.outcome === "string" ? d.outcome : null,
     durationMin: typeof d.durationMin === "number" ? d.durationMin : null,
     event: typeof d.event === "string" ? d.event : null,
-    // E28: what an agent did for the person names the agent.
-    via: d.via && typeof d.via === "object" && typeof (d.via as { agentId?: unknown }).agentId === "string" ? viaAgent((d.via as { agentId: string }).agentId) : null,
+    // E28: what an agent did for the person names the agent; E29: an MCP client names itself.
+    via: d.via && typeof d.via === "object" && typeof (d.via as { agentId?: unknown }).agentId === "string" ? viaAgent((d.via as { agentId: string }).agentId, (d.via as { client?: unknown }).client as string | undefined) : null,
   }
 }
 

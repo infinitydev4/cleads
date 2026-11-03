@@ -98,7 +98,7 @@ export function AgentsTab({ page, skills }: { page: AgentsPage; skills: SkillVie
           </Card>
         ))}
       </div>
-      <RightsMatrix agents={page.agents} canEdit={page.canEditSettings} />
+      <RightsMatrix agents={page.agents} mcp={page.mcp ?? null} canEdit={page.canEditSettings} />
       {editing && <AgentDialog agent={editing} skills={skills} page={page} onClose={() => setEditing(null)} />}
     </>
   )

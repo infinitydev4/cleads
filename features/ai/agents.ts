@@ -1,4 +1,5 @@
 import { ROLES, type AiRole } from "@/lib/ai/models"
+import { MCP_AGENT, MCP_LABEL, clientName } from "@/features/mcp/names"
 import { allowedModes, isFamily, type ActionFamily, type FamilyMode } from "./actions/families"
 
 /**
@@ -309,10 +310,15 @@ export const isAgentId = (value: unknown): value is AgentId => typeof value === 
 /** Usage key of evaluation spend (E27): Consommation shows it apart from the agents' work. */
 export const EVALUATIONS_USAGE = "evaluations"
 
-export const agentLabel = (id: string) => (isAgentId(id) ? AGENTS[id].label : id === EVALUATIONS_USAGE ? "Évaluations" : id)
+export const agentLabel = (id: string) => (isAgentId(id) ? AGENTS[id].label : id === EVALUATIONS_USAGE ? "Évaluations" : id === MCP_AGENT ? MCP_LABEL : id)
 
-/** E28: "via le Copilote", "via l’Auditeur digital": what an action done by an agent for a person says. */
-export function viaAgent(id: string): string {
+/**
+ * E28: "via le Copilote", "via l’Auditeur digital": what an action done by an agent for a person says. E29: an MCP
+ * client says its own name, "via Claude Code (MCP)".
+ */
+export function viaAgent(id: string, client?: string | null): string {
+  if (client) return `via ${clientName(client)} (MCP)`
+  if (id === MCP_AGENT) return "via un client MCP"
   const label = agentLabel(id)
   return `via ${/^[aeiouyéèêh]/i.test(label) ? "l’" : "le "}${label}`
 }

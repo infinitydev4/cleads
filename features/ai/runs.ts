@@ -16,6 +16,7 @@ import { effectiveAgent } from "./definitions"
 import { FAMILY_INFO } from "./actions/families"
 import { cutFamilies } from "./actions/policy"
 import { wakeMissions } from "@/features/missions/wake"
+import { MCP_AGENT, MCP_LABEL, clientOfInput } from "@/features/mcp/names"
 
 /**
  * AI runs (docs/crm-v1/AGENTS-IA.md §10): one execution of an agent, who it acts for, what it did and what it cost.
@@ -32,6 +33,8 @@ export interface RunContext {
   leadId: string | null
   /** E28: the mission the run works for; what it writes says so, and its cost counts against the mission's cap. */
   missionId?: string
+  /** E29: the MCP client whose action the run holds; what it writes says "via <client> (MCP)". */
+  client?: string
   /**
    * Set only while an evaluation runs (E27, features/quality/): the models pinned for some roles, used without the
    * Gateway's fallbacks whatever the workspace chose, and the frozen offers catalogue read instead of the workspace's.
@@ -67,6 +70,11 @@ export interface StartRunInput {
   missionId?: string | null
   /** Work that calls no model (a mission's action waiting for a click) holds none of the agent's cap. */
   noModel?: boolean
+  /**
+   * E29: an MCP client's action waiting for a person (D37). It is not the copilot's work, only its catalogue: the copilot
+   * switched off does not stop it, MCP's own switch does (features/mcp/).
+   */
+  client?: string
 }
 
 const isUniqueViolation = (error: unknown) => (error as { code?: string } | null)?.code === "P2002"
@@ -88,7 +96,7 @@ async function checkTargets(workspaceId: string, actor: CurrentUser | null, inpu
 async function createRun(workspaceId: string, requester: CurrentUser | null, input: StartRunInput): Promise<RunContext> {
   // The workspace may lower an agent's cap or switch it off (E19, features/ai/definitions.ts), never raise it.
   const agent = await effectiveAgent(workspaceId, input.agentId)
-  if (!agent.enabled && !input.evaluation) throw new LeadError("conflict", `L'agent « ${agent.def.label} » est désactivé : le propriétaire peut le réactiver dans Agents IA.`, 409)
+  if (!agent.enabled && !input.evaluation && !input.client) throw new LeadError("conflict", `L'agent « ${agent.def.label} » est désactivé : le propriétaire peut le réactiver dans Agents IA.`, 409)
   // E28: a specialist's workflow needs every family of actions it declares; an agent that picks its tools only loses some.
   const cut = agent.def.picksTools || input.evaluation || isTaskInput(input.input) ? [] : cutFamilies(agent.def, agent.policy)
   if (cut.length) throw new LeadError("conflict", `L'agent « ${agent.def.label} » n'a plus le droit « ${FAMILY_INFO[cut[0]].label} » : le propriétaire peut le lui rendre dans Agents IA › Agents › Droits.`, 409)
@@ -129,9 +137,9 @@ async function createRun(workspaceId: string, requester: CurrentUser | null, inp
     workspaceId,
     entityType: "AgentRun",
     entityId: run.id,
-    metadata: { agentId: input.agentId, leadId: input.leadId ?? null, ...(missionId ? { missionId } : {}) },
+    metadata: { agentId: input.agentId, leadId: input.leadId ?? null, ...(missionId ? { missionId } : {}), ...(input.client ? { client: input.client } : {}) },
   })
-  return { id: run.id, workspaceId, agentId: input.agentId, requester, userKey, leadId: input.leadId ?? null, ...(missionId ? { missionId } : {}) }
+  return { id: run.id, workspaceId, agentId: input.agentId, requester, userKey, leadId: input.leadId ?? null, ...(missionId ? { missionId } : {}), ...(input.client ? { client: input.client } : {}) }
 }
 
 /** Starts a run for a member: the right to use AI, the right to work on the fiche, then the agent's cap is reserved. */
@@ -154,14 +162,15 @@ export async function startSystemRun(workspaceId: string, input: StartRunInput):
 export async function loadRunContext(runId: string): Promise<RunContext> {
   const run = await prisma.agentRun.findUnique({
     where: { id: runId },
-    select: { id: true, workspaceId: true, agentId: true, leadId: true, missionId: true, requestedById: true, requestedBy: { select: { id: true, name: true, email: true, image: true, role: true, active: true, workspaceId: true } } },
+    select: { id: true, workspaceId: true, agentId: true, leadId: true, missionId: true, input: true, requestedById: true, requestedBy: { select: { id: true, name: true, email: true, image: true, role: true, active: true, workspaceId: true } } },
   })
   if (!run || !isAgentId(run.agentId)) throw new LeadError("not_found", "Exécution introuvable", 404)
   const u = run.requestedBy
   const role = toCrmRole(u?.role)
   const requester =
     u && u.active && role && u.workspaceId === run.workspaceId ? { id: u.id, workspaceId: run.workspaceId, name: u.name ?? u.email ?? "", email: u.email ?? "", image: u.image, role } : null
-  return { id: run.id, workspaceId: run.workspaceId, agentId: run.agentId, requester, userKey: run.requestedById ?? SYSTEM_USER, leadId: run.leadId, ...(run.missionId ? { missionId: run.missionId } : {}) }
+  const client = clientOfInput(run.input)
+  return { id: run.id, workspaceId: run.workspaceId, agentId: run.agentId, requester, userKey: run.requestedById ?? SYSTEM_USER, leadId: run.leadId, ...(run.missionId ? { missionId: run.missionId } : {}), ...(client ? { client } : {}) }
 }
 
 /** A queued run taken by the worker. False when it was cancelled or taken in the meantime. */
@@ -291,6 +300,16 @@ const taskOf = (input: unknown) => {
   return typeof kind === "string" ? (TASK_LABELS[kind] ?? null) : null
 }
 
+/**
+ * Who a run is shown as. E29: an MCP client's action uses the copilot's catalogue but is the client's work: it is shown
+ * under « Clients MCP », with the client's name as its task.
+ */
+export function runIdentity(agentId: string, input: unknown): { agentId: string; agentLabel: string; task: string | null } {
+  const client = clientOfInput(input)
+  if (client) return { agentId: MCP_AGENT, agentLabel: MCP_LABEL, task: client }
+  return { agentId, agentLabel: agentLabel(agentId), task: taskOf(input) }
+}
+
 /** Recent runs: all of them for owners and managers, one's own for the others. */
 export async function listRuns(actor: CurrentUser, opts: { leadId?: string; limit?: number } = {}): Promise<RunView[]> {
   if (!can(actor.role, "ai:read")) throw new LeadError("forbidden", "Accès refusé", 403)
@@ -302,9 +321,7 @@ export async function listRuns(actor: CurrentUser, opts: { leadId?: string; limi
   })
   return rows.map((r) => ({
     id: r.id,
-    agentId: r.agentId,
-    agentLabel: agentLabel(r.agentId),
-    task: taskOf(r.input),
+    ...runIdentity(r.agentId, r.input),
     status: r.status,
     requestedBy: r.requestedBy?.name ?? r.requestedBy?.email ?? null,
     lead: r.lead ? { id: r.lead.id, name: leadName(r.lead) } : null,
@@ -352,9 +369,7 @@ export async function getRunDetail(actor: CurrentUser, runId: string): Promise<R
   if (!r) throw new LeadError("not_found", "Exécution introuvable", 404)
   return {
     id: r.id,
-    agentId: r.agentId,
-    agentLabel: agentLabel(r.agentId),
-    task: taskOf(r.input),
+    ...runIdentity(r.agentId, r.input),
     status: r.status,
     requestedBy: r.requestedBy?.name ?? r.requestedBy?.email ?? null,
     lead: r.lead ? { id: r.lead.id, name: leadName(r.lead) } : null,
@@ -397,8 +412,9 @@ export async function runStatus(actor: CurrentUser, runId: string): Promise<RunS
   if (!can(actor.role, "ai:read")) throw new LeadError("forbidden", "Accès refusé", 403)
   const r = await prisma.agentRun.findFirst({
     where: { id: runId, workspaceId: actor.workspaceId, ...(isManager(actor) ? {} : { requestedById: actor.id }) },
-    select: { id: true, agentId: true, status: true, error: true, costMicros: true, finishedAt: true },
+    select: { id: true, agentId: true, input: true, status: true, error: true, costMicros: true, finishedAt: true },
   })
   if (!r) throw new LeadError("not_found", "Exécution introuvable", 404)
-  return { id: r.id, agentId: r.agentId, agentLabel: agentLabel(r.agentId), status: r.status, error: r.error, costEur: microsToEur(r.costMicros), finishedAt: r.finishedAt?.toISOString() ?? null }
+  const who = runIdentity(r.agentId, r.input)
+  return { id: r.id, agentId: who.agentId, agentLabel: who.agentLabel, status: r.status, error: r.error, costEur: microsToEur(r.costMicros), finishedAt: r.finishedAt?.toISOString() ?? null }
 }

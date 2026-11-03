@@ -233,7 +233,7 @@ Chaque outil est déclaré une seule fois (`defineTool`) avec :
 
 Un outil appelle un service existant ; il ne touche jamais la base directement.
 
-**Catalogue d'actions (E28, `features/ai/actions/`).** Chaque opération du CRM qu'un agent peut faire pour une personne y est déclarée une fois (64 actions), avec sa famille, son droit, son niveau de validation et ce qu'une étape suivante peut en réutiliser. Le copilote l'appelle dans le même processus ; le serveur MCP du CRM (E29, D30) publiera le même catalogue.
+**Catalogue d'actions (E28, `features/ai/actions/`).** Chaque opération du CRM qu'un agent peut faire pour une personne y est déclarée une fois (64 actions), avec sa famille, son droit, son niveau de validation et ce qu'une étape suivante peut en réutiliser. Le copilote l'appelle dans le même processus ; le serveur MCP du CRM (E29, D30) publie le même catalogue aux clients extérieurs (ci-dessous).
 
 | Famille | Exemples | Niveau (D28) |
 |---|---|---|
@@ -251,6 +251,36 @@ Un outil appelle un service existant ; il ne touche jamais la base directement.
 
 - **Chargement à la demande** : le copilote voit un noyau (`search_leads`, `get_lead`, `get_today`, `list_campaigns`, `open_page`, `read_skill`) et l'outil `find_actions` (`toolSearch` de l'AI SDK 7, recherche maison en français qui pèse plus les mots rares) ; les actions trouvées se chargent à l'étape suivante, celles du dernier message dès le tour suivant.
 - **Traçabilité** : une action faite par un agent garde la personne comme auteur ; `lib/ai/acting.ts` ajoute `via` (agent, exécution) au journal d'audit et à l'historique des fiches, qui affichent « via le Copilote ».
+
+**Serveur MCP du CRM (E29, D36 à D40, `features/mcp/`).**
+- **Adresse** : `POST https://cleads.fr/api/mcp`, une route du site, sans état.
+  - Chaque requête porte son jeton (`Authorization: Bearer cleads_mcp_…`), relu en base avec le rôle du membre.
+  - GET et DELETE reçoivent 405, une origine de navigateur autre que le CRM 403, et un jeton au-delà de 120 requêtes par minute 429.
+- **Protocole** : MCP 2026-07-28, sans session ni `initialize`.
+  - `server/discover` ; la version et le client voyagent dans `_meta`, reflétés dans `MCP-Protocol-Version`, `Mcp-Method` et `Mcp-Name`, que le serveur contrôle contre le corps.
+  - Les versions 2025-11-25, 2025-06-18 et 2025-03-26 passent par `initialize`, sans session.
+  - Des outils seulement : ni ressources ni prompts.
+- **Outils** : le catalogue ci-dessus sauf `read_skill`, plus deux lectures propres à MCP :
+  - `get_action_status` : où en est une action en attente ;
+  - `get_run_status` : où en est un travail d'IA lancé.
+
+  Chaque outil garde sa définition (schéma, droit, famille, niveau). La liste dépend du rôle du membre, de la ligne « Clients MCP » de la matrice et de la portée du jeton : en lecture seule, `read_crm`, `read_web` et `navigation`.
+- **Exécution, sans clic (D28)** : l'action s'exécute tout de suite, au nom du membre.
+- **Exécution, avec un clic (D37)** :
+  - une courte exécution sans modèle (tâche « MCP ») porte l'`AgentApproval`, et le membre est notifié ;
+  - il valide dans « À valider » ; l'action s'exécute aussitôt, dans la requête de validation (`runApprovedMcpAction`), une seule fois, avec ses droits et la matrice relus ; aucun worker ne la prend ;
+  - ce qui contacte un prospect suit toujours ce chemin ;
+  - le copilote coupé ne bloque pas MCP ; MCP coupé bloque ce qui attend encore.
+- **Réponses** :
+  - ce que lit le modèle du copilote (`forModel`), en JSON (texte et `structuredContent`), avec des liens absolus ;
+  - une erreur métier revient en `isError` avec son message, pour que le modèle se corrige.
+- **Journal** :
+  - « via Claude Code (MCP) » ; le nom est celui que le client se donne, jamais une preuve ;
+  - l'activité de chaque jeton est gardée 90 jours (`McpCall`).
+- **Clients** :
+  - Claude Code : `claude mcp add --transport http … --header "Authorization: Bearer …"` ;
+  - Cursor : `mcp.json` ;
+  - Claude Desktop : le pont `mcp-remote`. Son connecteur natif exige OAuth et viendra au lot 2.
 
 **MCP de l'Extractor.**
 - **Connexion** : client `@ai-sdk/mcp` en Streamable HTTP vers `/mcp`, avec la clé `crm`, côté serveur seulement ; le worker passe par le réseau local du VPS.
@@ -318,9 +348,11 @@ Migrations additives uniquement ; chaque table porte `workspaceId`.
 | `AgentMission` | E28 | personne, titre, statut (à lancer, refusée, expirée, en cours, en pause, terminée, en échec, annulée), plan vérifié (étapes, mots, niveau de clic, récurrence), coût probable et maximal, plafond, conversation d'origine, expiration de la proposition, raison d'une pause, bilan, réveil et verrou du moteur, mission récurrente d'origine |
 | `AgentMissionStep` | E28 | mission, étape et élément de sa boucle, action, entrée résolue, statut (à faire, en cours, en attente, faite, passée, en échec, peut-être faite, annulée), attente (recherche, exécution, tri, validation), sortie, ce qu'elle donne aux étapes suivantes, erreur, tentatives |
 | `AgentMissionSchedule` | E28 | personne, titre, plan figé, récurrence (jour ou semaine, heure de Paris), plafond, statut (active, en pause, arrêtée), prochain passage, échecs de suite |
-
-`AgentRun.missionId` (E28) relie une exécution à sa mission ; `AiSetting.missionCapMicros` garde le plafond par mission (2 € par défaut, D32), `AiSetting.catalogVersion` les ajouts du catalogue installés.
 | `AiMessage` | E24 | conversation, ordre, rôle, contenu au format de l'AI SDK (texte, appels d'outils, validations, résultats), métadonnées (page et date d'une question ; exécutions, coût et arrêt d'une réponse), dernière exécution |
+| `McpToken` | E29 | membre, nom, empreinte du jeton (le jeton lui-même n'est jamais gardé), indice affiché, lecture seule, expiration, révocation et par qui, dernière utilisation et client |
+| `McpCall` | E29 | jeton, outil, client, issue (faite, en attente, refusée, erreur), validation liée, durée ; gardé 90 jours |
+
+`AgentRun.missionId` (E28) relie une exécution à sa mission ; `AiSetting.missionCapMicros` garde le plafond par mission (2 € par défaut, D32), `AiSetting.catalogVersion` les ajouts du catalogue installés. E29 : `AiSetting.mcpEnabled` ouvre MCP pour l'espace (coupé par défaut, D39) et `AiSetting.mcpPolicy` garde la ligne « Clients MCP » de la matrice (seulement l'écart au code, D38).
 
 Le contenu d'un site audité n'est pas stocké en entier. On ne garde que les extraits utiles aux constats et les captures (S3, purgées avec la fiche).
 
@@ -389,6 +421,23 @@ Peut valider l'action d'un agent : la personne qui a lancé l'exécution, ou un 
 - **Principe** : une action n'est permise que si la personne en a le droit (`lib/rbac.ts`), si la famille est ouverte pour l'agent, et si elle n'est pas interdite aux agents. Contrôlé à l'offre de l'outil, à la validation et à l'exécution.
 - **Familles** : chaque agent déclare les siennes dans le code (`AGENTS[...].families`) ; une famille qu'il ne déclare pas reste fermée.
 - **Réglage** (propriétaire, `ai:manage`, `PUT /api/ai/agents/[id]` avec `actionPolicy`) : pour le copilote et le Stratège, une famille se coupe ou attend un clic ; jamais en dessous du niveau de l'action, et ce qui contacte un prospect reste à son propre clic. Pour un spécialiste, une famille est seulement ouverte ou coupée ; coupée, l'agent ne s'exécute plus. Stocké dans `AgentDefinition.actionPolicy` (seulement l'écart au code), versionné et journalisé avec l'avant et l'après.
+- **Clients MCP** (E29, D38) : une ligne de plus, réglée comme le copilote au départ. Elle ne restreint que MCP ; stockée dans `AiSetting.mcpPolicy`, enregistrée par `PUT /api/ai/mcp` et journalisée (`mcp.policy_changed`, avant et après).
+
+**Accès MCP** (E29, Réglages › Accès MCP, `/app/settings/mcp`) :
+- **Ouverture** (D39) : le propriétaire active MCP pour l'espace (`ai:manage`, `mcp.enabled` et `mcp.disabled` au journal). Coupé, plus aucun jeton ne répond, sans être effacé.
+- **Jetons** :
+  - chaque membre qui a `ai:use` crée les siens (un lecteur n'en a pas), en lecture seule (par défaut) ou avec actions, pour 30, 90 ou 365 jours, 10 actifs au plus ;
+  - il voit leur activité et les révoque ;
+  - le propriétaire voit et révoque ceux de l'équipe ;
+  - révoquer refuse ce que le jeton a laissé dans « À valider ».
+- **Droits** : un jeton vaut son membre, dont le rôle est relu à chaque requête. La ligne « Clients MCP » de la matrice le restreint, et les interdits aux agents s'appliquent.
+- **Validation** : une action MCP en attente se valide comme les autres. Peuvent la valider la personne qui l'a demandée, un manager ou le propriétaire, s'ils ont eux-mêmes le droit de la faire.
+- **Routes** :
+  - `POST /api/mcp` : le serveur, par jeton ;
+  - `GET` et `PUT /api/ai/mcp` : l'interrupteur et la ligne de la matrice ;
+  - `GET` et `POST /api/ai/mcp/tokens` (`?team=1` pour le propriétaire) ;
+  - `DELETE /api/ai/mcp/tokens/[id]` ;
+  - `GET /api/ai/mcp/tokens/[id]/calls`.
 
 **Réglages › IA** (`/app/settings/ai`) :
 - **Accès** : la page est visible avec `ai:use`. Le propriétaire la modifie (`ai:manage`) ; les autres la lisent.
@@ -694,6 +743,11 @@ Cache-Control: private, no-store
   - à compléter : la politique de confidentialité (usage de l'IA, suivi des maquettes) et le registre des traitements (E14) ;
   - droits d'accès et d'effacement : les données IA d'une fiche suivent la fiche.
 - **Journal** : chaque action d'un agent est journalisée (`AuditLog`, `Activity.actorKind = AGENT`) avec l'exécution qui l'a produite.
+- **MCP du CRM (E29)** :
+  - **Jetons** : 256 bits, dont seule l'empreinte est gardée ; expirants et révocables ; valables seulement pour un membre actif qui a l'IA, dans un espace où MCP est activé.
+  - **Contrôles** : l'origine d'un navigateur est vérifiée ; 120 requêtes par minute au plus par jeton ; un corps d'1 Mo au plus.
+  - **Validation** : rien ne se valide depuis un client MCP.
+  - **Données** : ce qu'un client lit part vers l'IA que le membre a choisie, hors des contrats de D16. C'est pourquoi MCP reste coupé tant que le propriétaire ne l'active pas. Les réponses gardent la minimisation du catalogue : l'email et le téléphone du contact restent sur la fiche, et un contenu externe arrive balisé.
 
 ## 20. Qualité et évaluations (E27)
 
@@ -778,5 +832,7 @@ Le code est dans `features/quality/`, les jeux de référence dans `evals/` (voi
 | Premier essai réel de la dictée (quelques secondes) pour lire le prix du modèle de transcription sur la passerelle | le propriétaire | usage de la dictée |
 | Première mission réelle (une petite recherche, par exemple 50 entreprises), lancée par le propriétaire | le propriétaire | usage des missions |
 | Première évaluation du copilote : échantillon rapide, Sonnet 5.5 face à Opus 5.5 (environ 2,40 €, dont 0,90 € pour Sonnet ; le jeu complet, environ 9 €) | le propriétaire | décision D33 |
+| Activer l'accès MCP (Réglages › Accès MCP) une fois choisis les outils que l'agence accepte (D39) | le propriétaire | usage de MCP |
+| OAuth pour le connecteur natif de Claude Desktop et de claude.ai (E29, lot 2) | le propriétaire, à son signal | connecteur natif |
 
-**E17 à E28 sont faits** (E28 : catalogue d'actions, matrice des droits, navigation, dictée ; missions et missions récurrentes ; évaluation du copilote). Les évaluations se lancent à la demande : la première de chaque suite, sur le modèle en service, sert de référence aux suivantes.
+**E17 à E28 sont faits** (E28 : catalogue d'actions, matrice des droits, navigation, dictée ; missions et missions récurrentes ; évaluation du copilote). Les évaluations se lancent à la demande : la première de chaque suite, sur le modèle en service, sert de référence aux suivantes. **E29, lot 1 est fait** : serveur MCP du CRM, jetons personnels, validation dans « À valider ».

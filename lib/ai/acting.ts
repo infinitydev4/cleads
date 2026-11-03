@@ -12,6 +12,8 @@ export interface Acting {
   runId?: string
   tool?: string
   missionId?: string
+  /** E29: the MCP client that asked for it (Claude Code, Cursor…), as it names itself. */
+  client?: string
 }
 
 const store = new AsyncLocalStorage<Acting>()
@@ -26,7 +28,7 @@ export function withActing<T>(context: Acting, fn: () => Promise<T>): Promise<T>
 export function withVia(data: Prisma.InputJsonValue | undefined): Prisma.InputJsonValue | undefined {
   const a = acting()
   if (!a) return data
-  const via = { agentId: a.agentId, ...(a.runId ? { runId: a.runId } : {}), ...(a.missionId ? { missionId: a.missionId } : {}) }
+  const via = { agentId: a.agentId, ...(a.runId ? { runId: a.runId } : {}), ...(a.missionId ? { missionId: a.missionId } : {}), ...(a.client ? { client: a.client } : {}) }
   if (data === undefined || data === null) return { via }
   if (typeof data === "object" && !Array.isArray(data)) return { ...(data as Record<string, Prisma.InputJsonValue>), via }
   return data

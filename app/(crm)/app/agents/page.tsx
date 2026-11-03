@@ -11,6 +11,7 @@ import { listOffers } from "@/features/offers/service"
 import { qualityDashboard } from "@/features/quality/dashboard"
 import { qualityPage } from "@/features/quality/service"
 import { listMissions, listSchedules } from "@/features/missions/service"
+import { mcpAccess, rightsView } from "@/features/mcp/policy"
 import { AgentsView } from "./agents-view"
 import { TABS, type Tab } from "./tabs"
 
@@ -24,7 +25,7 @@ export default async function AgentsPage(props: { searchParams: Promise<Record<s
   await ensureAgentCatalog(user.workspaceId)
   // The quality of the AI (E27) is followed by owners and managers.
   const manager = isManager(user)
-  const [agents, skills, archivedSkills, offers, archivedOffers, runs, approvals, settings, dashboard, quality, missions, schedules] = await Promise.all([
+  const [agents, skills, archivedSkills, offers, archivedOffers, runs, approvals, settings, dashboard, quality, missions, schedules, mcp] = await Promise.all([
     agentViews(user),
     listSkills(user),
     listSkills(user, { archived: true }),
@@ -37,6 +38,7 @@ export default async function AgentsPage(props: { searchParams: Promise<Record<s
     manager ? qualityPage(user) : null,
     listMissions(user),
     listSchedules(user),
+    mcpAccess(user.workspaceId),
   ])
   const one = (v: string | string[] | undefined) => (typeof v === "string" ? v : undefined)
   return (
@@ -49,7 +51,7 @@ export default async function AgentsPage(props: { searchParams: Promise<Record<s
       <AgentsView
         userId={user.id}
         initialTab={tab}
-        agents={agents}
+        agents={{ ...agents, mcp: rightsView(mcp) }}
         skills={skills}
         archivedSkills={archivedSkills}
         offers={offers}

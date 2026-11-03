@@ -73,6 +73,11 @@ Détails et conséquences techniques : [AGENTS-IA.md](AGENTS-IA.md).
 | D33 | Modèle du copilote | **Sonnet 5.5**, puis mesure d'Opus 5.5 par l'évaluation du copilote (règle d'E27) | Opus coûte deux fois plus. |
 | D34 | Autres agents | **Le copilote orchestre** : les spécialistes gardent leurs outils ; la matrice couvre tous les agents mais n'ouvre d'actions nouvelles qu'au copilote | Moindre privilège. |
 | D35 | Missions récurrentes | **Chaque passage cherche, importe et trie seul**, puis attend un clic avant toute inscription en séquence | Les destinataires changent d'une semaine à l'autre. |
+| D36 | Connexion au MCP du CRM (E29, 3 novembre 2026) | **Jeton personnel au lot 1, OAuth au lot 2** | Claude Code et Cursor acceptent un jeton dans l'en-tête `Authorization`. Le connecteur natif de Claude Desktop et de claude.ai exige OAuth ; d'ici là, le pont local `mcp-remote`. |
+| D37 | Validation par MCP | **Ce qui attend un clic attend dans « À valider »** ; ce qui contacte un prospect suit toujours ce chemin ; lectures, notes, tâches et étiquettes se font tout de suite | Un client MCP ne valide jamais lui-même : le clic se donne dans Cleads (D28, D29). |
+| D38 | Droits des clients MCP | **Une ligne « Clients MCP » dans la matrice**, réglée comme le copilote au départ ; un jeton peut être en lecture seule | Le propriétaire restreint MCP sans toucher au copilote. |
+| D39 | Ouverture de MCP | **Coupé tant que le propriétaire ne l'active pas** ; ensuite, chaque membre qui a l'IA crée ses jetons, et le propriétaire voit et révoque ceux de l'équipe | Les fiches lues partent vers l'IA choisie par le membre, hors des contrats de D16. |
+| D40 | Hébergement du serveur MCP | **Une route du site** (`POST /api/mcp`, Netlify), sans état, protocole 2026-07-28 et versions 2025 | Chaque appel est court (le long part au worker) ; rien de plus à exposer sur le VPS. |
 
 ---
 
@@ -1032,7 +1037,43 @@ Le copilote exécute les actions du CRM sur une simple demande (« Recherche 1 0
 >
 > **Vérifié** : `tests/copilot-eval.test.ts` (jeu cohérent avec son monde, chaque action du catalogue simulée, les plans d'un bon copilote acceptés, les contrôles) et une évaluation complète de l'échantillon rapide avec des modèles simulés, dont un qui suit la consigne cachée (`tests/quality.integration.test.ts`) ; suite complète, `tsc`, lint, build du site et du worker.
 >
-> **À faire** : la première évaluation réelle du copilote, à la demande du propriétaire ; puis E29, serveur MCP du CRM.
+> **À faire** : la première évaluation réelle du copilote, à la demande du propriétaire.
+
+### E29 — Le serveur MCP du CRM · **M**, en deux lots *(décidé le 3 novembre 2026, D36 à D40)*
+Le catalogue d'actions d'E28 s'ouvre aux clients MCP : Claude Code, Cursor, Claude Desktop. Un membre pilote le CRM depuis son outil, avec son jeton, ses droits et le même journal. Le copilote reste la porte en processus ; MCP est la seconde (D30).
+
+> **Lot 1 — jetons et serveur MCP (branche `feat/e29-mcp`)** — fait :
+> - **serveur** `POST /api/mcp` (`features/mcp/`) :
+>   - sans état ; protocole MCP 2026-07-28 (`server/discover`, en-têtes reflétés et contrôlés) et versions 2025-11-25, 2025-06-18 et 2025-03-26 (`initialize`) ;
+>   - 120 requêtes par minute et par jeton ; GET et DELETE en 405 ; une origine de navigateur étrangère refusée ;
+> - **outils** :
+>   - le catalogue sauf les skills du copilote, plus `get_action_status` et `get_run_status` ;
+>   - filtrés par le rôle, la ligne « Clients MCP » de la matrice et la portée du jeton ;
+>   - liens absolus pour un client sans panneau ;
+> - **validation (D37)** :
+>   - lectures, navigation, notes, appels, tâches, étiquettes et propositions de mission se font tout de suite ;
+>   - le reste attend dans « À valider ». Une courte exécution sans modèle porte la validation et le membre est notifié. L'action s'exécute ensuite dans Cleads, une seule fois, avec les droits du moment ;
+>   - ce qui contacte un prospect attend toujours son propre clic ;
+> - **jetons (D36, D39)**, dans Réglages › Accès MCP :
+>   - `cleads_mcp_…`, 256 bits, dont seul le hash est gardé ; 30, 90 ou 365 jours ; lecture seule par défaut ; 10 actifs par membre ;
+>   - révoquer un jeton refuse ce qu'il a laissé en attente ;
+>   - le propriétaire active MCP pour l'espace, et voit et révoque les jetons de l'équipe ;
+> - **journal** :
+>   - « via Claude Code (MCP) » dans l'historique des fiches et le journal d'audit ;
+>   - l'activité de chaque jeton, sur 90 jours ;
+>   - les entrées `mcp.enabled`, `mcp.disabled`, `mcp.token_created`, `mcp.token_revoked` et `mcp.policy_changed` ;
+> - **droits (D38)** : la ligne « Clients MCP » d'Agents IA › Agents › Droits (`AiSetting.mcpPolicy`) ;
+> - **migration** `20261114090000_mcp_access`, additive ; le worker n'a rien à redéployer.
+>
+> **Vérifié** :
+> - `tests/mcp.test.ts` : protocole, en-têtes, versions, outils publiés, jetons, journal ;
+> - `tests/mcp.integration.test.ts` : le vrai client `@ai-sdk/mcp` aux deux époques, les rôles, la lecture seule, la matrice, une note faite tout de suite, un statut validé puis exécuté une fois, un refus, une inscription en séquence qui attend, une révocation, le débit ;
+> - suite complète, `tsc`, lint, build du site et du worker ;
+> - navigateur, sur la base de démonstration : activer MCP, créer un jeton, un vrai client MCP en HTTP (2026-07-28) qui lit, note et demande un statut, validé dans « À valider », l'historique « via Claude Code (MCP) », la ligne de la matrice, l'activité du jeton, la révocation, 375 px.
+>
+> **Lot 2 — OAuth (au signal du propriétaire)** :
+> - un serveur d'autorisation dans Cleads : métadonnées (RFC 9728 et 8414), enregistrement dynamique (RFC 7591), PKCE, écran de consentement, jetons courts et de rafraîchissement liés à la ressource ;
+> - le résultat : « Ajouter un connecteur » dans Claude Desktop et claude.ai, sans pont local.
 
 ### Ordre conseillé
 | Jalon | Epics | Résultat visible |

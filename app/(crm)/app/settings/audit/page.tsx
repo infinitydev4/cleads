@@ -9,10 +9,10 @@ import { AuditTable } from "./audit-table"
 
 export const metadata = { title: "Journal d’audit" }
 
-/** E28: an action an agent did for the person names the agent. */
+/** E28: an action an agent did for the person names the agent; E29: an MCP client names itself. */
 function viaOf(metadata: unknown): string {
-  const via = metadata && typeof metadata === "object" && !Array.isArray(metadata) ? (metadata as { via?: { agentId?: unknown } }).via : null
-  return via && typeof via.agentId === "string" ? `, ${viaAgent(via.agentId)}` : ""
+  const via = metadata && typeof metadata === "object" && !Array.isArray(metadata) ? (metadata as { via?: { agentId?: unknown; client?: unknown } }).via : null
+  return via && typeof via.agentId === "string" ? `, ${viaAgent(via.agentId, typeof via.client === "string" ? via.client : null)}` : ""
 }
 export const dynamic = "force-dynamic"
 
