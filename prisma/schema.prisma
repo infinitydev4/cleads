@@ -1679,6 +1679,8 @@ model AgentDefinition {
   maxCostMicros Int?
   /// A disabled agent cannot be started.
   enabled       Boolean                  @default(true)
+  /// E28: the families of actions set apart from the code (features/ai/actions/policy.ts); null = the code's.
+  actionPolicy  Json?
   /// Raised by every saved change; the history is in AgentDefinitionVersion.
   version       Int                      @default(0)
   updatedById   String?

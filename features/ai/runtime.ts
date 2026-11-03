@@ -60,6 +60,7 @@ export const readSkillTool = defineTool({
   permission: null,
   approval: "auto",
   costClass: "free",
+  family: null,
   input: z.object({ name: z.string().min(1).max(64), file: z.string().max(200).optional() }),
   execute: (ctx, input) => readSkillForAgent(ctx.run.workspaceId, ctx.run.agentId, input.name, input.file),
 })

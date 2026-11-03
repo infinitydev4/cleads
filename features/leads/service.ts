@@ -20,6 +20,8 @@ import type { LeadDetail, LeadList, LeadRow } from "./types"
 import { leadAiReason } from "@/features/prospect-audit/latest"
 import { latestPitchSummary } from "@/features/offer-pitch/latest"
 import { forgetLead } from "@/features/copilot/forget"
+import { withVia } from "@/lib/ai/acting"
+import { viaAgent } from "@/features/ai/agents"
 
 const iso = (d: Date | null | undefined) => d?.toISOString() ?? null
 const OWNER_ROLES = ["OWNER", "MANAGER", "SDR", "CLOSER"] as const
@@ -177,6 +179,8 @@ export function toActivity(a: ActivityRow): LeadDetail["activities"][number] {
     outcome: typeof d.outcome === "string" ? d.outcome : null,
     durationMin: typeof d.durationMin === "number" ? d.durationMin : null,
     event: typeof d.event === "string" ? d.event : null,
+    // E28: what an agent did for the person names the agent.
+    via: d.via && typeof d.via === "object" && typeof (d.via as { agentId?: unknown }).agentId === "string" ? viaAgent((d.via as { agentId: string }).agentId) : null,
   }
 }
 
@@ -281,7 +285,7 @@ export async function listSectors(user: CurrentUser) {
 type Tx = Prisma.TransactionClient
 
 async function log(tx: Tx, user: CurrentUser, leadId: string, kind: "NOTE" | "CALL" | "STATUS_CHANGE" | "SYSTEM", body: string | null, data?: Prisma.InputJsonValue) {
-  await tx.activity.create({ data: { workspaceId: user.workspaceId, leadId, actorId: user.id, actorKind: "USER", kind, body, data } })
+  await tx.activity.create({ data: { workspaceId: user.workspaceId, leadId, actorId: user.id, actorKind: "USER", kind, body, data: withVia(data) } })
 }
 
 /** Recomputes the score from what the fiche now holds. Called after every change to its data. */

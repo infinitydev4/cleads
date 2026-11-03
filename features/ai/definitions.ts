@@ -1,5 +1,5 @@
 import { z } from "zod"
-import type { AgentDefinition, Prisma, SkillMode } from "@prisma/client"
+import { Prisma, type AgentDefinition, type SkillMode } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { audit } from "@/lib/audit"
 import type { CurrentUser } from "@/lib/auth/guard"
@@ -10,6 +10,8 @@ import { AI_ROLES, ROLES, modelLabel, resolveRole, type AiRole } from "@/lib/ai/
 import { evidenceSummary, requireEvidence } from "@/features/quality/gate"
 import { isSuiteId } from "@/features/quality/labels"
 import { AGENTS, AGENT_IDS, usesSkills, type AgentDef, type AgentId } from "./agents"
+import { ACTION_FAMILIES, FAMILY_INFO, FAMILY_MODES, allowedModes, type ActionFamily, type FamilyMode } from "./actions/families"
+import { effectivePolicy, storedPolicy, type AgentPolicy } from "./actions/policy"
 
 /**
  * The workspace's layer over each agent (docs/crm-v1/AGENTS-IA.md §7): team instructions and skills (owners and
@@ -27,12 +29,14 @@ export interface EffectiveAgent {
   instructions: string | null
   enabled: boolean
   version: number
+  /** E28: its rights matrix, the code's families with the owner's choices. */
+  policy: AgentPolicy
 }
 
 const codeCapMicros = (def: AgentDef) => eurToMicros(def.limits.maxCostEur)
 
 /** The code's agent with the workspace's layer; anything out of bounds in the row falls back to the code. */
-export function mergeAgent(def: Readonly<AgentDef>, row: Pick<AgentDefinition, "instructions" | "modelRole" | "maxSteps" | "maxCostMicros" | "enabled" | "version"> | null): EffectiveAgent {
+export function mergeAgent(def: Readonly<AgentDef>, row: Pick<AgentDefinition, "instructions" | "modelRole" | "maxSteps" | "maxCostMicros" | "enabled" | "version" | "actionPolicy"> | null): EffectiveAgent {
   const modelRole = row?.modelRole && (def.modelRoles as readonly string[]).includes(row.modelRole) ? (row.modelRole as AiRole) : def.modelRole
   return {
     def,
@@ -42,6 +46,7 @@ export function mergeAgent(def: Readonly<AgentDef>, row: Pick<AgentDefinition, "
     instructions: row?.instructions?.trim() || null,
     enabled: row?.enabled ?? true,
     version: row?.version ?? 0,
+    policy: effectivePolicy(def, row?.actionPolicy ?? null),
   }
 }
 
@@ -61,6 +66,16 @@ export interface AgentHistoryLine {
   changes: string[]
   createdAt: string
   createdBy: string | null
+}
+
+export interface AgentFamilyView {
+  id: ActionFamily
+  label: string
+  hint: string
+  mode: FamilyMode
+  /** The code's level. */
+  codeMode: FamilyMode
+  modes: FamilyMode[]
 }
 
 export interface AgentView {
@@ -87,6 +102,9 @@ export interface AgentView {
   updatedBy: string | null
   skills: AgentSkillLink[]
   history: AgentHistoryLine[]
+  /** E28: the families of actions it works with, in the matrix's order. */
+  families: AgentFamilyView[]
+  picksTools: boolean
 }
 
 export interface AgentsPage {
@@ -145,6 +163,15 @@ export async function agentViews(actor: CurrentUser): Promise<AgentsPage> {
         updatedBy: row && row.version > 0 ? who(row.updatedById) : null,
         skills: links.filter((l) => l.agentId === id).map((l) => ({ skillId: l.skillId, name: l.skill.name, mode: l.mode, archived: !!l.skill.archivedAt })),
         history: (row?.versions ?? []).map((v) => ({ version: v.version, changes: v.changes, createdAt: v.createdAt.toISOString(), createdBy: who(v.createdById) })),
+        families: ACTION_FAMILIES.filter((f) => def.families[f]).map((f) => ({
+          id: f,
+          label: FAMILY_INFO[f].label,
+          hint: FAMILY_INFO[f].hint,
+          mode: eff.policy[f] ?? "off",
+          codeMode: def.families[f]!,
+          modes: allowedModes(f, !!def.picksTools),
+        })),
+        picksTools: !!def.picksTools,
       }
     }),
   }
@@ -162,6 +189,8 @@ export const updateAgentSchema = z
     maxSteps: z.number().int().min(1, "Une étape au moins").nullable().optional(),
     maxCostEur: z.number().positive("Un plafond positif").nullable().optional(),
     enabled: z.boolean().optional(),
+    /** E28: the agent's rights matrix, family by family (owner). */
+    actionPolicy: z.partialRecord(z.enum(ACTION_FAMILIES), z.enum(FAMILY_MODES)).optional(),
     /** A role whose model scored below the current one in its evaluation, chosen knowingly (E27). */
     acceptRegression: z.boolean().optional(),
   })
@@ -176,6 +205,7 @@ interface Snapshot {
   maxCostMicros: number | null
   enabled: boolean
   skills: { name: string; mode: SkillMode }[]
+  actionPolicy: Record<string, FamilyMode> | null
 }
 
 /**
@@ -185,9 +215,13 @@ interface Snapshot {
 export async function updateAgentDefinition(actor: CurrentUser, agentId: AgentId, input: UpdateAgentInput, ip?: string | null): Promise<AgentView> {
   const def = AGENTS[agentId]
   const wantsInstructions = input.instructions !== undefined || input.skills !== undefined
-  const wantsSettings = input.modelRole !== undefined || input.maxSteps !== undefined || input.maxCostEur !== undefined || input.enabled !== undefined
+  const wantsSettings = input.modelRole !== undefined || input.maxSteps !== undefined || input.maxCostEur !== undefined || input.enabled !== undefined || input.actionPolicy !== undefined
   if (wantsInstructions && !can(actor.role, "skill:manage")) throw new LeadError("forbidden", "Seuls le propriétaire et les managers changent les consignes et les skills d'un agent.", 403)
-  if (wantsSettings && !can(actor.role, "ai:manage")) throw new LeadError("forbidden", "Seul le propriétaire change le modèle, les limites ou l'activation d'un agent.", 403)
+  if (wantsSettings && !can(actor.role, "ai:manage")) throw new LeadError("forbidden", "Seul le propriétaire change le modèle, les limites, les droits ou l'activation d'un agent.", 403)
+  for (const [family, mode] of Object.entries(input.actionPolicy ?? {}) as [ActionFamily, FamilyMode][]) {
+    if (!def.families[family]) throw new LeadError("invalid", `${def.label} ne travaille pas avec « ${FAMILY_INFO[family].label} ».`, 400)
+    if (!allowedModes(family, !!def.picksTools).includes(mode)) throw new LeadError("invalid", `${def.label} : « ${FAMILY_INFO[family].label} » ne peut pas passer sans clic.`, 400)
+  }
   if (input.modelRole && !def.modelRoles.includes(input.modelRole)) throw new LeadError("invalid", `${def.label} ne peut pas utiliser le rôle « ${ROLES[input.modelRole].label} ».`, 400)
   if (input.maxSteps != null && input.maxSteps > def.limits.maxSteps) throw new LeadError("invalid", `${def.label} : ${def.limits.maxSteps} étapes au plus.`, 400)
   if (input.maxCostEur != null && eurToMicros(input.maxCostEur) > codeCapMicros(def)) {
@@ -209,6 +243,7 @@ export async function updateAgentDefinition(actor: CurrentUser, agentId: AgentId
     if (found !== input.skills.length) throw new LeadError("invalid", "Un des skills choisis n'existe pas ou est archivé.", 400)
   }
 
+  let rights: { before: unknown; after: unknown } | null = null
   const changes = await prisma.$transaction(async (tx) => {
     await tx.agentDefinition.createMany({ data: [{ workspaceId: actor.workspaceId, agentId }], skipDuplicates: true })
     // Locks the row: two saves of the same agent are written one after the other.
@@ -239,6 +274,14 @@ export async function updateAgentDefinition(actor: CurrentUser, agentId: AgentId
       data.enabled = input.enabled
       changed.push("enabled")
     }
+    if (input.actionPolicy !== undefined) {
+      const policy = storedPolicy(def, { ...effectivePolicy(def, before.actionPolicy), ...input.actionPolicy })
+      if (JSON.stringify(policy) !== JSON.stringify(before.actionPolicy ?? null)) {
+        data.actionPolicy = policy ?? Prisma.DbNull
+        rights = { before: before.actionPolicy ?? null, after: policy }
+        changed.push("rights")
+      }
+    }
     if (input.skills !== undefined) {
       const key = (l: { skillId: string; mode: SkillMode }[]) =>
         l
@@ -261,12 +304,13 @@ export async function updateAgentDefinition(actor: CurrentUser, agentId: AgentId
       maxCostMicros: after.maxCostMicros,
       enabled: after.enabled,
       skills: skills.map((s) => ({ name: s.skill.name, mode: s.mode })),
+      actionPolicy: (after.actionPolicy as Record<string, FamilyMode> | null) ?? null,
     }
     await tx.agentDefinitionVersion.create({ data: { definitionId: after.id, version: after.version, snapshot: snapshot as unknown as Prisma.InputJsonValue, changes: changed, createdById: actor.id } })
     return changed
   })
   if (changes.length) {
-    await audit({ action: "ai.agent_updated", actorId: actor.id, workspaceId: actor.workspaceId, entityType: "AgentDefinition", entityId: agentId, metadata: { agentId, changes, ...(evidence && changes.includes("model") ? { evidence } : {}) }, ip })
+    await audit({ action: "ai.agent_updated", actorId: actor.id, workspaceId: actor.workspaceId, entityType: "AgentDefinition", entityId: agentId, metadata: { agentId, changes, ...(evidence && changes.includes("model") ? { evidence } : {}), ...(rights ? { rights } : {}) }, ip })
   }
   const page = await agentViews(actor)
   return page.agents.find((a) => a.id === agentId)!

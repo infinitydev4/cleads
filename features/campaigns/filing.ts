@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client"
 import type { CurrentUser } from "@/lib/auth/guard"
 import { LeadError } from "@/features/leads/errors"
+import { withVia } from "@/lib/ai/acting"
 
 type Db = Pick<Prisma.TransactionClient, "campaign">
 type Tx = Prisma.TransactionClient
@@ -25,7 +26,7 @@ export async function setLeadCampaign(tx: Tx, user: CurrentUser, lead: { id: str
     ? `Rangée dans la campagne « ${campaign.name} »${before ? ` (venait de « ${before.name} »)` : ""}`
     : `Retirée de la campagne « ${before?.name ?? "?"} »`
   await tx.activity.create({
-    data: { workspaceId: user.workspaceId, leadId: lead.id, actorId: user.id, actorKind: "USER", kind: "SYSTEM", body: how ? `${body} (${how})` : body, data: { event: "campaign", from: lead.campaignId, to: campaign?.id ?? null } },
+    data: { workspaceId: user.workspaceId, leadId: lead.id, actorId: user.id, actorKind: "USER", kind: "SYSTEM", body: how ? `${body} (${how})` : body, data: withVia({ event: "campaign", from: lead.campaignId, to: campaign?.id ?? null }) },
   })
   return true
 }

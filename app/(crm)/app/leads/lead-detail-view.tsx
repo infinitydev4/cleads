@@ -440,7 +440,7 @@ function Timeline({ lead, onChange }: { lead: LeadDetail; onChange: (lead: LeadD
               <div className="min-w-0 flex-1">
                 {head && <p className="font-medium">{head}</p>}
                 {text && <p className="whitespace-pre-wrap break-words">{text}</p>}
-                <p className="text-xs text-muted-foreground">{a.actorName ?? (a.actorKind === "SYSTEM" ? "Système" : "—")} · {ago(a.occurredAt)}</p>
+                <p className="text-xs text-muted-foreground">{a.actorName ?? (a.actorKind === "SYSTEM" ? "Système" : "—")}{a.via ? `, ${a.via}` : ""} · {ago(a.occurredAt)}</p>
               </div>
             </li>
           )

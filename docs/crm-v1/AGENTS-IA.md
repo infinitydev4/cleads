@@ -1,8 +1,8 @@
 # Couche agentique IA du CRM Cleads
 
-> Architecture de référence décidée le 2 novembre 2026 (décisions D13 à D27 de [PLAN.md](PLAN.md)). Elle sert de spécification aux epics E17 à E27.
+> Architecture de référence décidée le 2 novembre 2026 (décisions D13 à D27 de [PLAN.md](PLAN.md)), complétée le 3 novembre 2026 pour le copilote qui agit (D28 à D35). Elle sert de spécification aux epics E17 à E28.
 >
-> **État** : le socle (E17), le worker (E18), les agents, skills et catalogue d'offres (E19), l'audit des prospects (E20), les offres argumentées (E21), la rédaction et le classement des réponses (E22), le Studio Web (E23), le copilote (E24), le Stratège et le tri des fiches importées (E25), l'aile « Agence IA » du QG 3D (E26) et la qualité de l'IA (E27) sont implémentés : `lib/ai/`, `features/ai/`, `features/offers/`, `features/prospect-audit/`, `features/offer-pitch/`, `features/email-draft/`, `features/reply-triage/`, `features/studio/`, `features/copilot/`, `features/strategy/`, `features/relevance/`, `features/quality/`, `evals/`, `worker/`, Réglages › IA, Agents IA (`/app/agents`, dont l'onglet « Qualité »), Studio Web (`/app/studio`), les onglets « Audit IA », « Offres suggérées » et « Maquette » des fiches, le Brouillon IA, les suggestions de la boîte, le panneau du copilote (⌘J), le Stratège de la page Campagnes, la pertinence des fiches d'une campagne et les espaces « Agents IA » et « Studio Web » du QG 3D (`features/hq/agency.ts`, `components/crm/hq/scene/agency.tsx`). Toutes les sections décrivent ce qui existe.
+> **État** : le socle (E17), le worker (E18), les agents, skills et catalogue d'offres (E19), l'audit des prospects (E20), les offres argumentées (E21), la rédaction et le classement des réponses (E22), le Studio Web (E23), le copilote (E24), le Stratège et le tri des fiches importées (E25), l'aile « Agence IA » du QG 3D (E26), la qualité de l'IA (E27) et le catalogue d'actions du copilote avec la matrice des droits des agents (E28, lot 1) sont implémentés : `lib/ai/`, `features/ai/actions/`, `features/ai/`, `features/offers/`, `features/prospect-audit/`, `features/offer-pitch/`, `features/email-draft/`, `features/reply-triage/`, `features/studio/`, `features/copilot/`, `features/strategy/`, `features/relevance/`, `features/quality/`, `evals/`, `worker/`, Réglages › IA, Agents IA (`/app/agents`, dont l'onglet « Qualité »), Studio Web (`/app/studio`), les onglets « Audit IA », « Offres suggérées » et « Maquette » des fiches, le Brouillon IA, les suggestions de la boîte, le panneau du copilote (⌘J), le Stratège de la page Campagnes, la pertinence des fiches d'une campagne et les espaces « Agents IA » et « Studio Web » du QG 3D (`features/hq/agency.ts`, `components/crm/hq/scene/agency.tsx`). Toutes les sections décrivent ce qui existe.
 
 ## 1. Objet
 
@@ -23,7 +23,7 @@ Trois contraintes encadrent le tout : plusieurs modèles interchangeables, l'hum
    - *Workflow* : le code enchaîne les étapes et appelle un modèle là où il faut, avec une sortie typée (zod). C'est prévisible, testable et peu coûteux. Il sert pour l'audit, les offres, les brouillons et le Studio.
    - *Agent* : le modèle choisit lui-même ses outils, dans une boucle bornée (`ToolLoopAgent`). On le réserve à ce qui est vraiment ouvert : le copilote et le stratège.
 2. **Délégation.** Une exécution porte la personne qui l'a demandée (`requestedById`). Chaque outil vérifie les droits de cette personne par les services existants (`features/*/service.ts`, `lib/rbac.ts`) : un agent ne peut jamais faire plus qu'elle. Le compte de service `AGENT` ne sert qu'aux exécutions planifiées.
-3. **L'humain valide ce qui sort du CRM** : email, inscription en séquence, recherche Extractor, lien envoyé au prospect. Le pied de page légal et la désinscription restent du code.
+3. **L'humain valide ce qui sort du CRM** : email, inscription en séquence, recherche Extractor, lien envoyé au prospect. Le pied de page légal et la désinscription restent du code. Depuis E28 (D28), une recherche Extractor est validée par le clic sur l'action ou sur le plan qui la contient ; ce qui contacte un prospect (inscription ou reprise d'une séquence, rendez-vous, lien de maquette) attend toujours son propre clic, qui montre les destinataires.
 4. **Faits sourcés.** Chaque affirmation sur un prospect s'accompagne de sa preuve (URL, mesure, capture), affichée dans l'interface. Ni faux avis, ni chiffre inventé.
 5. **Contenu non fiable.** Les pages web et les avis peuvent cacher des consignes. Une étape sans outils les lit et rend une sortie structurée et bornée ; seules ces données passent aux étapes suivantes.
 6. **L'IA reste une assistance.** Si la passerelle ou un fournisseur tombe, le CRM continue de fonctionner, et les boutons IA disent qu'ils sont indisponibles.
@@ -233,12 +233,24 @@ Chaque outil est déclaré une seule fois (`defineTool`) avec :
 
 Un outil appelle un service existant ; il ne touche jamais la base directement.
 
-| Famille | Exemples | Validation |
+**Catalogue d'actions (E28, `features/ai/actions/`).** Chaque opération du CRM qu'un agent peut faire pour une personne y est déclarée une fois (64 actions), avec sa famille, son droit, son niveau de validation et ce qu'une étape suivante peut en réutiliser. Le copilote l'appelle dans le même processus ; le serveur MCP du CRM (E29, D30) publiera le même catalogue.
+
+| Famille | Exemples | Niveau (D28) |
 |---|---|---|
-| Lecture | `get_lead`, `search_leads`, `get_campaign_metrics`, `get_audit`, `list_offers` | auto |
-| Écriture interne | `add_note`, `create_task`, `save_audit`, `save_recommendations`, `enrich_company`, `propose_contact` | auto, journalisée avec `actorKind = AGENT` |
-| Effet externe | `send_email`, `enroll_in_sequence`, `launch_search`, `share_preview` | **toujours par une personne** |
-| Interdit aux agents | supprimer, fusionner, gérer les boîtes, exporter, changer les droits | — |
+| Lire le CRM | `search_leads`, `get_lead`, `get_timeline`, `get_pipeline`, `get_campaign_sorting`, `list_searches`, `preview_import`, `get_metrics` | sans clic |
+| Lire le web et l'Extractor | `list_sectors`, `search_prospect_base`, `extractor_health` (API REST de l'Extractor) ; outils web de l'Auditeur | sans clic |
+| Notes, tâches, étiquettes | `add_note`, `log_call`, `create_task`, `complete_task`, `reschedule_task`, `tag_leads`, `untag_leads` | sans clic, « Annuler » sur la carte quand c'est possible |
+| Fiches et pipeline | `create_lead`, `update_lead`, `set_lead_status`, `assign_leads`, `file_in_campaign`, `qualify_lead`, `move_deal` | un clic |
+| Campagnes | `create_campaign`, `update_campaign` | un clic |
+| Prospection | `start_search`, `cancel_search`, `import_search`, `sort_campaign`, `act_on_target` | un clic |
+| Travaux d'IA | `start_audit`, `suggest_offers`, `decide_offer`, `draft_email`, `draft_reply`, `start_studio`, `studio_build`, `studio_revise`, `propose_targets` | un clic |
+| Séquences et rendez-vous | `stop_enrollment`, `pause_sequence`, `record_meeting_outcome` | un clic |
+| Contact d'un prospect | `enroll_in_sequence`, `resume_sequence`, `book_meeting`, `change_meeting`, `share_studio_link` (`costClass: "external"`) | **toujours son propre clic** |
+| Navigation | `open_page` | sans clic |
+| Interdit aux agents | supprimer, fusionner, gérer les boîtes, exporter, changer les droits, les skills ou les offres | — |
+
+- **Chargement à la demande** : le copilote voit un noyau (`search_leads`, `get_lead`, `get_today`, `list_campaigns`, `open_page`, `read_skill`) et l'outil `find_actions` (`toolSearch` de l'AI SDK 7, recherche maison en français qui pèse plus les mots rares) ; les actions trouvées se chargent à l'étape suivante, celles du dernier message dès le tour suivant.
+- **Traçabilité** : une action faite par un agent garde la personne comme auteur ; `lib/ai/acting.ts` ajoute `via` (agent, exécution) au journal d'audit et à l'historique des fiches, qui affichent « via le Copilote ».
 
 **MCP de l'Extractor.**
 - **Connexion** : client `@ai-sdk/mcp` en Streamable HTTP vers `/mcp`, avec la clé `crm`, côté serveur seulement ; le worker passe par le réseau local du VPS.
@@ -357,10 +369,15 @@ Peut valider l'action d'un agent : la personne qui a lancé l'exécution, ou un 
 - **Tri** : le lancer demande `ai:use` et `campaign:manage` ; il ne juge que les fiches que la personne voit. Trancher une fiche demande `ai:use` et, sans `campaign:manage`, de pouvoir modifier la fiche.
 - **Routes** : `GET` et `POST /api/ai/strategy` ; `POST /api/ai/strategy/targets/[id]` (`campaign`, `search` avec la recherche confirmée, `dismiss`) ; `GET` et `POST /api/campaigns/[id]/relevance` ; `PATCH /api/campaigns/[id]/relevance/[relevanceId]`.
 
-**Copilote** (E24) :
-- **Accès** : `ai:use`. Ses outils sont ceux que le rôle permet, et chacun passe par le service habituel au nom de la personne : il voit et fait exactement ce qu'elle peut. Un lecteur n'a pas de copilote (chaque tour coûte).
+**Copilote** (E24, E28) :
+- **Accès** : `ai:use`. Ses actions sont celles que le rôle permet et que sa matrice ouvre, et chacune passe par le service habituel au nom de la personne : il voit et fait exactement ce qu'elle peut, jamais plus. Un lecteur n'a pas de copilote (chaque tour coûte).
 - **Conversations** : privées ; ni les managers ni le propriétaire ne les lisent. Les exécutions des tours restent visibles comme les autres (Agents IA › Exécutions), avec des étapes courtes.
-- **Routes** : `POST /api/ai/chat` (un tour, en streaming) ; `GET` et `DELETE /api/ai/conversations` (liste, tout effacer) ; `GET` et `DELETE /api/ai/conversations/[id]` ; `GET /api/ai/runs/[id]?view=status` (état d'une exécution, pour les cartes).
+- **Routes** : `POST /api/ai/chat` (un tour, en streaming) ; `GET` et `DELETE /api/ai/conversations` (liste, tout effacer) ; `GET` et `DELETE /api/ai/conversations/[id]` ; `GET /api/ai/runs/[id]?view=status` (état d'une exécution, pour les cartes) ; `POST /api/ai/actions/undo` (annuler une action faite sans clic, relue dans la conversation stockée) ; `POST /api/ai/transcribe` (dictée).
+
+**Matrice des droits des agents** (E28, Agents IA › Agents › « Droits des agents ») :
+- **Principe** : une action n'est permise que si la personne en a le droit (`lib/rbac.ts`), si la famille est ouverte pour l'agent, et si elle n'est pas interdite aux agents. Contrôlé à l'offre de l'outil, à la validation et à l'exécution.
+- **Familles** : chaque agent déclare les siennes dans le code (`AGENTS[...].families`) ; une famille qu'il ne déclare pas reste fermée.
+- **Réglage** (propriétaire, `ai:manage`, `PUT /api/ai/agents/[id]` avec `actionPolicy`) : pour le copilote et le Stratège, une famille se coupe ou attend un clic ; jamais en dessous du niveau de l'action, et ce qui contacte un prospect reste à son propre clic. Pour un spécialiste, une famille est seulement ouverte ou coupée ; coupée, l'agent ne s'exécute plus. Stocké dans `AgentDefinition.actionPolicy` (seulement l'écart au code), versionné et journalisé avec l'avant et l'après.
 
 **Réglages › IA** (`/app/settings/ai`) :
 - **Accès** : la page est visible avec `ai:use`. Le propriétaire la modifie (`ai:manage`) ; les autres la lisent.
@@ -553,8 +570,10 @@ Cache-Control: private, no-store
 **Copilote (E24, `features/copilot/`, `components/crm/copilot/`).**
 - **Panneau** : à droite, dans la 2D et la 3D, ouvert par ⌘J, par le bouton des barres ou par la palette ⌘K (« Ouvrir le copilote », « Demander au copilote : … »). La conversation survit à la navigation dans le CRM. Dans la 3D, ⌘J marche aussi depuis une fenêtre, et ses liens (fiches citées, « Ouvrir le brouillon », « Ouvrir la maquette ») s'ouvrent dans les fenêtres de la vue (`ModuleWindow`).
 - **Contexte** : le panneau envoie l'adresse de sa page (dans la 3D, celle de la fenêtre ouverte). Le serveur la décrit au modèle en une ligne (fiche, campagne, maquette, liste filtrée et ses filtres) après avoir vérifié que la personne la voit, avec la date et l'heure de Paris. Cette ligne précède la question plutôt que les consignes, qui restent identiques d'un tour à l'autre.
-- **Agent** : un `ToolLoopAgent` (AI SDK 7), rôle `writer` (Sonnet 5.5) ou `fast` (Haiku 5.5) au choix du propriétaire, raisonnement « low », 2 000 jetons au plus par étape et 6 étapes par tour. Ses consignes : persona, règles communes, consignes de l'équipe, catalogue de skills (`offres-cleads`, playbooks), puis la façon de travailler ici.
-- **Outils** : lecture sans validation (`search_leads`, `get_lead`, `get_lead_audit`, `get_lead_offers`, `get_today`, `list_meetings`, `get_pipeline`, `list_campaigns`, `get_campaign`, `read_skill`) ; actions validées (`create_task`, `add_note`, `start_audit`, `suggest_offers`, `draft_email`, `start_studio`). Les résultats sont courts et en français ; l'email et le téléphone du contact restent sur la fiche, et le texte d'un email reçu arrive balisé comme contenu externe.
+- **Agent** : un `ToolLoopAgent` (AI SDK 7), rôle `writer` (Sonnet 5.5), `fast` (Haiku 5.5) ou `designer` (Opus 5.5, après une évaluation, règle d'E27) au choix du propriétaire, raisonnement « low ». Depuis E28 : 3 000 jetons au plus par étape, 10 étapes et 0,20 € par tour (une limite plus basse enregistrée par le propriétaire l'emporte). Ses consignes : persona, règles communes, consignes de l'équipe, catalogue de skills (`offres-cleads`, playbooks), puis la façon de travailler ici, dont la façon d'agir (D28).
+- **Actions (E28)** : le catalogue entier (§9), filtré par le rôle et la matrice. Un noyau est chargé à chaque tour ; le reste se trouve avec `find_actions`. Les résultats sont courts et en français ; l'email et le téléphone du contact restent sur la fiche, et le texte d'un email reçu ou d'une entreprise de l'Extractor arrive balisé comme contenu externe.
+- **Cartes (E28)** : une action faite sans clic montre « Annuler » quand elle s'annule (tâche, étiquettes) ; une action qui contacte un prospect a une carte ambrée qui le dit ; une page ouverte par `open_page` s'ouvre d'elle-même (dans une fenêtre du QG 3D, depuis la 3D), une seule fois.
+- **Dictée (E28)** : un bouton micro enregistre une minute au plus ; `POST /api/ai/transcribe` transcrit par la passerelle (`mistral/voxtral-mini-transcribe-3`, prompts non utilisés pour l'entraînement) et le texte revient dans le champ, à relire. L'audio n'est pas gardé ; la dictée est une courte exécution du copilote (tâche « Dictée »), facturée à la minute.
 - **Validation** : `toolApproval` de l'AI SDK. Le serveur écrit la carte (« Créer la tâche « Rappeler Jean » sur la fiche Plomberie Dupont, pour le mardi 10 novembre. », « … 0,30 € au plus ») ; un appel impossible est refusé avant de demander, et le modèle en lit la raison. La personne valide ou refuse ; une validation laissée en attente est refusée à la question suivante. Refuser n'appelle pas le modèle.
 - **Le serveur garde la conversation** : du navigateur, il ne prend que le texte d'une question, ou la réponse aux validations du dernier message, appariée à ce qu'il a lui-même demandé (appel, identifiant de validation, état). Un historique forgé, une validation inventée, rejouée ou venue d'une autre personne n'atteignent ni le modèle ni les outils.
 - **Budget** : un tour est une exécution du copilote, qui réserve son plafond (0,10 €) avant d'écrire quoi que ce soit. Chaque étape est facturée avant la suivante, sa sortie est bornée par ce qui reste au pire prix du modèle et de ses secours, et le tour s'arrête quand une réponse courte ne tiendrait plus. L'historique envoyé au modèle se limite aux 24 derniers messages, et les résultats d'outils des réponses plus anciennes que les deux dernières y sont résumés : le modèle relance l'outil s'il en a besoin.
@@ -716,5 +735,6 @@ Le code est dans `features/quality/`, les jeux de référence dans `evals/` (voi
 | Clé Vercel AI Gateway (compte Vercel) et clé gratuite Google PageSpeed Insights | le propriétaire | E17, E20 |
 | Vérifier puis activer les offres du catalogue V1 dans Agents IA › Offres (prix indicatifs) | le propriétaire | E21 |
 | DPA des fournisseurs, politique de confidentialité, registre des traitements | le propriétaire | ouverture à l'équipe |
+| Premier essai réel de la dictée (quelques secondes) pour lire le prix du modèle de transcription sur la passerelle | le propriétaire | usage de la dictée |
 
-**E17 à E27 sont faits.** Les évaluations se lancent à la demande : la première de chaque suite, sur le modèle en service, sert de référence aux suivantes.
+**E17 à E27 sont faits ; E28 est en cours** (lot 1 fait : catalogue d'actions, matrice des droits, navigation, dictée ; lots 2 et 3 : missions, évaluation du copilote). Les évaluations se lancent à la demande : la première de chaque suite, sur le modèle en service, sert de référence aux suivantes.

@@ -209,7 +209,7 @@ describe("untrusted content", () => {
 describe("gateway, agents and tools", () => {
   it("never routes to providers that train on our data, and tags spend by person and agent", () => {
     expect(gatewayOptions({ models: ["x/y"], userKey: "u1", agentId: "auditor" })).toEqual({
-      gateway: { models: ["x/y"], disallowPromptTraining: true, user: "u1", tags: ["agent:auditor"] },
+      gateway: { models: ["x/y"], disallowPromptTraining: true, caching: "auto", user: "u1", tags: ["agent:auditor"] },
     })
   })
 
@@ -225,11 +225,11 @@ describe("gateway, agents and tools", () => {
 
   it("refuses tools that would give an agent a forbidden right or act outside the CRM without approval", () => {
     const base = { description: "Test", input: z.object({}), execute: async () => ({}) }
-    expect(() => defineTool({ ...base, name: "wipe", permission: "data:delete", approval: "user", costClass: "free", summarize: () => "x" })).toThrow(/interdit/)
-    expect(() => defineTool({ ...base, name: "send", permission: "email:send", approval: "auto", costClass: "external" })).toThrow(/validation/)
-    expect(() => defineTool({ ...base, name: "send", permission: "email:send", approval: "user", costClass: "external" })).toThrow(/résumé/)
-    expect(() => defineTool({ ...base, name: "Bad-Name", permission: null, approval: "auto", costClass: "free" })).toThrow(/snake_case/)
-    expect(defineTool({ ...base, name: "read_lead", permission: "lead:read", approval: "auto", costClass: "free" }).name).toBe("read_lead")
+    expect(() => defineTool({ ...base, name: "wipe", permission: "data:delete", approval: "user", costClass: "free", family: "records", summarize: () => "x" })).toThrow(/interdit/)
+    expect(() => defineTool({ ...base, name: "send", permission: "email:send", approval: "auto", costClass: "external", family: "outreach" })).toThrow(/validation/)
+    expect(() => defineTool({ ...base, name: "send", permission: "email:send", approval: "user", costClass: "external", family: "outreach" })).toThrow(/résumé/)
+    expect(() => defineTool({ ...base, name: "Bad-Name", permission: null, approval: "auto", costClass: "free", family: null })).toThrow(/snake_case/)
+    expect(defineTool({ ...base, name: "read_lead", permission: "lead:read", approval: "auto", costClass: "free", family: "read_crm" }).name).toBe("read_lead")
     expect(FORBIDDEN_FOR_AGENTS).toContain("ai:manage")
   })
 })

@@ -150,16 +150,41 @@ describe("the copilot's tools", () => {
     expect(AGENTS.copilot.available).toBe(true)
   })
 
-  it("asks the person before anything that changes or spends", () => {
-    const actions = COPILOT_TOOLS.filter((t) => t.approval === "user").map((t) => t.name)
-    expect(actions.sort()).toEqual(["add_note", "create_task", "draft_email", "start_audit", "start_studio", "suggest_offers"])
-    expect(COPILOT_TOOLS.filter((t) => t.approval === "auto").every((t) => t.costClass === "free")).toBe(true)
+  it("asks the person before anything that changes or spends, except reading and small notes (D28)", () => {
+    const auto = COPILOT_TOOLS.filter((t) => t.approval === "auto")
+    expect(auto.every((t) => t.costClass === "free")).toBe(true)
+    expect(auto.every((t) => t.family === null || ["read_crm", "read_web", "notes", "navigation"].includes(t.family))).toBe(true)
+    expect(auto.filter((t) => t.family === "notes").map((t) => t.name).sort()).toEqual(["add_note", "complete_task", "create_task", "log_call", "reschedule_task", "tag_leads", "untag_leads"])
+    // What contacts a prospect always waits for its own click.
+    expect(COPILOT_TOOLS.filter((t) => t.costClass === "external").map((t) => t.name).sort()).toEqual(["book_meeting", "change_meeting", "enroll_in_sequence", "resume_sequence", "share_studio_link"])
+    expect(COPILOT_TOOLS.filter((t) => t.costClass === "external").every((t) => t.approval === "user")).toBe(true)
   })
 
   it("offers only what the role allows", () => {
     const names = (role: "OWNER" | "SDR" | "CLOSER" | "VIEWER") => toolsFor({ role }, { skills: true }).map((t) => t.name)
     expect(names("OWNER")).toHaveLength(COPILOT_TOOLS.length)
-    expect(names("VIEWER")).toEqual(["search_leads", "get_lead", "get_lead_audit", "get_today", "list_meetings", "get_pipeline", "list_campaigns", "get_campaign", "read_skill"])
+    expect(names("VIEWER")).toEqual([
+      "search_leads",
+      "get_lead",
+      "get_timeline",
+      "get_lead_audit",
+      "get_today",
+      "list_meetings",
+      "get_pipeline",
+      "list_campaigns",
+      "get_campaign",
+      "get_campaign_sorting",
+      "get_strategy",
+      "get_metrics",
+      "list_team",
+      "list_offers",
+      "read_skill",
+      "open_page",
+    ])
+    // A closer searches nothing on the Extractor and imports nothing.
+    expect(names("CLOSER")).not.toContain("start_search")
+    expect(names("CLOSER")).not.toContain("import_search")
+    expect(names("SDR")).toContain("start_search")
     expect(toolsFor({ role: "SDR" }, { skills: false }).map((t) => t.name)).not.toContain("read_skill")
     expect(copilotRules({ role: "CLOSER" })).toContain("rôle : Closer")
   })
@@ -171,6 +196,7 @@ describe("the copilot's tools", () => {
       permission: "task:write",
       approval: "user",
       costClass: "free",
+      family: "notes",
       input: z.object({ ok: z.boolean() }),
       summarize: async (input) => {
         if (!input.ok) throw new LeadError("not_found", "Fiche introuvable pour cette personne.", 404)

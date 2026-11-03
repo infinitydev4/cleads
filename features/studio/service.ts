@@ -15,6 +15,7 @@ import { withAssets } from "./document"
 import { stateOf, type LeadStudio, type LinkView, type SiteSummary, type SiteView, type VersionView } from "./labels"
 import { addDays, hashToken, LINK_DAYS, newNonce, previewHost, previewUrl, PURGE_DAYS, shareToken } from "./link"
 import { briefSchema, collectedSchema, type Brief, type VersionChecks, type VersionScores } from "./schemas"
+import { withVia } from "@/lib/ai/acting"
 
 /**
  * The Studio Web in the CRM (E23, docs/crm-v1/AGENTS-IA.md §16): start a site from a fiche, edit its brief, generate
@@ -290,7 +291,7 @@ export async function shareLink(actor: CurrentUser, siteId: string, action: "cre
     },
   })
   const until = expiresAt.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Paris" })
-  await prisma.activity.create({ data: { workspaceId: actor.workspaceId, leadId: site.leadId, actorId: actor.id, actorKind: "USER", kind: "SYSTEM", body: fresh ? `Lien de la maquette créé, valable jusqu’au ${until}` : `Lien de la maquette prolongé jusqu’au ${until}`, data: { siteId: site.id } } })
+  await prisma.activity.create({ data: { workspaceId: actor.workspaceId, leadId: site.leadId, actorId: actor.id, actorKind: "USER", kind: "SYSTEM", body: fresh ? `Lien de la maquette créé, valable jusqu’au ${until}` : `Lien de la maquette prolongé jusqu’au ${until}`, data: withVia({ siteId: site.id }) } })
   await journal({ action: fresh ? "studio.link_created" : "studio.link_extended", actorId: actor.id, workspaceId: actor.workspaceId, entityType: "GeneratedSite", entityId: site.id, metadata: { expiresAt: expiresAt.toISOString() }, ip })
   return linkView(updated, await names([updated.linkCreatedById]), now)!
 }

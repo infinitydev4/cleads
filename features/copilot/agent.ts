@@ -1,33 +1,46 @@
-import { ToolLoopAgent, stepCountIs, type LanguageModel, type StepResult, type ToolSet } from "ai"
+import { ToolLoopAgent, stepCountIs, toolSearch, type LanguageModel, type ModelMessage, type StepResult, type ToolSet } from "ai"
+import { z } from "zod"
 import type { CurrentUser } from "@/lib/auth/guard"
 import { ROLE_LABELS } from "@/lib/crm/roles"
 import { gatewayOptions } from "@/lib/ai/gateway"
+import { estimateTokens } from "@/lib/ai/pricing"
 import type { ModelDeps } from "@/features/ai/calls"
 import { loopBudget, type LoopBudget } from "@/features/ai/loop"
 import { agentRuntime } from "@/features/ai/runtime"
 import type { RunContext } from "@/features/ai/runs"
-import { chatTools } from "@/features/ai/tools"
+import { chatTools, type AnyToolDef } from "@/features/ai/tools"
+import { CORE_ACTIONS, rankActions } from "@/features/ai/actions/catalog"
 import { toolsFor } from "./tools"
 
 /**
- * The copilot as an AI SDK agent (E24): its instructions (persona, common rules, team instructions, skills, then how it
- * works here), the tools the person's role allows, and the run's limits. A turn is short: six steps at most, each one
- * paid for before the next starts, and stopped when the run's cap could not pay for another.
+ * The copilot as an AI SDK agent (E24, E28): its instructions (persona, common rules, team instructions, skills, then
+ * how it works here), the actions the person's role and the copilot's rights matrix allow, and the run's limits. The
+ * core actions are loaded at every turn, with those the last answer used; the others are found on demand
+ * (`find_actions`), so the catalogue's sixty definitions are not paid for at every step. A turn is short: ten steps at
+ * most, each one paid for before the next starts, and stopped when the run's cap could not pay for another.
  */
 
-/** Room for one step's answer, reasoning included: the copilot answers briefly and reasons little. */
-export const STEP_OUTPUT_TOKENS = 2_000
-/** What the tools' descriptions and schemas weigh in each request, for the budget check. */
-const TOOLS_TOKENS = 3_500
+/** Room for one step's answer, reasoning included: a plan of several actions needs a little more than an answer. */
+export const STEP_OUTPUT_TOKENS = 3_000
+/** The search over the catalogue: what the model calls to find an action it does not have yet. */
+export const FIND_ACTIONS = "find_actions"
+const FOUND_PER_SEARCH = 8
+/** The search tool's own definition, in each request. */
+const SEARCH_TOKENS = 300
 
 export function copilotRules(user: Pick<CurrentUser, "role">): string {
   return `## Comment tu travailles ici
-- Tu travailles pour la personne connectée (rôle : ${ROLE_LABELS[user.role]}). Tes outils voient exactement ce qu'elle voit dans le CRM, rien de plus : une fiche introuvable l'est aussi pour elle.
+- Tu travailles pour la personne connectée (rôle : ${ROLE_LABELS[user.role]}). Tes outils voient et font exactement ce qu'elle peut faire dans le CRM, rien de plus : une fiche introuvable l'est aussi pour elle.
 - Chaque question commence par la date et la page ouverte, entre crochets. « Cette fiche », « cette campagne », « la liste » désignent cette page.
-- Lis avant de répondre : n'invente ni fiche, ni chiffre, ni date, ni identifiant. Retrouve un leadId avec search_leads plutôt que de le deviner.
-- Les actions (tâche, note, audit, offres, brouillon d'email, maquette) passent par leur outil : la personne les valide d'un clic dans la conversation. Propose-les quand elles servent ; ne les annonce jamais comme faites avant leur résultat. Une action refusée ne se repropose pas, sauf si elle le redemande.
-- Audit, offres, brouillon et maquette sont confiés aux agents spécialisés et continuent après ta réponse : une carte en suit l'avancement. Dis ce qui va se passer, pas ce qui s'est passé.
-- Rien ne sort du CRM par toi : un email se relit et s'envoie depuis la fiche, par la personne.
+- Lis avant de répondre ou d'agir : n'invente ni fiche, ni chiffre, ni date, ni identifiant, ni volume. Retrouve les leadId avec search_leads plutôt que de les deviner.
+- Tu as sous la main les outils les plus courants. Pour tout le reste (recherches Extractor, imports, statuts, attributions, campagnes, tâches, séquences, rendez-vous, maquettes, Stratège…), appelle ${FIND_ACTIONS} avec ce que tu veux faire, en quelques mots, puis l'action trouvée.
+- Agir pour la personne :
+  - lire, ouvrir une page (open_page), noter, enregistrer un appel, gérer une tâche, étiqueter des fiches se fait tout de suite ;
+  - les autres changements attendent son clic sur la carte de l'action : propose-les quand ils servent, et ne les annonce jamais comme faits avant leur résultat ;
+  - ce qui contacte un prospect (inscription en séquence, rendez-vous, lien de maquette) demande toujours son propre clic, qui montre les destinataires ;
+  - une action refusée ne se repropose pas, sauf si elle le redemande ; quand un outil refuse faute de droit, dis-le, et dis où la personne (ou qui) peut le faire.
+- Les recherches Extractor, audits, offres, brouillons, maquettes et le Stratège travaillent dans le worker, après ta réponse : une carte en suit l'avancement. Dis ce qui va se passer, pas ce qui s'est passé. Une recherche s'importe une fois terminée, avec import_search.
+- Tu ne supprimes, ne fusionnes ni n'exportes rien. Un email isolé se relit et s'envoie depuis la fiche, par la personne.
 - Réponds court, en français : quelques phrases ou une liste à puces, sans tableau ni titre. Cite les fiches par leur nom exact (le panneau en fait des liens). Quand tu ne sais pas, dis-le et dis où regarder.`
 }
 
@@ -45,23 +58,51 @@ export interface CopilotSetup {
   bill: LoopBudget["bill"]
 }
 
+const weights = new Map<string, number>()
+/** What an action's description and schema weigh in a request, measured once. */
+function weightOf(def: AnyToolDef): number {
+  let w = weights.get(def.name)
+  if (w === undefined) {
+    let schema = ""
+    try {
+      schema = JSON.stringify(z.toJSONSchema(def.input as z.ZodType, { unrepresentable: "any" }))
+    } catch {
+      schema = "x".repeat(1_200)
+    }
+    w = estimateTokens(def.description + schema)
+    weights.set(def.name, w)
+  }
+  return w
+}
+
 /**
- * The agent for one turn, billed to `run`. Each step's answer is capped from what the run can still pay at the worst
- * price of the model and its fallbacks; the turn stops when even a short answer would not fit (features/ai/loop.ts).
+ * The agent for one turn, billed to `run`. `recent`: the actions the last answer used, loaded with the core so the
+ * model can carry on with them. Each step's answer is capped from what the run can still pay at the worst price of the
+ * model and its fallbacks; the turn stops when even a short answer would not fit (features/ai/loop.ts).
  */
-export async function copilotAgent(user: CurrentUser, run: RunContext, deps: ModelDeps = {}): Promise<CopilotSetup> {
+export async function copilotAgent(user: CurrentUser, run: RunContext, deps: ModelDeps = {}, opts: { recent?: ReadonlySet<string> } = {}): Promise<CopilotSetup> {
   const runtime = await agentRuntime(run)
   const role = runtime.agent.modelRole === "decision" ? "writer" : runtime.agent.modelRole
   const system = `${runtime.system}\n\n${copilotRules(user)}`
-  const budget = await loopBudget(run, { role, system, stepTokens: STEP_OUTPUT_TOKENS, toolsTokens: TOOLS_TOKENS, stepName: "copilote-etape" }, deps)
-  const { tools, toolApproval } = chatTools(toolsFor(user, { skills: runtime.tools.length > 0 }), { run })
+  const policy = runtime.agent.policy
+  const defs = toolsFor(user, { skills: runtime.tools.length > 0, policy })
+  const loadedAtStart = (name: string) => CORE_ACTIONS.has(name) || !!opts.recent?.has(name)
+  // Loaded now, or named in the conversation (a call, a search result): the most this step's tools can weigh.
+  const toolsTokens = (messages: readonly ModelMessage[]) => {
+    const text = JSON.stringify(messages)
+    return SEARCH_TOKENS + defs.filter((d) => loadedAtStart(d.name) || text.includes(`"${d.name}"`)).reduce((sum, d) => sum + weightOf(d), 0)
+  }
+  const budget = await loopBudget(run, { role, system, stepTokens: STEP_OUTPUT_TOKENS, toolsTokens, stepName: "copilote-etape" }, deps)
+  const built = chatTools(defs, { run, policy })
+  const tools: ToolSet = { [FIND_ACTIONS]: toolSearch({ maxResults: FOUND_PER_SEARCH, search: ({ query, tools: candidates }) => rankActions(query, candidates) }) }
+  for (const def of defs) tools[def.name] = loadedAtStart(def.name) ? built.tools[def.name] : { ...built.tools[def.name], deferLoading: true }
   const maxSteps = runtime.agent.maxSteps
 
   const agent = new ToolLoopAgent<never, ToolSet>({
     model: (deps.languageModel ? deps.languageModel(budget.model) : budget.model) as LanguageModel,
     instructions: system,
     tools,
-    toolApproval,
+    toolApproval: built.toolApproval,
     reasoning: "low",
     providerOptions: gatewayOptions({ models: budget.fallbacks, userKey: run.userKey, agentId: run.agentId }),
     prepareStep: budget.prepareStep,

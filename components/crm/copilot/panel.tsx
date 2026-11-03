@@ -1,8 +1,9 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { usePathname, useRouter } from "next/navigation"
 import { useChat } from "@ai-sdk/react"
-import { isToolUIPart } from "ai"
+import { getToolName, isToolUIPart } from "ai"
 import { ArrowUp, History, Loader2, MessageSquarePlus, Sparkles, Square, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { formatEur } from "@/features/ai/labels"
@@ -10,10 +11,12 @@ import { parsePageKind } from "@/features/copilot/page-kind"
 import { suggestionsFor } from "@/features/copilot/labels"
 import type { ConversationSummary, ConversationView } from "@/features/copilot/conversations"
 import type { CopilotMessage } from "@/features/copilot/messages"
+import { HQ_PATH, openHqWindow, windowPath } from "@/lib/crm/hq-window"
 import { cn } from "@/lib/utils"
 import { Markdown } from "./markdown"
-import { LeadChips, ToolPartView, citedLeads } from "./parts"
+import { LeadChips, ToolPartView, citedLeads, type Undo } from "./parts"
 import { newSession, waitsForApproval, type CopilotSession } from "./copilot"
+import { VoiceButton } from "./voice-button"
 
 /** A conversation this recent is offered back on an empty panel. */
 const RECENT_MS = 12 * 3600_000
@@ -22,7 +25,7 @@ const when = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", 
 
 const STOPPED: Record<NonNullable<NonNullable<CopilotMessage["metadata"]>["stopped"]>, string> = {
   budget: "Réponse arrêtée : le plafond de ce tour est atteint. Demandez la suite si besoin.",
-  steps: "Réponse arrêtée après six étapes : demandez la suite pour qu’il continue.",
+  steps: "Réponse arrêtée après le nombre maximal d’étapes : demandez la suite pour qu’il continue.",
   time: "Réponse arrêtée : durée maximale d’un tour atteinte. Demandez la suite pour qu’il continue.",
   aborted: "Réponse interrompue.",
   error: "La réponse n’a pas abouti.",
@@ -47,7 +50,21 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
   return body as T
 }
 
-function Message({ message, onApprove, busy, userId }: { message: CopilotMessage; onApprove: (id: string, approved: boolean) => void; busy: boolean; userId: string | null }) {
+/** The pages the answers asked to open (open_page), by call: the panel opens each one once, as it arrives. */
+function openedPages(messages: readonly CopilotMessage[]): { id: string; href: string }[] {
+  const out: { id: string; href: string }[] = []
+  for (const m of messages) {
+    if (m.role !== "assistant") continue
+    for (const p of m.parts) {
+      if (!isToolUIPart(p) || getToolName(p) !== "open_page" || p.state !== "output-available") continue
+      const href = (p.output as { open?: unknown } | null)?.open
+      if (typeof href === "string" && href.startsWith("/app")) out.push({ id: p.toolCallId, href })
+    }
+  }
+  return out
+}
+
+function Message({ message, onApprove, onUndo, busy, userId }: { message: CopilotMessage; onApprove: (id: string, approved: boolean) => void; onUndo: Undo; busy: boolean; userId: string | null }) {
   if (message.role === "user") {
     const text = message.parts.map((p) => (p.type === "text" ? p.text : "")).join("\n")
     return (
@@ -62,7 +79,7 @@ function Message({ message, onApprove, busy, userId }: { message: CopilotMessage
     <div className="mr-4 space-y-2">
       {message.parts.map((part, i) => {
         if (part.type === "text") return part.text.trim() ? <Markdown key={i} text={part.text} /> : null
-        if (isToolUIPart(part)) return <ToolPartView key={part.toolCallId} part={part} onApprove={onApprove} busy={busy} userId={userId} />
+        if (isToolUIPart(part)) return <ToolPartView key={part.toolCallId} part={part} onApprove={onApprove} onUndo={onUndo} busy={busy} userId={userId} />
         return null
       })}
       <LeadChips leads={citedLeads(message)} />
@@ -157,6 +174,9 @@ export function CopilotPanel({
   const [view, setView] = useState<"chat" | "history">("chat")
   const [loadError, setLoadError] = useState<string | null>(null)
   const [recent, setRecent] = useState<ConversationSummary | null>(null)
+  const [voiceError, setVoiceError] = useState<string | null>(null)
+  const router = useRouter()
+  const pathname = usePathname()
   const scroller = useRef<HTMLDivElement>(null)
   const field = useRef<HTMLTextAreaElement>(null)
   const working = status === "submitted" || status === "streaming"
@@ -225,6 +245,41 @@ export function CopilotPanel({
     void addToolApprovalResponse({ id: approvalId, approved })
   }
 
+  const undo: Undo = async (toolCallId) => {
+    const conversationId = session.conversation.current
+    if (!conversationId) return "Conversation introuvable."
+    try {
+      await json("/api/ai/actions/undo", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ conversationId, toolCallId }) })
+      return null
+    } catch (e) {
+      return e instanceof Error ? e.message : "Annulation impossible."
+    }
+  }
+
+  // E28: a page the copilot opens for the person opens as it arrives (in a window of the 3D view, there), once; the
+  // pages of a conversation reopened or brought back are not opened again.
+  const go = useCallback(
+    (href: string) => {
+      const path = pathname === HQ_PATH ? windowPath(href, window.location.origin) : null
+      if (path) openHqWindow(path)
+      else router.push(href)
+    },
+    [pathname, router]
+  )
+  const opened = useRef<{ chat: unknown; seen: Set<string> } | null>(null)
+  useEffect(() => {
+    const pages = openedPages(messages)
+    if (!opened.current || opened.current.chat !== session.chat) {
+      opened.current = { chat: session.chat, seen: new Set(pages.map((p) => p.id)) }
+      return
+    }
+    for (const p of pages) {
+      if (opened.current.seen.has(p.id)) continue
+      opened.current.seen.add(p.id)
+      go(p.href)
+    }
+  }, [messages, session.chat, go])
+
   return (
     <aside
       aria-label="Copilote"
@@ -274,7 +329,7 @@ export function CopilotPanel({
               <div className="space-y-1">
                 <p className="text-sm font-semibold">Que puis-je faire pour vous ?</p>
                 <p className="text-sm text-muted-foreground">
-                  Je réponds sur les données du CRM que vous voyez, et je confie l’audit, les offres, les brouillons et les maquettes aux agents spécialisés. Chaque action attend votre validation.
+                  Je réponds sur les données du CRM que vous voyez et j’agis pour vous : fiches, tâches, campagnes, recherches de prospects, séquences, rendez-vous, avec l’aide des agents spécialisés. Les changements attendent votre clic ; ce qui contacte un prospect, toujours.
                 </p>
               </div>
               {recent && (
@@ -295,7 +350,7 @@ export function CopilotPanel({
             </div>
           )}
           {messages.map((m) => (
-            <Message key={m.id} message={m} onApprove={approve} busy={working} userId={userId} />
+            <Message key={m.id} message={m} onApprove={approve} onUndo={undo} busy={working} userId={userId} />
           ))}
           {status === "submitted" && (
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -334,6 +389,14 @@ export function CopilotPanel({
             placeholder={waiting ? "Validez ou refusez l’action proposée…" : "Demandez au copilote…"}
             className="min-h-[36px] flex-1 resize-none bg-transparent px-1.5 py-1.5 text-sm outline-none placeholder:text-muted-foreground focus-visible:outline-none"
           />
+          <VoiceButton
+            disabled={working || view === "history"}
+            onError={setVoiceError}
+            onText={(text) => {
+              setInput((before) => (before.trim() ? `${before.trim()} ${text}` : text))
+              field.current?.focus()
+            }}
+          />
           {working ? (
             <Button type="button" size="icon" variant="outline" className="h-9 w-9 shrink-0" aria-label="Arrêter la réponse" onClick={() => void stop()}>
               <Square className="h-3.5 w-3.5" aria-hidden="true" />
@@ -345,7 +408,7 @@ export function CopilotPanel({
           )}
         </div>
         <p className="mt-1.5 px-1 text-[11px] text-muted-foreground">
-          {waiting ? "Une action attend votre validation." : "Il voit ce que vous voyez ; chaque action attend votre clic."}
+          {voiceError ? <span className="text-destructive-text">{voiceError}</span> : waiting ? "Une action attend votre validation." : "Il voit et fait ce que vous pouvez ; les changements attendent votre clic."}
           {cost > 0 && ` · ${formatEur(cost / 1_000_000)} pour cette conversation`}
         </p>
       </form>

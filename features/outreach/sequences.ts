@@ -10,6 +10,7 @@ import { scheduleAt } from "./sequence-rules"
 import { stopEnrollments } from "./stops"
 import { renderTemplate, templateErrors, templateValues } from "./template"
 import type { EnrollInput, SequenceInput } from "./schemas"
+import { withVia } from "@/lib/ai/acting"
 
 const duplicate = (error: unknown) => error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002"
 
@@ -248,7 +249,7 @@ export async function enrollLeads(user: CurrentUser, sequenceId: string, input: 
       const e = await prisma.sequenceEnrollment.create({
         data: { workspaceId: user.workspaceId, sequenceId, leadId: lead.id, mailboxId: box.id, enrolledById: user.id, nextAt: scheduleAt(new Date(), 0) },
       })
-      await prisma.activity.create({ data: { workspaceId: user.workspaceId, leadId: lead.id, actorId: user.id, actorKind: "USER", kind: "EMAIL", body: `Inscrit dans la séquence « ${seq.name} »`, data: { event: "sequence_enrolled", enrollmentId: e.id, sequenceId } } })
+      await prisma.activity.create({ data: { workspaceId: user.workspaceId, leadId: lead.id, actorId: user.id, actorKind: "USER", kind: "EMAIL", body: `Inscrit dans la séquence « ${seq.name} »`, data: withVia({ event: "sequence_enrolled", enrollmentId: e.id, sequenceId }) } })
       result.enrolled++
     } catch (error) {
       if (duplicate(error)) skip("Cette fiche est déjà dans une séquence en cours.")

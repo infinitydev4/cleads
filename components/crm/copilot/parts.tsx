@@ -2,28 +2,32 @@
 
 import Link from "next/link"
 import { isToolUIPart, getToolName, type UIMessage } from "ai"
-import { AlertTriangle, Ban, Check, ClipboardCheck, ExternalLink, Loader2, Sparkles } from "lucide-react"
+import { useState } from "react"
+import { AlertTriangle, Ban, Check, ClipboardCheck, ExternalLink, Loader2, Mail, Sparkles, Undo2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { RUN_STATUS_LABELS, RUN_STATUS_TONE, ACTIVE_STATUSES } from "@/features/ai/labels"
-import { ACTION_TITLES, ACTION_TOOLS, leadRefsIn, toolLabel, type LeadRef } from "@/features/copilot/labels"
+import { ACTION_TITLES, ACTION_TOOLS, CONTACT_TOOLS, UNDOABLE_TOOLS, leadRefsIn, toolLabel, type LeadRef } from "@/features/copilot/labels"
 import { cn } from "@/lib/utils"
 import { useRunStatus } from "./use-run-status"
 
 /**
- * The tool calls of a copilot answer (E24), as the person sees them: a short line for what it read, a card to approve
- * or refuse for what it proposes, and a live card for the work handed to a specialist.
+ * The tool calls of a copilot answer (E24, E28), as the person sees them: a short line for what it read or did on its
+ * own (with « Annuler » when it can be put back), a card to approve or refuse for what it proposes, and a live card
+ * for the work handed to a specialist.
  */
 
 type Part = UIMessage["parts"][number]
 type ToolPart = Extract<Part, { toolCallId: string }>
 
 export type Approve = (approvalId: string, approved: boolean) => void
+/** Puts back an action done without a click; resolves to an error message, or null once done. */
+export type Undo = (toolCallId: string) => Promise<string | null>
 
 const leadLink = (id: string) => `/app/leads/${id}`
 
 /** What a finished delegation opens, once its work is there. */
-const OPEN_LABELS: Record<string, string> = { auditor: "Voir l’audit", offers: "Voir les offres", writer: "Ouvrir le brouillon", designer: "Ouvrir la maquette" }
+const OPEN_LABELS: Record<string, string> = { auditor: "Voir l’audit", offers: "Voir les offres", writer: "Ouvrir le brouillon", designer: "Ouvrir la maquette", qualifier: "Voir le tri", strategist: "Voir les cibles" }
 
 function Line({ icon, children, tone = "muted" }: { icon: React.ReactNode; children: React.ReactNode; tone?: "muted" | "error" }) {
   return (
@@ -36,11 +40,18 @@ function Line({ icon, children, tone = "muted" }: { icon: React.ReactNode; child
   )
 }
 
-function DelegationCard({ output, userId }: { output: { agentId: string; runId: string; leadId: string; open?: string }; userId: string | null }) {
+interface Delegation {
+  agentId: string
+  runId: string
+  leadId?: string
+  open?: string
+}
+
+function DelegationCard({ output, userId }: { output: Delegation; userId: string | null }) {
   const run = useRunStatus(output.runId, userId)
   const status = run?.status ?? "QUEUED"
   const active = ACTIVE_STATUSES.includes(status)
-  const href = output.open ?? leadLink(output.leadId)
+  const href = output.open ?? (output.leadId ? leadLink(output.leadId) : null)
   return (
     <div className="rounded-lg border bg-card p-3 text-sm shadow-sm">
       <div className="flex items-center gap-2">
@@ -50,7 +61,7 @@ function DelegationCard({ output, userId }: { output: { agentId: string; runId: 
       </div>
       {run?.error && !active && <p className="mt-2 text-xs text-destructive-text">{run.error}</p>}
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        {status === "SUCCEEDED" || output.agentId === "designer" ? (
+        {href && (status === "SUCCEEDED" || output.agentId === "designer") ? (
           <Button asChild size="sm" variant="outline">
             <Link href={href} prefetch={false}>
               <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
@@ -69,13 +80,15 @@ function ActionCard({ part, onApprove, busy }: { part: ToolPart; onApprove: Appr
   const name = getToolName(part)
   const approval = "approval" in part ? part.approval : undefined
   if (!approval) return null
+  const contact = CONTACT_TOOLS.has(name)
   return (
-    <div role="group" aria-label={ACTION_TITLES[name] ?? "Action proposée"} className="rounded-lg border border-primary/40 bg-primary/5 p-3 text-sm">
+    <div role="group" aria-label={ACTION_TITLES[name] ?? "Action proposée"} className={cn("rounded-lg border p-3 text-sm", contact ? "border-warning/50 bg-warning-subtle" : "border-primary/40 bg-primary/5")}>
       <p className="flex items-center gap-2 font-semibold">
-        <ClipboardCheck className="h-4 w-4" aria-hidden="true" />
+        {contact ? <Mail className="h-4 w-4" aria-hidden="true" /> : <ClipboardCheck className="h-4 w-4" aria-hidden="true" />}
         {ACTION_TITLES[name] ?? "Action proposée"}
       </p>
       <p className="mt-1 text-muted-foreground">{approval.requestReason ?? "Le copilote propose une action."}</p>
+      {contact && <p className="mt-1 text-xs font-medium text-warning">Cette action contacte un prospect : relisez avant de valider.</p>}
       <div className="mt-3 flex gap-2">
         <Button size="sm" onClick={() => onApprove(approval.id, true)} disabled={busy}>
           <Check className="h-3.5 w-3.5" aria-hidden="true" />
@@ -89,36 +102,88 @@ function ActionCard({ part, onApprove, busy }: { part: ToolPart; onApprove: Appr
   )
 }
 
-function ToolResult({ part, userId }: { part: ToolPart; userId: string | null }) {
+const str = (v: unknown) => (typeof v === "string" ? v : null)
+
+/** « Annuler » under an action done without a click; « Annulée » once put back, here or before. */
+function UndoButton({ toolCallId, done, onUndo }: { toolCallId: string; done: boolean; onUndo: Undo }) {
+  const [state, setState] = useState<"idle" | "busy" | "done">(done ? "done" : "idle")
+  const [error, setError] = useState<string | null>(null)
+  if (state === "done") return <span className="text-muted-foreground"> · annulée</span>
+  return (
+    <>
+      {" · "}
+      <button
+        type="button"
+        disabled={state === "busy"}
+        onClick={async () => {
+          setState("busy")
+          const failure = await onUndo(toolCallId)
+          setError(failure)
+          setState(failure ? "idle" : "done")
+        }}
+        className="inline-flex items-center gap-1 underline underline-offset-4 hover:text-foreground disabled:opacity-50"
+      >
+        <Undo2 className="h-3 w-3" aria-hidden="true" />
+        Annuler
+      </button>
+      {error && <span className="text-destructive-text"> · {error}</span>}
+    </>
+  )
+}
+
+function ToolResult({ part, userId, onUndo }: { part: ToolPart; userId: string | null; onUndo?: Undo }) {
   const name = getToolName(part)
   const output = (part as { output?: unknown }).output as Record<string, unknown> | undefined
+  if (name === "open_page" && str(output?.open)) {
+    return (
+      <Line icon={<ExternalLink className="h-3.5 w-3.5" />}>
+        {"Page ouverte · "}
+        <Link href={str(output!.open)!} prefetch={false} className="underline underline-offset-4 hover:text-foreground">
+          {str(output!.label) ?? "ouvrir"}
+        </Link>
+      </Line>
+    )
+  }
   if (!ACTION_TOOLS.has(name)) {
     const refs = leadRefsIn(output)
     const one = refs.length === 1 ? ` · ${refs[0].name}` : refs.length > 1 ? ` · ${refs.length} fiches` : ""
     return <Line icon={<Check className="h-3.5 w-3.5" />}>{`${toolLabel(name, "done")}${one}`}</Line>
   }
-  if (output?.started === true && typeof output.runId === "string" && typeof output.leadId === "string" && typeof output.agentId === "string") {
-    return <DelegationCard output={output as { agentId: string; runId: string; leadId: string; open?: string }} userId={userId} />
+  if (output?.started === true && str(output.runId) && str(output.agentId)) {
+    return <DelegationCard output={output as unknown as Delegation} userId={userId} />
   }
-  const leadId = typeof output?.leadId === "string" ? output.leadId : null
-  const label = output?.reused ? "Audit récent réutilisé : rien n’a été dépensé" : toolLabel(name, "done")
+  const leadId = str(output?.leadId)
+  const open = str(output?.open)
+  const url = str(output?.url)
+  const label = output?.reused ? "Audit récent réutilisé : rien n’a été dépensé" : output?.done === false && str(output?.note) ? str(output!.note)! : toolLabel(name, "done")
   return (
     <Line icon={<Check className="h-3.5 w-3.5 text-success" />}>
       <span className="font-medium text-foreground">{label}</span>
-      {leadId && (
+      {open ? (
         <>
           {" · "}
-          <Link href={leadLink(leadId)} prefetch={false} className="underline underline-offset-4 hover:text-foreground">
-            voir la fiche
+          <Link href={open} prefetch={false} className="underline underline-offset-4 hover:text-foreground">
+            ouvrir
           </Link>
         </>
+      ) : (
+        leadId && (
+          <>
+            {" · "}
+            <Link href={leadLink(leadId)} prefetch={false} className="underline underline-offset-4 hover:text-foreground">
+              voir la fiche
+            </Link>
+          </>
+        )
       )}
+      {url && <span className="block break-all font-mono text-[11px]">{url}</span>}
+      {onUndo && UNDOABLE_TOOLS.has(name) && output?.done === true && <UndoButton toolCallId={part.toolCallId} done={output.undone === true} onUndo={onUndo} />}
     </Line>
   )
 }
 
 /** One tool call, in the state it is in. */
-export function ToolPartView({ part, onApprove, busy, userId }: { part: ToolPart; onApprove: Approve; busy: boolean; userId: string | null }) {
+export function ToolPartView({ part, onApprove, onUndo, busy, userId }: { part: ToolPart; onApprove: Approve; onUndo?: Undo; busy: boolean; userId: string | null }) {
   const name = getToolName(part)
   switch (part.state) {
     case "input-streaming":
@@ -133,7 +198,7 @@ export function ToolPartView({ part, onApprove, busy, userId }: { part: ToolPart
         <Line icon={<Ban className="h-3.5 w-3.5" />}>{`${ACTION_TITLES[name] ?? "Action"} : refusée`}</Line>
       )
     case "output-available":
-      return <ToolResult part={part} userId={userId} />
+      return <ToolResult part={part} userId={userId} onUndo={onUndo} />
     case "output-denied":
       return (
         <Line icon={<Ban className="h-3.5 w-3.5" />}>

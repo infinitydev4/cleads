@@ -54,7 +54,7 @@ describe("agents in the code", () => {
   it("merge the workspace's layer without ever going above the code", () => {
     const def = AGENTS.auditor
     expect(mergeAgent(def, null)).toMatchObject({ modelRole: "writer", maxSteps: 12, capMicros: 300_000, enabled: true, instructions: null, version: 0 })
-    const row = { instructions: "  Ton direct.  ", modelRole: "fast", maxSteps: 6, maxCostMicros: 100_000, enabled: false, version: 3 }
+    const row = { instructions: "  Ton direct.  ", modelRole: "fast", maxSteps: 6, maxCostMicros: 100_000, enabled: false, version: 3, actionPolicy: null }
     expect(mergeAgent(def, row)).toMatchObject({ modelRole: "fast", maxSteps: 6, capMicros: 100_000, enabled: false, instructions: "Ton direct.", version: 3 })
     // A tampered row: a role the agent may not use, limits above the code's.
     expect(mergeAgent(def, { ...row, modelRole: "decision", maxSteps: 99, maxCostMicros: 9_000_000 })).toMatchObject({ modelRole: "writer", maxSteps: 12, capMicros: 300_000 })

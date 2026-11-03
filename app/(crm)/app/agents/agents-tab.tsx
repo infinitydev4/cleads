@@ -19,6 +19,7 @@ import { CHANGE_LABELS, formatEur } from "@/features/ai/labels"
 import type { AgentView, AgentsPage } from "@/features/ai/definitions"
 import type { SkillView } from "@/features/ai/skills/service"
 import { api } from "../leads/api"
+import { RightsMatrix } from "./rights-matrix"
 
 const MODE_LABELS = { ALWAYS: "Toujours", ON_DEMAND: "À la demande" } as const
 const NONE = "NONE"
@@ -97,6 +98,7 @@ export function AgentsTab({ page, skills }: { page: AgentsPage; skills: SkillVie
           </Card>
         ))}
       </div>
+      <RightsMatrix agents={page.agents} canEdit={page.canEditSettings} />
       {editing && <AgentDialog agent={editing} skills={skills} page={page} onClose={() => setEditing(null)} />}
     </>
   )

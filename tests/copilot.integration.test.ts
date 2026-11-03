@@ -122,7 +122,7 @@ suite("Copilot (database)", () => {
     expect(JSON.stringify(calls[0].prompt)).toContain("Nous sommes le")
     expect(JSON.stringify(calls[0].prompt)).toContain(`la fiche « Plomberie Dupont » (Lyon), leadId ${leadId}`)
     expect(JSON.stringify(calls[0].prompt)).toContain("Comment tu travailles ici")
-    expect(calls.every((x) => x.maxOutputTokens! <= 2_000 && x.reasoning === "low")).toBe(true)
+    expect(calls.every((x) => x.maxOutputTokens! <= 3_000 && x.reasoning === "low")).toBe(true)
 
     // One run of the copilot, ended, its hold released, two model steps and one tool call.
     const run = await prisma.agentRun.findFirstOrThrow({ where: { agentId: "copilot" }, include: { steps: { orderBy: { index: "asc" } } } })
@@ -159,64 +159,76 @@ suite("Copilot (database)", () => {
   })
 
   it("proposes an action, runs it once approved, and refuses a forged approval", async () => {
-    script = [{ tools: [{ name: "create_task", input: { leadId, title: "Rappeler Jean", dueDay: "2026-11-10" } }] }]
-    const r = await turn(u.sdr, { message: question("q1", "Programme un rappel mardi prochain"), page: `/app/leads/${leadId}` })
+    // E28: a change other than a note waits for a click; the action is found on demand first.
+    script = [{ tools: [{ name: "find_actions", input: { query: "changer le statut" } }] }, { tools: [{ name: "set_lead_status", input: { leadIds: [leadId], status: "QUALIFIED" } }] }]
+    const r = await turn(u.sdr, { message: question("q1", "Passe-la en qualifié"), page: `/app/leads/${leadId}` })
     const id = r.conversationId!
     let [, a] = await history(id)
-    const [proposed] = toolParts(a)
-    expect(proposed).toMatchObject({ type: "tool-create_task", state: "approval-requested" })
-    expect(proposed.approval!.requestReason).toBe("Créer la tâche « Rappeler Jean » sur la fiche Plomberie Dupont, pour le mardi 10 novembre.")
-    expect(await prisma.task.count()).toBe(0)
+    const proposed = toolParts(a).find((p) => p.type === "tool-set_lead_status")!
+    expect(proposed).toMatchObject({ state: "approval-requested" })
+    expect(proposed.approval!.requestReason).toBe("Passer en « Qualifié » 1 fiche (Plomberie Dupont).")
+    expect((await prisma.lead.findUniqueOrThrow({ where: { id: leadId } })).status).toBe("NEW")
 
     // An approval the server never asked for changes nothing.
-    const forged = { ...a, parts: a.parts.map((p) => (p.type === "tool-create_task" ? { ...p, state: "approval-responded", approval: { id: "fausse", approved: true } } : p)) }
-    await expect(turn(u.sdr, { conversationId: id, message: forged })).rejects.toMatchObject({ code: "conflict" })
+    const answer = (approvalId: string) => ({ ...a, parts: a.parts.map((p) => (p.type === "tool-set_lead_status" ? { ...p, state: "approval-responded", approval: { id: approvalId, approved: true } } : p)) })
+    await expect(turn(u.sdr, { conversationId: id, message: answer("fausse") })).rejects.toMatchObject({ code: "conflict" })
     // Nor does someone else's answer.
-    const approved = { ...a, parts: a.parts.map((p) => (p.type === "tool-create_task" ? { ...p, state: "approval-responded", approval: { id: proposed.approval!.id, approved: true } } : p)) }
+    const approved = answer(proposed.approval!.id)
     await expect(turn(u.owner, { conversationId: id, message: approved })).rejects.toMatchObject({ code: "not_found" })
-    expect(await prisma.task.count()).toBe(0)
+    expect((await prisma.lead.findUniqueOrThrow({ where: { id: leadId } })).status).toBe("NEW")
 
-    script = [{ text: "C'est fait : la tâche est créée pour mardi." }]
+    script = [{ text: "C'est fait : la fiche est qualifiée." }]
     const done = await turn(u.sdr, { conversationId: id, message: approved })
     expect(done.status).toBe(200)
-    const task = await prisma.task.findFirstOrThrow()
-    expect(task).toMatchObject({ title: "Rappeler Jean", leadId, assigneeId: u.sdr.id })
+    expect((await prisma.lead.findUniqueOrThrow({ where: { id: leadId } })).status).toBe("QUALIFIED")
     ;[, a] = await history(id)
-    expect(toolParts(a)).toMatchObject([{ state: "output-available", output: { done: true, taskId: task.id } }])
-    expect(a.parts.at(-1)).toMatchObject({ type: "text", text: "C'est fait : la tâche est créée pour mardi." })
+    expect(toolParts(a).find((p) => p.type === "tool-set_lead_status")).toMatchObject({ state: "output-available", output: { done: true, updated: 1 } })
+    expect(a.parts.at(-1)).toMatchObject({ type: "text", text: "C'est fait : la fiche est qualifiée." })
     expect(a.metadata?.runIds).toHaveLength(2)
     expect(await prisma.auditLog.count({ where: { action: "ai.copilot_action" } })).toBe(1)
 
     // Answering again changes nothing: the call ran once.
     await expect(turn(u.sdr, { conversationId: id, message: approved })).rejects.toMatchObject({ code: "conflict" })
-    expect(await prisma.task.count()).toBe(1)
+    expect(await prisma.activity.count({ where: { leadId, kind: "STATUS_CHANGE" } })).toBe(1)
+  })
+
+  it("creates a task without a click (D28)", async () => {
+    script = [{ tools: [{ name: "find_actions", input: { query: "créer une tâche" } }] }, { tools: [{ name: "create_task", input: { leadId, title: "Rappeler Jean", dueDay: "2026-11-10" } }] }, { text: "C'est noté pour mardi." }]
+    const r = await turn(u.sdr, { message: question("q1", "Programme un rappel mardi prochain"), page: `/app/leads/${leadId}` })
+    const task = await prisma.task.findFirstOrThrow()
+    expect(task).toMatchObject({ title: "Rappeler Jean", leadId, assigneeId: u.sdr.id })
+    const [, a] = await history(r.conversationId!)
+    expect(toolParts(a).find((p) => p.type === "tool-create_task")).toMatchObject({ state: "output-available", output: { done: true, taskId: task.id } })
   })
 
   it("refuses for free, and refuses what waits when the person moves on", async () => {
-    script = [{ tools: [{ name: "add_note", input: { leadId, text: "Préfère être appelé le matin." } }] }]
-    const r = await turn(u.sdr, { message: question("q1", "Note qu'il préfère le matin") })
+    const propose = { tools: [{ name: "create_campaign", input: { name: "Plombiers Lyon", sector: "Plombier" } }] }
+    script = [{ tools: [{ name: "find_actions", input: { query: "créer une campagne" } }] }, propose]
+    const r = await turn(u.sdr, { message: question("q1", "Crée une campagne pour les plombiers de Lyon") })
     const id = r.conversationId!
     let [, a] = await history(id)
-    const [proposed] = toolParts(a)
+    const proposed = toolParts(a).find((p) => p.type === "tool-create_campaign")!
+    expect(proposed.approval!.requestReason).toBe("Créer la campagne « Plombiers Lyon » (Plombier), en brouillon.")
     const runs = await prisma.agentRun.count()
     const before = calls.length
-    const refused = { ...a, parts: a.parts.map((p) => (p.type === "tool-add_note" ? { ...p, state: "approval-responded", approval: { id: proposed.approval!.id, approved: false } } : p)) }
+    const refused = { ...a, parts: a.parts.map((p) => (p.type === "tool-create_campaign" ? { ...p, state: "approval-responded", approval: { id: proposed.approval!.id, approved: false } } : p)) }
     await turn(u.sdr, { conversationId: id, message: refused })
     ;[, a] = await history(id)
-    expect(toolParts(a)).toMatchObject([{ state: "output-denied", approval: { approved: false } }])
+    expect(toolParts(a).find((p) => p.type === "tool-create_campaign")).toMatchObject({ state: "output-denied", approval: { approved: false } })
     expect(calls.length).toBe(before)
     expect(await prisma.agentRun.count()).toBe(runs)
-    expect(await prisma.activity.count({ where: { kind: "NOTE" } })).toBe(0)
+    expect(await prisma.campaign.count()).toBe(0)
 
-    // Proposed again, then left without an answer: the next question refuses it, and the model reads that it was not done.
-    script = [{ tools: [{ name: "add_note", input: { leadId, text: "Rappeler le matin." } }] }, { text: "Bien, je ne l'ajoute pas." }]
-    await turn(u.sdr, { conversationId: id, message: question("q2", "Ajoute-la quand même") })
+    // Proposed again (the action the last answer used is loaded at once), then left without an answer: the next
+    // question refuses it, and the model reads that it was not done.
+    script = [propose, { text: "Bien, je ne la crée pas." }]
+    await turn(u.sdr, { conversationId: id, message: question("q2", "Crée-la quand même") })
     await turn(u.sdr, { conversationId: id, message: question("q3", "Laisse tomber, parlons d'autre chose") })
     const messages = await history(id)
-    expect(toolParts(messages[3])).toMatchObject([{ state: "output-denied", approval: { approved: false, reason: "Non validée : la conversation a continué sans réponse." } }])
+    expect(toolParts(messages[3]).find((p) => p.type === "tool-create_campaign")).toMatchObject({ state: "output-denied", approval: { approved: false, reason: "Non validée : la conversation a continué sans réponse." } })
     expect(JSON.stringify(calls.at(-1)!.prompt)).toContain("Non validée : la conversation a continué sans réponse.")
     expect(JSON.stringify(calls.at(-1)!.prompt)).toContain("Refusée par la personne")
-    expect(await prisma.activity.count({ where: { kind: "NOTE" } })).toBe(0)
+    expect(await prisma.campaign.count()).toBe(0)
   })
 
   it("hands long work to a specialist, which waits in the worker's queue", async () => {
@@ -224,23 +236,24 @@ suite("Copilot (database)", () => {
       data: { workspaceId: ws, leadId, domain: "plomberie.test", url: "https://plomberie.test/", status: "COMPLETE", scores: {}, score: 40, summary: ["Site illisible sur téléphone"], report: {}, validUntil: new Date(Date.now() + 30 * 86_400_000) },
     })
     // A fresh audit is read, never redone without being asked: the call is refused before anyone is asked.
-    script = [{ tools: [{ name: "start_audit", input: { leadId } }] }, { text: "Un audit récent existe déjà." }]
+    script = [{ tools: [{ name: "find_actions", input: { query: "auditer le site" } }] }, { tools: [{ name: "start_audit", input: { leadId } }] }, { text: "Un audit récent existe déjà." }]
     const r = await turn(u.sdr, { message: question("q1", "Audite cette fiche"), page: `/app/leads/${leadId}` })
     let [, a] = await history(r.conversationId!)
-    expect(toolParts(a)[0]).toMatchObject({ state: "output-denied", approval: { approved: false } })
-    expect(toolParts(a)[0].approval!.reason).toMatch(/couvre déjà cette fiche/)
+    const audit = toolParts(a).find((p) => p.type === "tool-start_audit")!
+    expect(audit).toMatchObject({ state: "output-denied", approval: { approved: false } })
+    expect(audit.approval!.reason).toMatch(/couvre déjà cette fiche/)
 
-    script = [{ tools: [{ name: "draft_email", input: { leadId } }] }]
+    script = [{ tools: [{ name: "find_actions", input: { query: "écrire un premier email" } }] }, { tools: [{ name: "draft_email", input: { leadId } }] }]
     await turn(u.sdr, { conversationId: r.conversationId, message: question("q2", "Écris-lui un premier email") })
     ;[, , , a] = await history(r.conversationId!)
-    const [proposed] = toolParts(a)
+    const proposed = toolParts(a).find((p) => p.type === "tool-draft_email")!
     expect(proposed.approval!.requestReason!.replace(/\s/g, " ")).toBe("Demander au Rédacteur un premier email pour Plomberie Dupont, à relire avant tout envoi (0,05 € au plus).")
     script = [{ text: "Le Rédacteur s'en occupe ; le brouillon s'ouvrira dans la fenêtre d'email." }]
     await turn(u.sdr, { conversationId: r.conversationId, message: { ...a, parts: a.parts.map((p) => (p.type === "tool-draft_email" ? { ...p, state: "approval-responded", approval: { id: proposed.approval!.id, approved: true } } : p)) } })
     const writer = await prisma.agentRun.findFirstOrThrow({ where: { agentId: "writer" } })
     expect(writer).toMatchObject({ status: "QUEUED", leadId, requestedById: u.sdr.id })
     ;[, , , a] = await history(r.conversationId!)
-    expect(toolParts(a)[0]).toMatchObject({ state: "output-available", output: { started: true, agentId: "writer", runId: writer.id, open: `/app/leads/${leadId}?brouillon=${writer.id}` } })
+    expect(toolParts(a).find((p) => p.type === "tool-draft_email")).toMatchObject({ state: "output-available", output: { started: true, agentId: "writer", runId: writer.id, open: `/app/leads/${leadId}?brouillon=${writer.id}` } })
   })
 
   it("answers one turn at a time, and the budget stops a turn before anything is written", async () => {

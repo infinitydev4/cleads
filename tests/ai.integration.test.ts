@@ -241,6 +241,7 @@ suite("AI foundation (database)", () => {
         permission: "email:send",
         approval: "user",
         costClass: "external",
+        family: "ai_work",
         input: z.object({ to: z.string() }),
         summarize: (i) => `Envoyer un email à ${i.to}`,
         execute: async () => ({ sent: true }),
@@ -248,9 +249,9 @@ suite("AI foundation (database)", () => {
 
     it("checks the requester's right, and records what a tool did", async () => {
       const ctx = await runs.startRun(u.sdr, { agentId: "copilot", status: "RUNNING" })
-      const teamTool = tools.defineTool({ name: "read_team", description: "Lit l'équipe", permission: "team:read", approval: "auto", costClass: "free", input: z.object({}), execute: async () => ({ n: 1 }) })
+      const teamTool = tools.defineTool({ name: "read_team", description: "Lit l'équipe", permission: "team:read", approval: "auto", costClass: "free", family: "read_crm", input: z.object({}), execute: async () => ({ n: 1 }) })
       await expect(tools.runTool(teamTool, { run: ctx }, {})).rejects.toMatchObject({ status: 403 })
-      const readTool = tools.defineTool({ name: "read_lead", description: "Lit une fiche", permission: "lead:read", approval: "auto", costClass: "free", input: z.object({ id: z.string() }), execute: async (_c, i) => ({ id: i.id }) })
+      const readTool = tools.defineTool({ name: "read_lead", description: "Lit une fiche", permission: "lead:read", approval: "auto", costClass: "free", family: "read_crm", input: z.object({ id: z.string() }), execute: async (_c, i) => ({ id: i.id }) })
       await expect(tools.runTool(readTool, { run: ctx }, { id: "abc" })).resolves.toEqual({ status: "done", output: { id: "abc" } })
       await expect(tools.runTool(readTool, { run: ctx }, { id: 3 })).rejects.toThrow()
       const steps = await prisma.agentStep.findMany({ where: { runId: ctx.id } })

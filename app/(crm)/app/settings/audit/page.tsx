@@ -3,10 +3,17 @@ import { PageHeader } from "@/components/crm/page-header"
 import { requirePagePermission } from "@/lib/auth/guard"
 import { prisma } from "@/lib/prisma"
 import { AUDIT_FILTERS } from "@/features/audit/labels"
+import { viaAgent } from "@/features/ai/agents"
 import { cn } from "@/lib/utils"
 import { AuditTable } from "./audit-table"
 
 export const metadata = { title: "Journal d’audit" }
+
+/** E28: an action an agent did for the person names the agent. */
+function viaOf(metadata: unknown): string {
+  const via = metadata && typeof metadata === "object" && !Array.isArray(metadata) ? (metadata as { via?: { agentId?: unknown } }).via : null
+  return via && typeof via.agentId === "string" ? `, ${viaAgent(via.agentId)}` : ""
+}
 export const dynamic = "force-dynamic"
 
 export default async function AuditPage(props: { searchParams: Promise<{ filter?: string }> }) {
@@ -45,7 +52,7 @@ export default async function AuditPage(props: { searchParams: Promise<{ filter?
           id: l.id,
           at: l.createdAt.toISOString(),
           action: l.action,
-          actor: l.actorKind === "SYSTEM" && !l.actor ? "Système" : (l.actor?.name ?? l.actor?.email ?? "—"),
+          actor: `${l.actorKind === "SYSTEM" && !l.actor ? "Système" : (l.actor?.name ?? l.actor?.email ?? "—")}${viaOf(l.metadata)}`,
           subject: l.subject ?? "",
           ip: l.ip ?? "",
           detail: l.metadata ? JSON.stringify(l.metadata) : "",

@@ -75,7 +75,7 @@ export interface LeadDetail {
     collectedAt: string | null
     legalBasis: string | null
   } | null
-  activities: { id: string; kind: string; body: string | null; actorName: string | null; actorKind: string; occurredAt: string; outcome: string | null; durationMin: number | null; event: string | null }[]
+  activities: { id: string; kind: string; body: string | null; actorName: string | null; actorKind: string; occurredAt: string; outcome: string | null; durationMin: number | null; event: string | null; via: string | null }[]
   qualification: {
     need?: string
     budget?: "unknown" | "none" | "yes"

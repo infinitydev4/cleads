@@ -12,6 +12,8 @@ import type { AiRole } from "@/lib/ai/models"
 import type { SkillOffer } from "@/features/offers/skill"
 import { EVALUATIONS_USAGE, agentLabel, isAgentId, type AgentId } from "./agents"
 import { effectiveAgent } from "./definitions"
+import { FAMILY_INFO } from "./actions/families"
+import { cutFamilies } from "./actions/policy"
 
 /**
  * AI runs (docs/crm-v1/AGENTS-IA.md §10): one execution of an agent, who it acts for, what it did and what it cost.
@@ -60,6 +62,8 @@ export interface StartRunInput {
 }
 
 const isUniqueViolation = (error: unknown) => (error as { code?: string } | null)?.code === "P2002"
+/** A worker task (skill test, evaluation) carries its kind: it exercises the agent, it does not act for it. */
+const isTaskInput = (input: unknown) => !!input && typeof input === "object" && typeof (input as { kind?: unknown }).kind === "string"
 
 async function checkTargets(workspaceId: string, actor: CurrentUser | null, input: StartRunInput): Promise<void> {
   if (input.leadId) {
@@ -77,6 +81,9 @@ async function createRun(workspaceId: string, requester: CurrentUser | null, inp
   // The workspace may lower an agent's cap or switch it off (E19, features/ai/definitions.ts), never raise it.
   const agent = await effectiveAgent(workspaceId, input.agentId)
   if (!agent.enabled && !input.evaluation) throw new LeadError("conflict", `L'agent « ${agent.def.label} » est désactivé : le propriétaire peut le réactiver dans Agents IA.`, 409)
+  // E28: a specialist's workflow needs every family of actions it declares; an agent that picks its tools only loses some.
+  const cut = agent.def.picksTools || input.evaluation || isTaskInput(input.input) ? [] : cutFamilies(agent.def, agent.policy)
+  if (cut.length) throw new LeadError("conflict", `L'agent « ${agent.def.label} » n'a plus le droit « ${FAMILY_INFO[cut[0]].label} » : le propriétaire peut le lui rendre dans Agents IA › Agents › Droits.`, 409)
   const cap = input.evaluation?.capMicros ?? agent.capMicros
   const status = input.status ?? "QUEUED"
   const userKey = requester?.id ?? SYSTEM_USER
@@ -171,6 +178,8 @@ export interface ModelStepInput {
   output?: unknown
   generationId?: string | null
   prices?: Record<string, ModelPrice>
+  /** E28: a cost already known (dictation is billed by the minute, not by the token). */
+  micros?: number
 }
 
 const json = (value: unknown) => (value === undefined ? undefined : forLog(value))
@@ -178,7 +187,7 @@ const json = (value: unknown) => (value === undefined ? undefined : forLog(value
 /** Bills a model call to its run: its cost goes to the run and to the day's usage in one transaction. */
 export async function recordModelStep(ctx: RunContext, step: ModelStepInput): Promise<{ index: number; costMicros: number }> {
   const [settings, prices] = await Promise.all([getAiSettings(ctx.workspaceId), step.prices ?? priceTable()])
-  const { micros } = costMicros(prices[step.model], step.usage, settings.eurPerUsd)
+  const micros = step.micros ?? costMicros(prices[step.model], step.usage, settings.eurPerUsd).micros
   const index = await prisma.$transaction(async (tx) => {
     const charged = await chargeRun(tx, ctx.id, micros)
     await tx.agentStep.create({
@@ -264,7 +273,7 @@ export interface RunView {
 
 const leadName = (l: { company: { name: string } | null; contact: { name: string | null; email: string | null } | null }) => l.company?.name ?? l.contact?.name ?? l.contact?.email ?? "Fiche"
 
-const TASK_LABELS: Record<string, string> = { evaluation: "Évaluation", skill_test: "Test de skill" }
+const TASK_LABELS: Record<string, string> = { evaluation: "Évaluation", skill_test: "Test de skill", transcription: "Dictée" }
 const taskOf = (input: unknown) => {
   const kind = input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>).kind : null
   return typeof kind === "string" ? (TASK_LABELS[kind] ?? null) : null
