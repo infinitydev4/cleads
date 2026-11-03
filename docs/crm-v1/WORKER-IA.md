@@ -127,6 +127,7 @@ La file est la **table `AgentRun`** elle-même :
    ```bash
    scripts/deploy-ai-worker.sh
    ```
+   Le script empaquette le code **de la branche ouverte** dans `cleads-main` : on déploie depuis `main`, une fois la PR fusionnée. Le paquet (`worker/build.mjs`) refuse tout ce qui chargerait Next : `next/server` empaqueté fait tomber le worker au démarrage (3 novembre 2026). Un service que le worker charge importe donc `AuthError` de `lib/auth/errors.ts`, jamais `lib/auth/guard.ts` ; le message d'erreur du paquet donne le chemin d'import à couper.
 4. Vérifier dans Réglages › IA : « Worker IA en ligne ».
 
 ## 6. Exploitation
