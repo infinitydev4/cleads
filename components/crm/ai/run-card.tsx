@@ -20,6 +20,7 @@ export function RunCard({ run, onCancel, onOpen, busy }: { run: RunView; onCance
           <p className="flex flex-wrap items-center gap-2 font-semibold">
             {run.agentLabel}
             <Badge variant={RUN_STATUS_TONE[run.status]}>{RUN_STATUS_LABELS[run.status]}</Badge>
+            {run.task && <Badge variant="outline">{run.task}</Badge>}
           </p>
           <p className="text-sm text-muted-foreground">
             {run.lead ? (
@@ -27,7 +28,7 @@ export function RunCard({ run, onCancel, onOpen, busy }: { run: RunView; onCance
                 {run.lead.name}
               </Link>
             ) : (
-              "Sans fiche"
+              (run.task ?? "Sans fiche")
             )}
             {run.requestedBy && <> · lancée par {run.requestedBy}</>} · {when.format(new Date(run.createdAt))}
           </p>

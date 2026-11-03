@@ -2,7 +2,7 @@
 
 > Architecture de référence décidée le 2 novembre 2026 (décisions D13 à D27 de [PLAN.md](PLAN.md)). Elle sert de spécification aux epics E17 à E27.
 >
-> **État** : le socle (E17), le worker (E18), les agents, skills et catalogue d'offres (E19), l'audit des prospects (E20), les offres argumentées (E21), la rédaction et le classement des réponses (E22), le Studio Web (E23), le copilote (E24), le Stratège et le tri des fiches importées (E25) et l'aile « Agence IA » du QG 3D (E26) sont implémentés : `lib/ai/`, `features/ai/`, `features/offers/`, `features/prospect-audit/`, `features/offer-pitch/`, `features/email-draft/`, `features/reply-triage/`, `features/studio/`, `features/copilot/`, `features/strategy/`, `features/relevance/`, `worker/`, Réglages › IA, Agents IA (`/app/agents`), Studio Web (`/app/studio`), les onglets « Audit IA », « Offres suggérées » et « Maquette » des fiches, le Brouillon IA, les suggestions de la boîte, le panneau du copilote (⌘J), le Stratège de la page Campagnes, la pertinence des fiches d'une campagne et les espaces « Agents IA » et « Studio Web » du QG 3D (`features/hq/agency.ts`, `components/crm/hq/scene/agency.tsx`). Les sections 4 à 18 décrivent ce qui existe. Le reste (évaluations) est la spécification de l'epic E27.
+> **État** : le socle (E17), le worker (E18), les agents, skills et catalogue d'offres (E19), l'audit des prospects (E20), les offres argumentées (E21), la rédaction et le classement des réponses (E22), le Studio Web (E23), le copilote (E24), le Stratège et le tri des fiches importées (E25), l'aile « Agence IA » du QG 3D (E26) et la qualité de l'IA (E27) sont implémentés : `lib/ai/`, `features/ai/`, `features/offers/`, `features/prospect-audit/`, `features/offer-pitch/`, `features/email-draft/`, `features/reply-triage/`, `features/studio/`, `features/copilot/`, `features/strategy/`, `features/relevance/`, `features/quality/`, `evals/`, `worker/`, Réglages › IA, Agents IA (`/app/agents`, dont l'onglet « Qualité »), Studio Web (`/app/studio`), les onglets « Audit IA », « Offres suggérées » et « Maquette » des fiches, le Brouillon IA, les suggestions de la boîte, le panneau du copilote (⌘J), le Stratège de la page Campagnes, la pertinence des fiches d'une campagne et les espaces « Agents IA » et « Studio Web » du QG 3D (`features/hq/agency.ts`, `components/crm/hq/scene/agency.tsx`). Toutes les sections décrivent ce qui existe.
 
 ## 1. Objet
 
@@ -100,7 +100,7 @@ Prix relevés sur la passerelle le 2 novembre 2026, par million de jetons (entr�
 | GPT-6 Luna | 0,10 $ | 0,50 $ |
 | Mistral Large 4 | 0,70 $ | 2,10 $ |
 
-- **Changer de modèle** : dans Réglages › IA (propriétaire), parmi une liste blanche ; la surcouche est enregistrée dans `AiSetting`. Le changement est précédé d'une évaluation (E27) et journalisé.
+- **Changer de modèle** : dans Réglages › IA (propriétaire), parmi une liste blanche ; la surcouche est enregistrée dans `AiSetting`. Un autre modèle que celui par défaut doit d'abord avoir été évalué (section 20) ; le changement est journalisé avec sa preuve.
 - **Secours** : la passerelle essaie les modèles de secours dans l'ordre si le principal échoue ou n'est pas disponible.
 - **Versions fixées** : les identifiants de modèle sont fixés, sans alias « dernier ». Une mise à jour chez le fournisseur ne change donc pas la qualité sans évaluation.
 - **Cache** : les consignes des agents et les skills sont placés en tête des requêtes, pour profiter du cache de prompts des fournisseurs.
@@ -646,17 +646,47 @@ Cache-Control: private, no-store
 
 ## 20. Qualité et évaluations (E27)
 
-| Agent | Jeu d'évaluation | Mesures |
-|---|---|---|
-| Auditeur | une trentaine de sites figés en HTML (sans réseau), avec leurs constats attendus | constats justes, preuves présentes (100 %), coût, durée |
-| Conseiller offres | audits de référence et offres attendues | adéquation, taux d'acceptation par les closers |
-| Rédacteur | fiches de référence | grille : personnalisation, longueur, une seule demande, faits sourcés, ton, orthographe ; taux d'édition |
-| Analyste réponses | 200 à 500 réponses étiquetées par les SDR | exactitude, calibration, part traitée au-dessus du seuil ; comparatif Jev / Haiku / règles |
-| Designer | briefs de référence | grille visuelle, Lighthouse, axe-core, absence de script (100 %) |
+Le code est dans `features/quality/`, les jeux de référence dans `evals/` (voir `evals/README.md`). L'onglet « Qualité » d'Agents IA est réservé au propriétaire et aux managers ; ils lancent les évaluations, le propriétaire seul change les modèles.
 
-- Les évaluations se lancent à la demande, avec le coût affiché avant.
+**Jeux de référence.** Toutes les entreprises sont fictives (domaines `.example`, numéros de la plage que l'ARCEP réserve à la fiction) : aucun jeu ne dit rien d'une entreprise réelle.
+
+| Suite (agent) | Jeu | Score sur 100 | Autres mesures |
+|---|---|---|---|
+| Auditeur digital | 30 sites figés, lus sans réseau (pages, PageSpeed et fiche Google figés), chacun avec les signaux attendus et ceux interdits | signaux attendus trouvés, signaux interdits évités, preuves valides, à parts égales | lecture du site (FAQ, entité claire), coût, durée |
+| Conseiller offres | 10 audits de référence, avec le catalogue V1 entier comme s'il était actif | offre principale parmi les bonnes réponses (1), seulement dans le pack (0,5), offre exclue (0) | offres exclues recommandées, preuves valides |
+| Rédacteur outreach | les mêmes 10 audits | 60 % la grille du juge (personnalisation, demande unique, faits exacts, ton, orthographe), 40 % les neuf règles codées du skill `cold-email-fr` | faits sourcés |
+| Analyste réponses | 80 réponses étiquetées (classe, urgence, action) avec leurs pièges, ou les réponses classées par l'équipe | réponses bien classées | « ne plus écrire » repérés, part et justesse au-dessus du seuil, calibration, urgence, action |
+| Analyste qualification | 45 fiches jugées pour trois campagnes, ou les fiches tranchées par l'équipe | fiches bien jugées | mêmes mesures de décision |
+| Designer web | 3 briefs validés | 60 % la critique visuelle, 40 % les contrôles (un seul H1, rien à compléter, aucune violation axe-core grave) | scripts écrits par le modèle et retirés par le nettoyage, défauts d'accessibilité |
+
+**Déroulé.**
+- **Concurrents** : une évaluation mesure une suite pour un rôle. Le modèle en service est toujours mesuré, avec jusqu'à trois autres, sur les mêmes cas. Pour l'étape propre de l'agent, on peut comparer les modèles de tous les rôles qu'il peut prendre : mesurer l'Auditeur avec Haiku prouve qu'il peut passer au rôle « Traiter en volume ».
+- **Décisions** : les deux suites de décision comparent trois sortes de concurrents sur les mêmes questions : les modèles de décision (Jev et ses pairs), un modèle de langage qui lit la question et annonce sa confiance, et les règles codées (sans modèle, gratuites). C'est le comparatif « Jev / Haiku / règles » du plan.
+- **Cas de l'équipe** : ces deux suites tournent aussi sur les cas étiquetés dans le CRM : réponses classées par une personne dans la boîte (pas celles que le relevé classe seul), fiches tranchées dans une campagne ; 10 au moins, 500 au plus. Les résultats n'en gardent que les étiquettes, jamais le texte d'une réponse.
+- **Échantillons** : l'échantillon rapide garde les pièges (10 sites, 5 audits, 40 réponses, 24 fiches, 1 brief) ; le jeu complet prend tout.
+- **Coût** : affiché avant le lancement, modèle par modèle. L'exécution réserve l'estimation et une marge sur le quota du jour de la personne ; une évaluation de plus de 20 € est refusée. Ses dépenses sont classées « Évaluations » dans la consommation, pas sous l'agent.
+- **Exécution** : le worker la prend comme une tâche (`evaluation`) de l'agent, après le vrai travail de l'équipe (priorité −1). Chaque cas est enregistré aussitôt ; une reprise ne refait rien ; l'arrêt ou le plafond gardent les cas faits ; un modèle que la passerelle refuse trois fois de suite est mis de côté.
+- **Modèle épinglé** : le modèle comparé remplace celui du rôle sans les secours de la passerelle (un secours mesurerait un autre modèle). Ce qu'un juge note (emails, pages) l'est toujours par Claude Sonnet 5.5, facturé à part.
+- **Agent réel** : les consignes de l'équipe et ses skills s'appliquent, on mesure l'agent tel qu'il travaille. Le Conseiller offres lit le catalogue V1 figé à la place des offres actives. Les captures des sites figés et le rendu des pages viennent du Chromium du worker.
+
+**Résultats.** Pour chaque modèle : le score, les mesures, le coût par cas et la durée médiane, et les règles qu'il ne doit jamais enfreindre (une demande d'arrêt manquée, une preuve inventée, une offre exclue recommandée, une page coupée, plus d'un cas sur cinq en échec). Face au modèle en service, le verdict est « Meilleur » ou « Régression » au-delà de 3 points d'écart ou dès qu'une règle est enfreinte, « Équivalent » sinon. Le détail montre la calibration des décisions et chaque cas.
+
+**Garde-fou des changements de modèle** (`features/quality/gate.ts`).
+- **Rôle** : confier un rôle à un autre modèle que son modèle par défaut demande une évaluation de ce modèle, pour ce rôle, sur chaque suite que le rôle touche. Elle doit être terminée depuis moins de 30 jours, sur la version actuelle du jeu de référence. Réglages › IA montre, rôle par rôle, ce qui est prouvé et ce qui reste à évaluer.
+- **Agent** : faire passer un agent à un autre rôle demande l'évaluation de sa suite avec le modèle de ce rôle.
+- **Régression** : elle est montrée et doit être confirmée. La preuve est gardée dans le journal d'audit.
+- **Sans preuve** : revenir au modèle par défaut est libre. Le copilote et le Stratège n'ont pas de suite : leur rôle change librement, et c'est journalisé.
+
+**Tableau de bord** (Agents IA › Qualité, sur 7, 30 ou 90 jours, sans appel de modèle).
+- **Par agent** : exécutions, réussite, coût moyen, durée médiane, et son utilité : audits complets, offres retenues par les closers, brouillons envoyés presque tels quels, classements et jugements de Jev confirmés par une personne, cibles du Stratège devenues campagnes, maquettes qui passent leurs contrôles.
+- **Détails** : raisons d'écart des offres, retouches des brouillons, accord avec Jev selon son seuil, nombre de réponses classées par l'équipe (objectif 200 à 500).
+- **Erreurs** : regroupées par message, avec la dernière exécution.
+
+**Tests et limites.**
 - Les tests automatiques n'appellent jamais de vrai modèle : ils utilisent les modèles simulés de `ai/test`, dont `Experimental_DecisionMockModelV4`.
-- Tout changement de modèle ou de consigne importante passe par une évaluation chiffrée.
+- Lighthouse ne mesure pas les pages des évaluations, car PageSpeed a besoin d'une page publique : axe-core et la critique le remplacent.
+- Le Designer est mesuré sur un seul tour, sans ses corrections.
+- Les seuils de décision ne se règlent pas encore depuis la calibration mesurée.
 
 ## 21. Exploitation
 
@@ -687,4 +717,4 @@ Cache-Control: private, no-store
 | Vérifier puis activer les offres du catalogue V1 dans Agents IA › Offres (prix indicatifs) | le propriétaire | E21 |
 | DPA des fournisseurs, politique de confidentialité, registre des traitements | le propriétaire | ouverture à l'équipe |
 
-**Prochaine étape : E27 (qualité de l'IA : jeux d'évaluation et tableau de bord).**
+**E17 à E27 sont faits.** Les évaluations se lancent à la demande : la première de chaque suite, sur le modèle en service, sert de référence aux suivantes.

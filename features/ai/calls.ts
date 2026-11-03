@@ -4,7 +4,7 @@ import { LeadError } from "@/features/leads/errors"
 import { getAiSettings } from "@/lib/ai/budget"
 import { DEFAULT_THRESHOLDS, confidenceOf, decisionFallbacks, outcomeOf, validThresholds, valueOf, type DecisionAnswer, type DecisionOutcome, type Thresholds } from "@/lib/ai/decide"
 import { aiConfigured, gatewayOptions } from "@/lib/ai/gateway"
-import { ROLES, modelLabel, resolveRole, type AiRole } from "@/lib/ai/models"
+import { ROLES, modelLabel, resolveRole, type AiRole, type RoleModels } from "@/lib/ai/models"
 import { estimateTokens, maxOutputTokensWithin, priceTable, tokenUsage, worstPrice, type ModelPrice, type TokenUsage } from "@/lib/ai/pricing"
 import { finishRun, recordModelStep, remainingMicros, type RunContext } from "./runs"
 
@@ -82,6 +82,15 @@ async function overBudget(ctx: RunContext): Promise<never> {
   throw new LeadError("budget_exceeded", "Le plafond de cette exécution est atteint : l'IA s'est arrêtée avant de le dépasser.", 429, { scope: "run" })
 }
 
+/**
+ * The model a call uses: the one an evaluation pinned for the role, alone (a fallback answering instead would measure
+ * another model), else the workspace's choice with its Gateway fallbacks.
+ */
+function modelFor(ctx: RunContext, role: AiRole, roleModels: RoleModels): { model: string; fallbacks: string[] } {
+  const pinned = ctx.evaluation?.models[role]
+  return pinned ? { model: pinned, fallbacks: [] } : resolveRole(role, roleModels)
+}
+
 /** The model that answered when the Gateway reports one of the candidates; the requested one otherwise. */
 const servedModel = (reported: string | undefined, candidates: string[]) => (reported && candidates.includes(reported) ? reported : candidates[0])
 
@@ -127,7 +136,7 @@ export async function generateForRun<T = never>(
 ): Promise<{ text: string; output: T | undefined; model: string; costMicros: number; finishReason: string }> {
   if (!deps.languageModel && !aiConfigured()) throw notConfigured()
   const [settings, prices, remaining] = await Promise.all([getAiSettings(ctx.workspaceId), deps.prices ?? priceTable(), remainingMicros(ctx.id)])
-  const { model, fallbacks } = resolveRole(opts.role, settings.roleModels)
+  const { model, fallbacks } = modelFor(ctx, opts.role, settings.roleModels)
   const candidates = [model, ...fallbacks]
   const images = opts.images ?? []
   const inputTokens = estimateTokens(`${opts.system ?? ""}${opts.prompt}`) + images.length * IMAGE_TOKENS
@@ -204,7 +213,7 @@ export async function decideForRun<Q extends Record<string, Experimental_Decisio
   const thresholds = opts.thresholds ?? DEFAULT_THRESHOLDS
   if (!validThresholds(thresholds)) throw new Error("Seuils de décision invalides")
   const [settings, prices, remaining] = await Promise.all([getAiSettings(ctx.workspaceId), deps.prices ?? priceTable(), remainingMicros(ctx.id)])
-  const { model, fallbacks } = resolveRole("decision", settings.roleModels)
+  const { model, fallbacks } = modelFor(ctx, "decision", settings.roleModels)
   const candidates = [model, ...fallbacks]
   // A decision costs its input (its output is free or tiny): refuse only when even the input would not fit.
   const inputTokens = estimateTokens(JSON.stringify(opts.state) + JSON.stringify(opts.questions))

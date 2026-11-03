@@ -72,6 +72,7 @@ model User {
   strategyProposals      StrategyProposal[]
   approvalsRequested     AgentApproval[]         @relation("ApprovalRequester")
   approvalsDecided       AgentApproval[]         @relation("ApprovalDecider")
+  evaluationsRequested   AiEvaluation[]          @relation("EvaluationRequester")
 }
 
 /// LEGACY (blog, AI keys, NextAuth adapter): unused, dropped by prisma/pending/drop-legacy-blog.sql once a dump is taken.
@@ -607,6 +608,7 @@ model Workspace {
   aiConversations        AiConversation[]
   strategyProposals      StrategyProposal[]
   leadRelevances         LeadRelevance[]
+  aiEvaluations          AiEvaluation[]
 }
 
 enum LeadSource {
@@ -1554,6 +1556,7 @@ model AgentRun {
   aiMessages  AiMessage[]
   strategy    StrategyProposal?
   relevances  LeadRelevance[]
+  evaluation  AiEvaluation?
 
   @@index([workspaceId, createdAt])
   @@index([workspaceId, status])
@@ -2342,4 +2345,64 @@ model LeadRelevance {
 
   @@unique([leadId, campaignId])
   @@index([campaignId, outcome])
+}
+
+// E27: AI quality (docs/crm-v1/AGENTS-IA.md §20).
+
+/// One evaluation: an agent measured on a set of cases, with one or more models standing in for one of its roles. The
+/// run that does it carries its status and its cost; the results per model are written when it ends.
+model AiEvaluation {
+  id             String             @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  /// The suite (features/quality/suites.ts), named after the agent it measures.
+  suite          String
+  /// The role whose model the contenders replace in the agent's steps.
+  role           String
+  /// What is compared, the model in use first: Gateway model ids, plus "rules" (no model) where a suite has rules.
+  contenders     String[]
+  /// "reference": the frozen set of evals/; "team": cases the team labelled in the CRM.
+  source         String
+  /// The reference set's content hash, or the day the team's labels were read: only equal versions compare.
+  datasetVersion String
+  /// The cases measured, in order.
+  caseIds        String[]
+  /// The agent's layer (instructions, skills) when it was launched.
+  agentVersion   Int                @default(0)
+  /// The model that grades free answers (emails, pages), the same for every contender.
+  judgeModel     String?
+  estimateMicros Int
+  /// Per contender: score, metrics, cost and duration (features/quality/metrics.ts). Null until the run ends.
+  results        Json?
+  runId          String?            @unique
+  run            AgentRun?          @relation(fields: [runId], references: [id], onDelete: SetNull)
+  requestedById  String?
+  requestedBy    User?              @relation("EvaluationRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime           @default(now())
+  finishedAt     DateTime?
+  cases          AiEvaluationCase[]
+
+  @@index([workspaceId, suite, createdAt])
+}
+
+/// What one contender did on one case: right or not, its grade, what was expected and obtained, its cost and its time.
+model AiEvaluationCase {
+  id           String       @id @default(cuid())
+  evaluationId String
+  evaluation   AiEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  contender    String
+  caseId       String
+  ok           Boolean
+  /// 0-1: the suite's grade of this answer.
+  score        Float?
+  /// Expected and obtained, bounded. For the team's own replies: labels only, never their text.
+  detail       Json
+  error        String?
+  costMicros   Int          @default(0)
+  /// What grading the answer cost (the judge), kept apart from the contender's own cost.
+  judgeMicros  Int          @default(0)
+  durationMs   Int          @default(0)
+  createdAt    DateTime     @default(now())
+
+  @@unique([evaluationId, contender, caseId])
 }

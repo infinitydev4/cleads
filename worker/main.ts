@@ -11,6 +11,7 @@ import { runAudit } from "@/features/prospect-audit/handler"
 import { runDesigner } from "@/features/studio/handler"
 import { runStrategist } from "@/features/strategy/handler"
 import { runQualifier } from "@/features/relevance/handler"
+import { EVALUATION, runEvaluation } from "@/features/quality/run"
 import { browserRenderer } from "./browser"
 import { AgentWorker, DEFAULT_PER_AGENT } from "./runner"
 import { errorFields, log } from "./log"
@@ -25,6 +26,8 @@ registerAgentHandler("designer", (job) => runDesigner(job, { renderer }))
 registerAgentHandler("strategist", (job) => runStrategist(job))
 registerAgentHandler("qualifier", (job) => runQualifier(job))
 registerTaskHandler(SKILL_TEST, (job) => runSkillTest(job))
+// E27: evaluations measure any agent, its pages rendered in the same browser as the Studio's.
+registerTaskHandler(EVALUATION, (job) => runEvaluation(job, { renderer }))
 
 /** Entry point of the AI worker container (docs/crm-v1/WORKER-IA.md). */
 const env = z

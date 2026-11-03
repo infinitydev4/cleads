@@ -233,5 +233,8 @@ export const AGENTS: Record<AgentId, Readonly<AgentDef>> = {
 }
 
 export const isAgentId = (value: unknown): value is AgentId => typeof value === "string" && (AGENT_IDS as readonly string[]).includes(value)
-export const agentLabel = (id: string) => (isAgentId(id) ? AGENTS[id].label : id)
+/** Usage key of evaluation spend (E27): Consommation shows it apart from the agents' work. */
+export const EVALUATIONS_USAGE = "evaluations"
+
+export const agentLabel = (id: string) => (isAgentId(id) ? AGENTS[id].label : id === EVALUATIONS_USAGE ? "Évaluations" : id)
 export const agentCapMicros = (id: AgentId) => Math.round(AGENTS[id].limits.maxCostEur * 1_000_000)

@@ -8,7 +8,9 @@ import { LeadError } from "@/features/leads/errors"
 import { ACTIVE_RUN_STATUSES, SYSTEM_USER, addUsage, chargeRun, checkBudgetAlerts, getAiSettings, microsToEur, reserveBudget } from "@/lib/ai/budget"
 import { costMicros, priceTable, type ModelPrice, type TokenUsage } from "@/lib/ai/pricing"
 import { forLog } from "@/lib/ai/untrusted"
-import { agentLabel, isAgentId, type AgentId } from "./agents"
+import type { AiRole } from "@/lib/ai/models"
+import type { SkillOffer } from "@/features/offers/skill"
+import { EVALUATIONS_USAGE, agentLabel, isAgentId, type AgentId } from "./agents"
 import { effectiveAgent } from "./definitions"
 
 /**
@@ -24,6 +26,17 @@ export interface RunContext {
   /** Usage key: the requester's id, or "system". */
   userKey: string
   leadId: string | null
+  /**
+   * Set only while an evaluation runs (E27, features/quality/): the models pinned for some roles, used without the
+   * Gateway's fallbacks whatever the workspace chose, and the frozen offers catalogue read instead of the workspace's.
+   * Its spend is filed under « Évaluations », not under the agent's work.
+   */
+  evaluation?: RunEvaluation
+}
+
+export interface RunEvaluation {
+  models: Partial<Record<AiRole, string>>
+  offers?: readonly SkillOffer[]
 }
 
 const MANAGERS = ["OWNER", "MANAGER"]
@@ -39,6 +52,11 @@ export interface StartRunInput {
   status?: "QUEUED" | "RUNNING"
   /** Higher runs first in the queue. */
   priority?: number
+  /**
+   * An evaluation (E27) reserves its own estimate instead of the agent's cap, and may test a switched-off agent: it
+   * measures the agent, it does no work for the team.
+   */
+  evaluation?: { capMicros: number }
 }
 
 const isUniqueViolation = (error: unknown) => (error as { code?: string } | null)?.code === "P2002"
@@ -58,8 +76,8 @@ async function checkTargets(workspaceId: string, actor: CurrentUser | null, inpu
 async function createRun(workspaceId: string, requester: CurrentUser | null, input: StartRunInput): Promise<RunContext> {
   // The workspace may lower an agent's cap or switch it off (E19, features/ai/definitions.ts), never raise it.
   const agent = await effectiveAgent(workspaceId, input.agentId)
-  if (!agent.enabled) throw new LeadError("conflict", `L'agent « ${agent.def.label} » est désactivé : le propriétaire peut le réactiver dans Agents IA.`, 409)
-  const cap = agent.capMicros
+  if (!agent.enabled && !input.evaluation) throw new LeadError("conflict", `L'agent « ${agent.def.label} » est désactivé : le propriétaire peut le réactiver dans Agents IA.`, 409)
+  const cap = input.evaluation?.capMicros ?? agent.capMicros
   const status = input.status ?? "QUEUED"
   const userKey = requester?.id ?? SYSTEM_USER
   const run = await prisma
@@ -180,7 +198,7 @@ export async function recordModelStep(ctx: RunContext, step: ModelStepInput): Pr
         generationId: step.generationId ?? null,
       },
     })
-    await addUsage(tx, { workspaceId: ctx.workspaceId, userKey: ctx.userKey, agentId: ctx.agentId, model: step.model, usage: step.usage, micros })
+    await addUsage(tx, { workspaceId: ctx.workspaceId, userKey: ctx.userKey, agentId: ctx.evaluation ? EVALUATIONS_USAGE : ctx.agentId, model: step.model, usage: step.usage, micros })
     return charged.index
   })
   if (micros > 0) await checkBudgetAlerts(ctx.workspaceId)
@@ -230,6 +248,8 @@ export interface RunView {
   id: string
   agentId: string
   agentLabel: string
+  /** Work that measures or tests the agent rather than serving a fiche: « Évaluation », « Test de skill ». */
+  task: string | null
   status: AgentRunStatus
   requestedBy: string | null
   lead: { id: string; name: string } | null
@@ -244,6 +264,12 @@ export interface RunView {
 
 const leadName = (l: { company: { name: string } | null; contact: { name: string | null; email: string | null } | null }) => l.company?.name ?? l.contact?.name ?? l.contact?.email ?? "Fiche"
 
+const TASK_LABELS: Record<string, string> = { evaluation: "Évaluation", skill_test: "Test de skill" }
+const taskOf = (input: unknown) => {
+  const kind = input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>).kind : null
+  return typeof kind === "string" ? (TASK_LABELS[kind] ?? null) : null
+}
+
 /** Recent runs: all of them for owners and managers, one's own for the others. */
 export async function listRuns(actor: CurrentUser, opts: { leadId?: string; limit?: number } = {}): Promise<RunView[]> {
   if (!can(actor.role, "ai:read")) throw new LeadError("forbidden", "Accès refusé", 403)
@@ -257,6 +283,7 @@ export async function listRuns(actor: CurrentUser, opts: { leadId?: string; limi
     id: r.id,
     agentId: r.agentId,
     agentLabel: agentLabel(r.agentId),
+    task: taskOf(r.input),
     status: r.status,
     requestedBy: r.requestedBy?.name ?? r.requestedBy?.email ?? null,
     lead: r.lead ? { id: r.lead.id, name: leadName(r.lead) } : null,
@@ -306,6 +333,7 @@ export async function getRunDetail(actor: CurrentUser, runId: string): Promise<R
     id: r.id,
     agentId: r.agentId,
     agentLabel: agentLabel(r.agentId),
+    task: taskOf(r.input),
     status: r.status,
     requestedBy: r.requestedBy?.name ?? r.requestedBy?.email ?? null,
     lead: r.lead ? { id: r.lead.id, name: leadName(r.lead) } : null,

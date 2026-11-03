@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { MockLanguageModelV4, Experimental_DecisionMockModelV4 } from "ai/test"
 import { z } from "zod"
 import { publishNotifications } from "@/lib/ai/realtime"
+import { proveModel } from "./helpers/evaluation-proof"
 import { resetDatabase } from "./helpers/reset-db"
 
 // What would reach the bells live is recorded: Pusher itself is never set up in tests.
@@ -321,6 +322,11 @@ suite("AI foundation (database)", () => {
   describe("settings", () => {
     it("lets only the owner change models and caps, merges choices and drops defaults", async () => {
       await expect(settings.updateAiSettings(u.manager, { monthlyCapEur: 50 })).rejects.toMatchObject({ status: 403 })
+      // E27: another model for a role needs its evaluation on every suite the role touches.
+      await expect(settings.updateAiSettings(u.owner, { roleModels: { writer: "mistral/mistral-large-4" } })).rejects.toMatchObject({ status: 409 })
+      const prove = (role: "writer" | "fast", model: string, suites: ("auditor" | "offers" | "writer")[]) => proveModel(prisma, { workspaceId: ws, requestedById: u.owner.id, suites, role, baseline: role === "writer" ? "anthropic/claude-sonnet-5.5" : "anthropic/claude-haiku-5.5", model })
+      await prove("writer", "mistral/mistral-large-4", ["auditor", "offers", "writer"])
+      await prove("fast", "openai/gpt-6-luna", ["auditor"])
       let view = await settings.updateAiSettings(u.owner, { roleModels: { writer: "mistral/mistral-large-4" }, monthlyCapEur: 50, userDailyCapEur: 2.5 })
       expect(view.caps).toEqual({ monthlyCapEur: 50, userDailyCapEur: 2.5, eurPerUsd: 0.92 })
       expect(view.roles.find((r) => r.id === "writer")).toMatchObject({ model: "mistral/mistral-large-4", isDefault: false })

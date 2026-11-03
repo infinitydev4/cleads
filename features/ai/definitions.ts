@@ -7,6 +7,8 @@ import { can } from "@/lib/rbac"
 import { LeadError } from "@/features/leads/errors"
 import { getAiSettings, microsToEur, eurToMicros } from "@/lib/ai/budget"
 import { AI_ROLES, ROLES, modelLabel, resolveRole, type AiRole } from "@/lib/ai/models"
+import { evidenceSummary, requireEvidence } from "@/features/quality/gate"
+import { isSuiteId } from "@/features/quality/labels"
 import { AGENTS, AGENT_IDS, usesSkills, type AgentDef, type AgentId } from "./agents"
 
 /**
@@ -160,9 +162,11 @@ export const updateAgentSchema = z
     maxSteps: z.number().int().min(1, "Une étape au moins").nullable().optional(),
     maxCostEur: z.number().positive("Un plafond positif").nullable().optional(),
     enabled: z.boolean().optional(),
+    /** A role whose model scored below the current one in its evaluation, chosen knowingly (E27). */
+    acceptRegression: z.boolean().optional(),
   })
   .strict()
-  .refine((v) => Object.values(v).some((x) => x !== undefined), { message: "Aucun changement demandé" })
+  .refine(({ acceptRegression: _, ...v }) => Object.values(v).some((x) => x !== undefined), { message: "Aucun changement demandé" })
 export type UpdateAgentInput = z.infer<typeof updateAgentSchema>
 
 interface Snapshot {
@@ -190,6 +194,16 @@ export async function updateAgentDefinition(actor: CurrentUser, agentId: AgentId
     throw new LeadError("invalid", `${def.label} : ${def.limits.maxCostEur.toLocaleString("fr-FR")} € au plus par exécution.`, 400)
   }
   if (input.skills?.length && !usesSkills(def)) throw new LeadError("invalid", `${def.label} décide sans consignes écrites : il n'utilise pas de skills.`, 400)
+  // Another model for an agent that has an evaluation suite needs that model measured on it (E27).
+  let evidence: ReturnType<typeof evidenceSummary> | null = null
+  if (input.modelRole !== undefined && input.modelRole !== def.modelRole && isSuiteId(agentId)) {
+    const [current, settings] = await Promise.all([effectiveAgent(actor.workspaceId, agentId), getAiSettings(actor.workspaceId)])
+    const model = resolveRole(input.modelRole, settings.roleModels).model
+    if (input.modelRole !== current.modelRole && model !== resolveRole(current.modelRole, settings.roleModels).model) {
+      const proof = await requireEvidence(actor.workspaceId, { role: current.modelRole, model, suites: [agentId], what: `faire travailler ${def.label} avec ${modelLabel(model)}` }, !!input.acceptRegression)
+      evidence = evidenceSummary(proof)
+    }
+  }
   if (input.skills?.length) {
     const found = await prisma.skill.count({ where: { workspaceId: actor.workspaceId, id: { in: input.skills.map((s) => s.skillId) }, archivedAt: null } })
     if (found !== input.skills.length) throw new LeadError("invalid", "Un des skills choisis n'existe pas ou est archivé.", 400)
@@ -252,7 +266,7 @@ export async function updateAgentDefinition(actor: CurrentUser, agentId: AgentId
     return changed
   })
   if (changes.length) {
-    await audit({ action: "ai.agent_updated", actorId: actor.id, workspaceId: actor.workspaceId, entityType: "AgentDefinition", entityId: agentId, metadata: { agentId, changes }, ip })
+    await audit({ action: "ai.agent_updated", actorId: actor.id, workspaceId: actor.workspaceId, entityType: "AgentDefinition", entityId: agentId, metadata: { agentId, changes, ...(evidence && changes.includes("model") ? { evidence } : {}) }, ip })
   }
   const page = await agentViews(actor)
   return page.agents.find((a) => a.id === agentId)!

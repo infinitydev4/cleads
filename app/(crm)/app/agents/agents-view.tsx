@@ -19,9 +19,13 @@ import type { RunView } from "@/features/ai/runs"
 import type { AiSettingsView } from "@/features/ai/settings"
 import type { SkillView } from "@/features/ai/skills/service"
 import type { OfferView } from "@/features/offers/service"
+import type { QualityDashboard } from "@/features/quality/dashboard"
+import type { QualityPage } from "@/features/quality/service"
 import { api } from "../leads/api"
 import { AgentsTab } from "./agents-tab"
+import type { EvaluationPreset } from "./evaluation-dialog"
 import { OffersTab } from "./offers-tab"
+import { QualityTab } from "./quality-tab"
 import { RunsTab } from "./runs-tab"
 import { SkillsTab } from "./skills-tab"
 import type { Tab } from "./tabs"
@@ -46,6 +50,8 @@ export function AgentsView(props: {
   runs: RunView[]
   approvals: ApprovalView[]
   settings: AiSettingsView
+  /** Owners and managers (E27). */
+  quality: { dashboard: QualityDashboard; page: QualityPage; evaluate: EvaluationPreset & { suite?: string } } | null
   can: Rights
 }) {
   const { settings, approvals, runs } = props
@@ -134,6 +140,7 @@ export function AgentsView(props: {
               )}
             </TabsTrigger>
             <TabsTrigger value="usage">Consommation</TabsTrigger>
+            {props.quality && <TabsTrigger value="quality">Qualité</TabsTrigger>}
           </TabsList>
         </div>
 
@@ -184,6 +191,11 @@ export function AgentsView(props: {
             .
           </p>
         </TabsContent>
+        {props.quality && (
+          <TabsContent value="quality" className="mt-4">
+            <QualityTab initialDashboard={props.quality.dashboard} initialPage={props.quality.page} evaluate={props.quality.evaluate} onOpenRun={setOpenRun} />
+          </TabsContent>
+        )}
       </Tabs>
 
       <RunSheet runId={openRun} onClose={() => setOpenRun(null)} />

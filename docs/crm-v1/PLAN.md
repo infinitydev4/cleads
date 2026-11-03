@@ -547,7 +547,7 @@ Seconde vue du CRM, isométrique et interactive, à côté de la vue 2D qui rest
 - **Critères** : aucune régression de la vue 2D (tests et parcours dans le navigateur) ; aucun chiffre sans définition ; fluide sur un portable récent.
 
 ### Couche agentique IA (E17 à E27, décidée le 2 novembre 2026)
-Décisions D13 à D27 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17 à E26 sont faits ; E27 reste à faire.
+Décisions D13 à D27 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17 à E27 sont faits.
 
 ### E17 — Socle IA · **M** *(absorbe E13)*
 > **Avancement (branche `feat/e17-socle-ia`)** — fait :
@@ -959,6 +959,31 @@ Deux entrées dans `features/hq/zones.ts` (touches 9 et 0), plateforme agrandie,
 - **Critères** : aucune régression de la 3D (60 images/s sur la machine de référence) ni de la 2D.
 
 ### E27 — Qualité de l'IA · **S**, puis continu *(démarre avec M7)*
+> **Avancement (branche `feat/e27-qualite-ia`)** — fait :
+> - **jeux de référence** dans `evals/`, entreprises fictives :
+>   - 30 sites figés pour l'Auditeur, chacun avec les signaux attendus et interdits, vérifiés hors ligne par les règles de l'audit ;
+>   - 10 audits de référence (Conseiller offres, Rédacteur) ;
+>   - 80 réponses étiquetées (Analyste réponses) et 45 fiches jugées pour trois campagnes (Analyste qualification) ;
+>   - 3 briefs (Designer) ;
+> - **six suites** (`features/quality/`) qui rejouent le vrai code des agents : le modèle en service est toujours mesuré, avec jusqu'à trois autres sur les mêmes cas, épinglés sans secours ;
+>   - les décisions comparent Jev et ses pairs, un modèle de langage et des règles codées, sur le jeu de référence ou sur les cas étiquetés par l'équipe ;
+>   - un juge fixe (Claude Sonnet 5.5) note les emails et les pages, facturé à part ;
+> - **lancement** depuis Agents IA › Qualité (propriétaire, managers) avec le coût par modèle affiché avant ; le worker exécute la tâche `evaluation` après le vrai travail de l'équipe, reprend sans refaire, et garde les cas faits si on l'arrête ou si le plafond est atteint ;
+> - **résultats** : score sur 100, mesures, coût par cas, durée, règles à ne jamais enfreindre, verdict face au modèle en service (± 3 points), calibration des décisions, chaque cas ;
+> - **garde-fou** : un rôle ne passe à un autre modèle que celui par défaut, ni un agent à un autre rôle, qu'après une évaluation de moins de 30 jours sur chaque suite touchée ; une régression doit être confirmée ; la preuve va au journal d'audit ;
+> - **tableau de bord** (7, 30 ou 90 jours) : exécutions, réussite, coût et durée par agent, utilité (audits complets, offres retenues, brouillons peu retouchés, classements de Jev confirmés, cibles adoptées, maquettes conformes), erreurs regroupées ; les dépenses des évaluations sont classées à part ;
+> - migration `20261111090000_ai_quality` (`AiEvaluation`, `AiEvaluationCase`) ; le worker doit être redéployé.
+>
+> **Vérifié** :
+> - `tests/quality.test.ts` (42 tests, dont la cohérence de chaque site figé avec les règles de l'audit) et `tests/quality.integration.test.ts` (10 tests, base jetable, modèles simulés) ;
+> - suite complète verte, `tsc`, lint des fichiers touchés, build du site et du worker ;
+> - dans Chrome sur la base de démo (évaluations faites par le vrai code avec des modèles simulés) : onglet Qualité, résultats et cas, lancement avec coût, preuve dans Réglages › IA et dans la configuration d'un agent, téléphone (aucun débordement).
+>
+> **Écarts** :
+> - pas de Lighthouse dans les évaluations (PageSpeed a besoin d'une page publique) : axe-core et la critique le remplacent ;
+> - le copilote et le Stratège n'ont pas de jeu de référence : leur rôle change sans évaluation ;
+> - les seuils de décision ne se règlent pas encore depuis la calibration.
+
 - Jeux d'évaluation dans `evals/` : sites figés (sans réseau), réponses étiquetées par les SDR (objectif 200 à 500), juge LLM sur une grille. Ils se lancent à la demande, avec le coût affiché.
 - Tableau de bord dans `/app/agents` : coût par agent, taux d'acceptation des suggestions, éditions des brouillons, erreurs.
 - Non-régression obligatoire avant de changer le modèle d'un rôle ; comparatif Jev / Haiku / règles sur nos données.
