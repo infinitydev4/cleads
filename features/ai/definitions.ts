@@ -12,6 +12,7 @@ import { isSuiteId } from "@/features/quality/labels"
 import { AGENTS, AGENT_IDS, usesSkills, type AgentDef, type AgentId } from "./agents"
 import { ACTION_FAMILIES, FAMILY_INFO, FAMILY_MODES, allowedModes, type ActionFamily, type FamilyMode } from "./actions/families"
 import { effectivePolicy, storedPolicy, type AgentPolicy } from "./actions/policy"
+import type { McpRightsView } from "@/features/mcp/policy"
 
 /**
  * The workspace's layer over each agent (docs/crm-v1/AGENTS-IA.md §7): team instructions and skills (owners and
@@ -113,6 +114,8 @@ export interface AgentsPage {
   canEditInstructions: boolean
   /** Model role, limits, on/off. */
   canEditSettings: boolean
+  /** E29: the MCP clients' row of the rights matrix (features/mcp/policy.ts), added by the page. */
+  mcp?: McpRightsView
 }
 
 async function names(ids: (string | null)[]): Promise<Map<string, string>> {

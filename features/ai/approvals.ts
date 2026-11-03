@@ -8,6 +8,7 @@ import { ACTIVE_RUN_STATUSES } from "@/lib/ai/budget"
 import { agentLabel } from "./agents"
 import { isManager, recordStep, type RunContext } from "./runs"
 import { wakeMissionOfRun } from "@/features/missions/wake"
+import { clientOfInput } from "@/features/mcp/names"
 
 /**
  * Human approval (D18, docs/crm-v1/AGENTS-IA.md §10). A tool call that leaves the CRM (an email, a search, a link sent
@@ -64,7 +65,7 @@ export interface ApprovalView {
 const include = {
   requestedBy: { select: { name: true, email: true } },
   decidedBy: { select: { name: true, email: true } },
-  run: { select: { agentId: true, lead: { select: { id: true, company: { select: { name: true } }, contact: { select: { name: true, email: true } } } } } },
+  run: { select: { agentId: true, input: true, lead: { select: { id: true, company: { select: { name: true } }, contact: { select: { name: true, email: true } } } } } },
 } satisfies Prisma.AgentApprovalInclude
 
 type Row = Prisma.AgentApprovalGetPayload<{ include: typeof include }>
@@ -72,10 +73,12 @@ const who = (u: { name: string | null; email: string | null } | null) => u?.name
 
 function toView(a: Row, actor: CurrentUser): ApprovalView {
   const lead = a.run.lead
+  // E29: an MCP client's action names the client that asked for it.
+  const client = clientOfInput(a.run.input)
   return {
     id: a.id,
     runId: a.runId,
-    agentLabel: agentLabel(a.run.agentId),
+    agentLabel: client ? `${client} (MCP)` : agentLabel(a.run.agentId),
     tool: a.tool,
     summary: a.summary,
     status: a.status,
@@ -107,7 +110,10 @@ export async function listApprovals(actor: CurrentUser, opts: { status?: AgentAp
  * that person must also hold the right the call needs (they could have done it themselves).
  */
 export async function decideApproval(actor: CurrentUser, approvalId: string, decision: { approve: boolean; note?: string | null }): Promise<ApprovalView> {
-  const a = await prisma.agentApproval.findFirst({ where: { id: approvalId, workspaceId: actor.workspaceId }, select: { id: true, runId: true, tool: true, permission: true, status: true, requestedById: true, expiresAt: true } })
+  const a = await prisma.agentApproval.findFirst({
+    where: { id: approvalId, workspaceId: actor.workspaceId },
+    select: { id: true, runId: true, tool: true, permission: true, status: true, requestedById: true, expiresAt: true, run: { select: { input: true } } },
+  })
   if (!a) throw new LeadError("not_found", "Demande introuvable", 404)
   if (a.status !== "PENDING") throw new LeadError("conflict", "Cette demande a déjà été traitée.", 409)
   const now = new Date()
@@ -153,6 +159,9 @@ export async function decideApproval(actor: CurrentUser, approvalId: string, dec
     entityId: a.id,
     metadata: { runId: a.runId, tool: a.tool },
   })
+  // E29 (D37): no worker takes an MCP client's action; once approved, it runs here, exactly as shown. Loaded on demand:
+  // the server's code stays out of every other approval.
+  if (decision.approve && clientOfInput(a.run.input)) await (await import("@/features/mcp/approvals")).runApprovedMcpAction(a.runId)
   return toView(await prisma.agentApproval.findUniqueOrThrow({ where: { id: a.id }, include }), actor)
 }
 

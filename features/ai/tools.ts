@@ -11,6 +11,7 @@ import { recordStep, type RunContext } from "./runs"
 import { AGENTS } from "./agents"
 import { FAMILY_INFO, type ActionFamily } from "./actions/families"
 import { effectivePolicy, modeOf, type AgentPolicy } from "./actions/policy"
+import { MCP_AGENT } from "@/features/mcp/names"
 
 /**
  * The tools agents may use (docs/crm-v1/AGENTS-IA.md §9). A tool calls an existing service and never the database
@@ -126,8 +127,9 @@ export function clearTools() {
 /** The person's right, then the agent's matrix: checked when the call is offered, asked for and made. */
 export function checkRight(def: AnyToolDef, ctx: ToolContext) {
   if (def.family && !isOpen(def, policyOf(ctx))) {
-    const label = AGENTS[ctx.run.agentId]?.label ?? "Cet agent"
-    throw new LeadError("forbidden", `${label} n'a pas le droit « ${FAMILY_INFO[def.family].label} » dans cet espace : le propriétaire le règle dans Agents IA › Agents › Droits.`, 403)
+    // E29: an MCP client's call is held to the MCP clients' row, not to the copilot's.
+    const who = ctx.run.client ? "Les clients MCP n'ont" : `${AGENTS[ctx.run.agentId]?.label ?? "Cet agent"} n'a`
+    throw new LeadError("forbidden", `${who} pas le droit « ${FAMILY_INFO[def.family].label} » dans cet espace : le propriétaire le règle dans Agents IA › Agents › Droits.`, 403)
   }
   if (!def.permission) return
   const requester = ctx.run.requester
@@ -141,7 +143,9 @@ async function executeTool<I, O>(def: ToolDef<I, O>, ctx: ToolContext, input: I)
   checkRight(def, ctx)
   const started = Date.now()
   try {
-    const output = await withActing({ agentId: ctx.run.agentId, runId: ctx.run.id, tool: def.name, ...(ctx.run.missionId ? { missionId: ctx.run.missionId } : {}) }, () => def.execute(ctx, input))
+    // E29: an approved action an MCP client asked for is the client's, not the copilot's whose catalogue it uses.
+    const through = ctx.run.client ? { agentId: MCP_AGENT, client: ctx.run.client } : { agentId: ctx.run.agentId }
+    const output = await withActing({ ...through, runId: ctx.run.id, tool: def.name, ...(ctx.run.missionId ? { missionId: ctx.run.missionId } : {}) }, () => def.execute(ctx, input))
     await recordStep(ctx.run, { type: "TOOL", name: def.name, input, output, durationMs: Date.now() - started })
     return output
   } catch (error) {

@@ -76,6 +76,8 @@ model User {
   /// E28: missions the member launched, and the recurring ones.
   missions               AgentMission[]          @relation("MissionRequester")
   missionSchedules       AgentMissionSchedule[]  @relation("MissionScheduleRequester")
+  /// E29: the member's personal tokens for the CRM's MCP server.
+  mcpTokens              McpToken[]
 }
 
 /// LEGACY (blog, AI keys, NextAuth adapter): unused, dropped by prisma/pending/drop-legacy-blog.sql once a dump is taken.
@@ -614,6 +616,8 @@ model Workspace {
   aiEvaluations          AiEvaluation[]
   agentMissions          AgentMission[]
   agentMissionSchedules  AgentMissionSchedule[]
+  mcpTokens              McpToken[]
+  mcpCalls               McpCall[]
 }
 
 enum LeadSource {
@@ -1485,6 +1489,10 @@ model AiSetting {
   catalogVersion     Int       @default(1)
   /// E28 (D32): most a mission may spend on AI before a second confirmation.
   missionCapMicros   Int       @default(2000000)
+  /// E29 (D39): the CRM's MCP server answers this workspace's tokens only once the owner switched it on.
+  mcpEnabled         Boolean   @default(false)
+  /// E29 (D38): the families of actions the MCP clients get, set apart from the code (features/mcp/policy.ts).
+  mcpPolicy          Json?
   updatedById        String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -2558,4 +2566,59 @@ model AgentMissionSchedule {
 
   @@index([status, nextRunAt])
   @@index([requestedById])
+}
+
+/// E29 (D36): a member's personal token for the CRM's MCP server. Only its hash is stored. The token stands for the
+/// member: their role is read again at every request, and a deactivated account or a revoked token stops it at once.
+model McpToken {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  tokenHash   String    @unique
+  /// The first characters of the secret after its prefix, to recognise it in a list.
+  hint        String
+  /// Reading only: the families read_crm, read_web and navigation.
+  readOnly    Boolean   @default(true)
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  revokedById String?
+  lastUsedAt  DateTime?
+  /// The client that used it last, as it names itself (clientInfo): for display, never a proof.
+  lastClient  String?
+  createdAt   DateTime  @default(now())
+
+  calls McpCall[]
+
+  @@index([workspaceId, userId])
+}
+
+enum McpCallOutcome {
+  DONE
+  /// Waits for a person in « À valider ».
+  PENDING
+  /// Refused before running: no right, family closed, read-only token, invalid input.
+  REFUSED
+  ERROR
+}
+
+/// E29: one tool call through MCP, the token's activity. Kept 90 days.
+model McpCall {
+  id          String         @id @default(cuid())
+  workspaceId String
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  tokenId     String
+  token       McpToken       @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  tool        String
+  client      String?
+  outcome     McpCallOutcome
+  /// The approval a call waits for, when it does.
+  approvalId  String?
+  durationMs  Int
+  createdAt   DateTime       @default(now())
+
+  @@index([tokenId, createdAt])
+  @@index([workspaceId, createdAt])
 }

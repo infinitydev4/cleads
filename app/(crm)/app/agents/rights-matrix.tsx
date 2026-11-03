@@ -9,13 +9,25 @@ import { Card } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ACTION_FAMILIES, FAMILY_INFO, MODE_LABELS, type ActionFamily, type FamilyMode } from "@/features/ai/actions/families"
 import type { AgentFamilyView, AgentView } from "@/features/ai/definitions"
+import type { McpRightsView } from "@/features/mcp/policy"
 import { api } from "../leads/api"
 
 /**
  * The agents' rights matrix (E28, Agents IA › Agents): for each agent, the families of actions it works with and how.
  * The owner changes a cell; everyone else reads it. It only ever narrows what the person an agent works for may do,
- * and the rights no agent may use stay closed whatever it says.
+ * and the rights no agent may use stay closed whatever it says. E29: the MCP clients have their own row (D38).
  */
+
+/** A row of the matrix: an agent, or the MCP clients, each saved through its own route. */
+interface Row {
+  id: string
+  label: string
+  picksTools: boolean
+  families: AgentFamilyView[]
+  route: string
+  /** Said under the row's name. */
+  note?: string
+}
 
 /** A specialist's workflow has a family on or off; an agent that picks its tools can also make it wait for a click. */
 const modeLabel = (mode: FamilyMode, picksTools: boolean) => (picksTools ? MODE_LABELS[mode] : mode === "off" ? "Coupé" : "Autorisé")
@@ -23,7 +35,7 @@ const modeLabel = (mode: FamilyMode, picksTools: boolean) => (picksTools ? MODE_
 const cellLabel = (mode: FamilyMode, picksTools: boolean) => (picksTools && mode === "confirm" ? "Un clic" : modeLabel(mode, picksTools))
 const TONE: Record<FamilyMode, "success" | "info" | "destructive"> = { auto: "success", confirm: "info", off: "destructive" }
 
-function Cell({ agent, family, canEdit }: { agent: AgentView; family: AgentFamilyView; canEdit: boolean }) {
+function Cell({ agent, family, canEdit }: { agent: Row; family: AgentFamilyView; canEdit: boolean }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const label = `${agent.label} · ${family.label}`
@@ -35,7 +47,7 @@ function Cell({ agent, family, canEdit }: { agent: AgentView; family: AgentFamil
       onValueChange={async (mode) => {
         setBusy(true)
         try {
-          await api(`/api/ai/agents/${agent.id}`, { method: "PUT", body: JSON.stringify({ actionPolicy: { [family.id]: mode } }) })
+          await api(agent.route, { method: "PUT", body: JSON.stringify({ actionPolicy: { [family.id]: mode } }) })
           toast.success(`${label} : ${modeLabel(mode as FamilyMode, agent.picksTools).toLowerCase()}`)
           router.refresh()
         } catch (e) {
@@ -61,10 +73,14 @@ function Cell({ agent, family, canEdit }: { agent: AgentView; family: AgentFamil
   )
 }
 
-export function RightsMatrix({ agents, canEdit }: { agents: AgentView[]; canEdit: boolean }) {
-  const columns = ACTION_FAMILIES.filter((f) => agents.some((a) => a.families.some((x) => x.id === f)))
-  const stopped = agents.filter((a) => !a.picksTools && a.families.some((f) => f.mode === "off"))
-  const cell = (a: AgentView, f: ActionFamily) => a.families.find((x) => x.id === f)
+export function RightsMatrix({ agents, mcp, canEdit }: { agents: AgentView[]; mcp: McpRightsView | null; canEdit: boolean }) {
+  const rows: Row[] = [
+    ...agents.map((a) => ({ ...a, route: `/api/ai/agents/${a.id}` })),
+    ...(mcp ? [{ ...mcp, route: "/api/ai/mcp", note: mcp.enabled ? "Claude Code, Cursor…" : "accès coupé" }] : []),
+  ]
+  const columns = ACTION_FAMILIES.filter((f) => rows.some((a) => a.families.some((x) => x.id === f)))
+  const stopped = rows.filter((a) => !a.picksTools && a.families.some((f) => f.mode === "off"))
+  const cell = (a: Row, f: ActionFamily) => a.families.find((x) => x.id === f)
   return (
     <Card className="mt-6 p-4">
       <h2 className="flex items-center gap-2 text-base font-semibold">
@@ -90,10 +106,11 @@ export function RightsMatrix({ agents, canEdit }: { agents: AgentView[]; canEdit
             </tr>
           </thead>
           <tbody>
-            {agents.map((a) => (
+            {rows.map((a) => (
               <tr key={a.id} className="border-t">
                 <th scope="row" className="sticky left-0 z-10 min-w-[7rem] max-w-[9rem] border-t bg-card py-2 pr-2 text-left font-medium leading-tight">
                   {a.label}
+                  {a.note && <span className="block text-xs font-normal text-muted-foreground">{a.note}</span>}
                 </th>
                 {columns.map((f) => {
                   const c = cell(a, f)
