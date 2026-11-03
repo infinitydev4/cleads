@@ -158,7 +158,7 @@ export const importSearchTool = defineTool({
   },
   execute: async (ctx, input) => {
     const r = await importSearch(personOf(ctx), input.searchId, { commit: true, useful: true, hasEmail: !!input.hasEmail, minCompleteness: input.minCompleteness ?? 0 })
-    return { done: true, searchId: input.searchId, created: r.summary.created, alreadyKnown: r.summary.existing, excluded: r.excluded, searchStatus: r.jobStatus }
+    return { done: true, searchId: input.searchId, created: r.summary.created, alreadyKnown: r.summary.existing, excluded: r.excluded, searchStatus: r.jobStatus, batchId: r.batchId }
   },
 })
 

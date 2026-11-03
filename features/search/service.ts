@@ -13,6 +13,7 @@ import { assertCampaign } from "@/features/campaigns/filing"
 import { sortAfterImport } from "@/features/relevance/service"
 import { MAX_IMPORT_ROWS, runImport, type ImportResult, type ImportRow } from "@/features/leads/import"
 import { MAX_SEARCH_RESULTS, type ImportOptions, type StartSearchInput } from "./schemas"
+import { wakeMissions } from "@/features/missions/wake"
 
 export const MAX_ACTIVE_SEARCHES_PER_USER = 3
 const TERMINAL: SearchStatus[] = ["COMPLETED", "FAILED", "CANCELLED"]
@@ -308,6 +309,8 @@ export async function handleExtractorWebhook(rawBody: string, headers: Headers, 
   if (!search) return { status: 200, body: { ignored: true } }
 
   const { terminalNow, row } = await apply(search, event.job)
+  // A mission waiting on this search goes on at once (E28).
+  if (TERMINAL.includes(row.status)) await wakeMissions({ searchId: search.id })
   if (terminalNow || (TERMINAL.includes(row.status) && !row.notifiedAt)) {
     // The claim is atomic: two deliveries of the same event notify once.
     const claimed = await prisma.extractionSearch.updateMany({ where: { id: search.id, notifiedAt: null }, data: { notifiedAt: new Date() } })

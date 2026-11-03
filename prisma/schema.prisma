@@ -73,6 +73,9 @@ model User {
   approvalsRequested     AgentApproval[]         @relation("ApprovalRequester")
   approvalsDecided       AgentApproval[]         @relation("ApprovalDecider")
   evaluationsRequested   AiEvaluation[]          @relation("EvaluationRequester")
+  /// E28: missions the member launched, and the recurring ones.
+  missions               AgentMission[]          @relation("MissionRequester")
+  missionSchedules       AgentMissionSchedule[]  @relation("MissionScheduleRequester")
 }
 
 /// LEGACY (blog, AI keys, NextAuth adapter): unused, dropped by prisma/pending/drop-legacy-blog.sql once a dump is taken.
@@ -609,6 +612,8 @@ model Workspace {
   strategyProposals      StrategyProposal[]
   leadRelevances         LeadRelevance[]
   aiEvaluations          AiEvaluation[]
+  agentMissions          AgentMission[]
+  agentMissionSchedules  AgentMissionSchedule[]
 }
 
 enum LeadSource {
@@ -1476,6 +1481,10 @@ model AiSetting {
   alerts             Json?
   /// E19: when the V1 skills and offers were installed (once; deleting them later does not bring them back).
   catalogSeededAt    DateTime?
+  /// E28: the catalogue additions installed since (features/ai/catalog.ts); 1 = the V1 catalogue alone.
+  catalogVersion     Int       @default(1)
+  /// E28 (D32): most a mission may spend on AI before a second confirmation.
+  missionCapMicros   Int       @default(2000000)
   updatedById        String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -1519,6 +1528,9 @@ model AgentRun {
   parentRunId    String?
   parentRun      AgentRun?      @relation("AgentRunChildren", fields: [parentRunId], references: [id], onDelete: SetNull)
   children       AgentRun[]     @relation("AgentRunChildren")
+  /// E28: the mission this run works for; its cost counts against the mission's cap.
+  missionId      String?
+  mission        AgentMission?  @relation(fields: [missionId], references: [id], onDelete: SetNull)
   input          Json?
   output         Json?
   error          String?
@@ -1563,6 +1575,7 @@ model AgentRun {
   @@index([leadId, createdAt])
   @@index([requestedById, createdAt])
   @@index([status, priority, createdAt])
+  @@index([missionId])
 }
 
 /// What a run did, in order: model calls, tools, decisions, approvals. Inputs and outputs are truncated.
@@ -2407,4 +2420,142 @@ model AiEvaluationCase {
   createdAt    DateTime     @default(now())
 
   @@unique([evaluationId, contender, caseId])
+}
+
+/// E28: where a mission stands. PROPOSED waits for its click; RUNNING works or waits (a search, a run, a click);
+/// PAUSED waits for the person (their pause, an incident, a higher cap).
+enum AgentMissionStatus {
+  PROPOSED
+  REFUSED
+  EXPIRED
+  RUNNING
+  PAUSED
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum AgentMissionStepStatus {
+  PENDING
+  RUNNING
+  WAITING
+  DONE
+  SKIPPED
+  FAILED
+  /// Started by a worker that stopped before its end: maybe done, never redone without the person.
+  UNCERTAIN
+  CANCELLED
+}
+
+enum AgentMissionScheduleStatus {
+  ACTIVE
+  PAUSED
+  STOPPED
+}
+
+/// E28: a plan of several actions the copilot proposed and a person launched in one click (features/missions/). The
+/// worker carries it out step by step with the person's rights of the moment; the plan does not change once launched.
+model AgentMission {
+  id             String                @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  /// The person it acts for: each step checks this person's rights when it runs.
+  requestedById  String?
+  requestedBy    User?                 @relation("MissionRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  title          String
+  status         AgentMissionStatus    @default(PROPOSED)
+  /// The plan as checked: { title, steps: [{ id, action, input, forEach? }], recurrence? }, references unresolved.
+  plan           Json
+  /// What it should and could cost on AI when it was proposed (micro-euros).
+  probableMicros Int                   @default(0)
+  maxMicros      Int                   @default(0)
+  /// Most it may spend on AI (D32): the workspace's cap, or more after a second confirmation.
+  capMicros      Int                   @default(0)
+  /// The copilot conversation it was proposed in: the proposal ends at the next question there.
+  conversationId String?
+  /// A proposal not launched by then expires.
+  expiresAt      DateTime?
+  approvedAt     DateTime?
+  /// An occurrence of a recurring mission.
+  scheduleId     String?
+  schedule       AgentMissionSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  /// Why it paused or failed, in words for the person; a "budget" pause asks for a higher cap.
+  pauseKind      String?
+  pauseReason    String?
+  /// What it did, composed in code at its end: counts, the tag on its fiches, links.
+  report         Json?
+  // The engine (features/missions/engine.ts): looked at again from wakeAt, by one worker at a time.
+  wakeAt         DateTime?
+  lockedBy       String?
+  lockedUntil    DateTime?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  steps AgentMissionStep[]
+  runs  AgentRun[]
+
+  @@index([workspaceId, createdAt])
+  @@index([requestedById, createdAt])
+  @@index([status, wakeAt])
+  @@index([conversationId])
+}
+
+/// One unit of a mission's work: a step of its plan, or one item of a step that loops (forEach). Created when the
+/// step can start, with its references resolved; claimed before it runs, so it runs at most once.
+model AgentMissionStep {
+  id         String                 @id @default(cuid())
+  missionId  String
+  mission    AgentMission           @relation(fields: [missionId], references: [id], onDelete: Cascade)
+  /// The plan's step ("s1"…) and the item of its loop (0 without one).
+  key        String
+  item       Int                    @default(0)
+  action     String
+  /// The input as executed.
+  input      Json
+  status     AgentMissionStepStatus @default(PENDING)
+  /// What it waits for once launched: "search", "run", "sort" or "approval", and its id.
+  waitKind   String?
+  waitId     String?
+  /// What it did, for the card and the report.
+  output     Json?
+  /// What a later step may cite ({ searchId, leadIds… }), once it is over.
+  exports    Json?
+  error      String?
+  attempts   Int                    @default(0)
+  notBefore  DateTime?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+
+  @@unique([missionId, key, item])
+  @@index([waitKind, waitId])
+}
+
+/// E28 (D35): a mission that comes back. Each occurrence runs the frozen plan with the rights and caps of its day.
+model AgentMissionSchedule {
+  id            String                     @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace                  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  requestedById String?
+  requestedBy   User?                      @relation("MissionScheduleRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  title         String
+  plan          Json
+  /// { frequency: "daily" | "weekly", days, hour, minute }, Europe/Paris time.
+  recurrence    Json
+  capMicros     Int
+  status        AgentMissionScheduleStatus @default(ACTIVE)
+  nextRunAt     DateTime?
+  /// Occurrences failed in a row: two pause it.
+  failures      Int                        @default(0)
+  pauseReason   String?
+  createdAt     DateTime                   @default(now())
+  updatedAt     DateTime                   @updatedAt
+
+  missions AgentMission[]
+
+  @@index([status, nextRunAt])
+  @@index([requestedById])
 }

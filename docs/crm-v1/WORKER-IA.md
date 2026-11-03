@@ -47,6 +47,15 @@ La file est la **table `AgentRun`** elle-même :
 - Les autres exécutions restent en file.
 - Le champ `tasks` de `/healthz` liste les tâches connues.
 
+**Missions** (E28, `features/missions/engine.ts`). Une mission est un plan lancé d'un clic dans le CRM ([AGENTS-IA.md](AGENTS-IA.md), section 17). Le worker la mène à côté des exécutions, deux à la fois au plus :
+- **Prise** : à chaque tour de boucle, il prend une mission en cours dont l'heure de réveil (`wakeAt`) est passée, avec `FOR UPDATE SKIP LOCKED`, et la garde par un bail de 5 minutes, renouvelé entre les étapes. Une mission dont le worker s'est arrêté est reprise à l'expiration de son bail.
+- **Un passage** recharge la personne avec ses droits du moment, regarde où en est ce que les étapes attendent (recherche, exécution, tri de Jev, validation), puis lance les étapes qui peuvent partir. Chacune est marquée « en cours » avant de s'exécuter : un worker qui s'arrête au milieu la laisse « peut-être faite », et la mission se met en pause au lieu de la refaire.
+- **Aucune attente longue** : une étape lance son travail (recherche sur l'Extractor, exécution d'un spécialiste) et la mission est rendue. Elle est réveillée par le webhook de l'Extractor, la fin d'une de ses exécutions ou une décision sur sa validation, et relue chaque minute de toute façon.
+- **Erreurs** : une erreur passagère (Extractor ou base injoignable) relance l'étape après 1, puis 2 minutes ; au-delà, ou pour toute autre erreur, la mission se met en pause avec la raison, et la personne la reprend ou l'annule.
+- **Actions validées** : une étape qui contacte un prospect attend dans une exécution du copilote (tâche `mission_action`, sans plafond réservé). Une fois validée, le worker l'exécute comme toute action approuvée, au plus une fois, puis la mission continue.
+- **Arrêt propre** : le passage en cours finit son étape et rend la mission.
+- Le champ `missions` de `/healthz` compte les passages en cours.
+
 **Maintenance** (toutes les 30 s ; un verrou consultatif la réserve à un seul worker s'il y en a plusieurs) :
 - reprises et abandons ;
 - exécutions interrompues pendant une requête du CRM ;
@@ -55,7 +64,8 @@ La file est la **table `AgentRun`** elle-même :
 - alerte aux propriétaires au-delà de 3 échecs en 15 minutes, une fois par heure au plus ;
 - rattrapage du classement des réponses (E22) : les réponses d'une personne restées sans classement ni suggestion depuis plus de 2 minutes, sur 7 jours, sont remises en file, 10 fiches au plus par passage. Une fiche qui vient d'avoir une exécution attend 30 minutes ;
 - Studio Web (E23) : les jetons PageSpeed de plus de 15 minutes sont effacés, et le contenu des maquettes arrivées à échéance (90 jours) est supprimé, 20 maquettes au plus par passage ;
-- copilote (E24) : les conversations sans message depuis 90 jours sont supprimées. Les tours du copilote s'exécutent dans le CRM, pas dans le worker ; un tour interrompu sans le dire est marqué en échec au bout de 10 minutes, comme toute exécution faite pendant une requête.
+- copilote (E24) : les conversations sans message depuis 90 jours sont supprimées. Les tours du copilote s'exécutent dans le CRM, pas dans le worker ; un tour interrompu sans le dire est marqué en échec au bout de 10 minutes, comme toute exécution faite pendant une requête ;
+- missions (E28) : les plans proposés et pas lancés depuis 24 heures expirent, et les passages dus des missions récurrentes partent (20 au plus par passage de maintenance).
 
 **Navigateur** (E23). Le Designer rend ses maquettes dans Chromium, le *headless shell* installé par Playwright dans l'image (`worker/browser.ts`) :
 - un navigateur par exécution, fermé à la fin ;
@@ -77,6 +87,7 @@ La file est la **table `AgentRun`** elle-même :
   - réservés aux personnes qui ont le droit `search:run` ;
   - chaque appel est enregistré comme étape de l'exécution ;
   - lancer une recherche reste un service du CRM.
+- **API de l'Extractor** (E28) : les missions lancent, suivent et importent leurs recherches par le service de recherche du CRM, qui appelle l'API de l'Extractor sur le réseau local (`EXTRACTOR_URL=http://api:8080`, fixé dans `compose.yml`), avec la même clé que le MCP.
 
 ## 4. Sécurité et performance
 
@@ -136,6 +147,7 @@ La file est la **table `AgentRun`** elle-même :
 | `EXTRACTOR_API_KEY` | clé `crm` de l'Extractor, copiée sur le serveur |
 | `NEXT_PUBLIC_PUSHER_APP_ID`, `NEXT_PUBLIC_PUSHER_KEY`, `NEXT_PUBLIC_PUSHER_CLUSTER`, `PUSHER_SECRET` | temps réel ; facultatives (sinon les pages interrogent) |
 | `WORKER_CONCURRENCY` | exécutions simultanées, 3 par défaut |
+| `EXTRACTOR_WEBHOOK_SECRET` | facultative (E28) : la même que celle du CRM. L'Extractor prévient alors le CRM de la fin d'une recherche lancée par une mission, qui reprend aussitôt et notifie la personne ; sans elle, la mission relit sa recherche chaque minute. |
 | `NEXT_PUBLIC_APP_URL` | adresse publique du CRM, pour les liens que le worker écrit (lien de réservation d'une réponse, E22). Elle est fixée dans `compose.yml` (`https://cleads.fr` par défaut) et peut être changée par `APP_URL` dans le `.env` du serveur. |
 | `STUDIO_PREVIEW_HOST` | hôte des aperçus du Studio (E23), où PageSpeed mesure chaque nouvelle version. Fixé dans `compose.yml` (`apercu.cleads.fr` par défaut), modifiable par `PREVIEW_HOST` dans le `.env` du serveur. |
 

@@ -42,7 +42,7 @@ export interface AiSettingsView {
   configured: boolean
   canManage: boolean
   roles: RoleView[]
-  caps: { monthlyCapEur: number; userDailyCapEur: number; eurPerUsd: number }
+  caps: { monthlyCapEur: number; userDailyCapEur: number; eurPerUsd: number; missionCapEur: number }
   month: {
     key: string
     spentEur: number
@@ -112,7 +112,7 @@ export async function aiSettingsView(actor: CurrentUser): Promise<AiSettingsView
         choices: def.choices.map((m) => ({ id: m, label: modelLabel(m), price: formatPrice(prices[m]) })),
       }
     }),
-    caps: { monthlyCapEur: microsToEur(settings.monthlyCapMicros), userDailyCapEur: microsToEur(settings.userDailyCapMicros), eurPerUsd: settings.eurPerUsd },
+    caps: { monthlyCapEur: microsToEur(settings.monthlyCapMicros), userDailyCapEur: microsToEur(settings.userDailyCapMicros), eurPerUsd: settings.eurPerUsd, missionCapEur: microsToEur(settings.missionCapMicros) },
     month: {
       key: monthKey(now),
       spentEur: microsToEur(c.monthSpent),
@@ -137,6 +137,8 @@ export const updateAiSettingsSchema = z
     monthlyCapEur: euros(10_000, "Plafond mensuel").optional(),
     userDailyCapEur: euros(1_000, "Quota quotidien").optional(),
     eurPerUsd: z.number({ message: "Taux : un nombre" }).min(0.5, "Taux entre 0,5 et 2").max(2, "Taux entre 0,5 et 2").optional(),
+    /** E28 (D32): most a mission may spend before a second confirmation. */
+    missionCapEur: euros(100, "Plafond par mission").optional(),
     /** Roles whose new model scored below the one in service, changed knowingly (E27). */
     acceptRegressions: z.array(z.enum(AI_ROLES)).optional(),
   })
@@ -168,6 +170,7 @@ export async function updateAiSettings(actor: CurrentUser, input: UpdateAiSettin
     monthlyCapMicros: input.monthlyCapEur === undefined ? before.monthlyCapMicros : eurToMicros(input.monthlyCapEur),
     userDailyCapMicros: input.userDailyCapEur === undefined ? before.userDailyCapMicros : eurToMicros(input.userDailyCapEur),
     eurPerUsd: input.eurPerUsd ?? before.eurPerUsd,
+    missionCapMicros: input.missionCapEur === undefined ? before.missionCapMicros : eurToMicros(input.missionCapEur),
   }
   await ensureAiSetting(prisma, actor.workspaceId)
   await prisma.aiSetting.update({ where: { workspaceId: actor.workspaceId }, data: { ...after, updatedById: actor.id } })

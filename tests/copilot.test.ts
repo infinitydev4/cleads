@@ -153,7 +153,9 @@ describe("the copilot's tools", () => {
   it("asks the person before anything that changes or spends, except reading and small notes (D28)", () => {
     const auto = COPILOT_TOOLS.filter((t) => t.approval === "auto")
     expect(auto.every((t) => t.costClass === "free")).toBe(true)
-    expect(auto.every((t) => t.family === null || ["read_crm", "read_web", "notes", "navigation"].includes(t.family))).toBe(true)
+    // E28: a mission is only proposed without a click; the person launches it from its card.
+    expect(auto.every((t) => t.family === null || ["read_crm", "read_web", "notes", "navigation", "missions"].includes(t.family))).toBe(true)
+    expect(auto.filter((t) => t.family === "missions").map((t) => t.name)).toEqual(["propose_mission"])
     expect(auto.filter((t) => t.family === "notes").map((t) => t.name).sort()).toEqual(["add_note", "complete_task", "create_task", "log_call", "reschedule_task", "tag_leads", "untag_leads"])
     // What contacts a prospect always waits for its own click.
     expect(COPILOT_TOOLS.filter((t) => t.costClass === "external").map((t) => t.name).sort()).toEqual(["book_meeting", "change_meeting", "enroll_in_sequence", "resume_sequence", "share_studio_link"])
@@ -180,6 +182,7 @@ describe("the copilot's tools", () => {
       "list_offers",
       "read_skill",
       "open_page",
+      "list_missions",
     ])
     // A closer searches nothing on the Extractor and imports nothing.
     expect(names("CLOSER")).not.toContain("start_search")

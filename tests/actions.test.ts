@@ -65,7 +65,7 @@ describe("the catalogue of actions", () => {
 describe("the rights matrix", () => {
   it("gives the copilot the levels of D28, and specialists only their own families", () => {
     const p = effectivePolicy(AGENTS.copilot, null)
-    expect(p).toEqual({ read_crm: "auto", read_web: "auto", notes: "auto", records: "confirm", campaigns: "confirm", prospecting: "confirm", ai_work: "confirm", outreach: "confirm", navigation: "auto" })
+    expect(p).toEqual({ read_crm: "auto", read_web: "auto", notes: "auto", records: "confirm", campaigns: "confirm", prospecting: "confirm", ai_work: "confirm", outreach: "confirm", missions: "auto", navigation: "auto" })
     expect(Object.keys(AGENTS.copilot.families).sort()).toEqual([...ACTION_FAMILIES].sort())
     expect(effectivePolicy(AGENTS.auditor, null)).toEqual({ read_crm: "auto", read_web: "auto", ai_work: "confirm" })
     expect(modeOf(effectivePolicy(AGENTS.auditor, null), "outreach")).toBe("off")

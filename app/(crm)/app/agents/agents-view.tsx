@@ -21,8 +21,10 @@ import type { SkillView } from "@/features/ai/skills/service"
 import type { OfferView } from "@/features/offers/service"
 import type { QualityDashboard } from "@/features/quality/dashboard"
 import type { QualityPage } from "@/features/quality/service"
+import type { MissionView, ScheduleView } from "@/features/missions/labels"
 import { api } from "../leads/api"
 import { AgentsTab } from "./agents-tab"
+import { MissionsTab } from "./missions-tab"
 import type { EvaluationPreset } from "./evaluation-dialog"
 import { OffersTab } from "./offers-tab"
 import { QualityTab } from "./quality-tab"
@@ -49,6 +51,8 @@ export function AgentsView(props: {
   archivedOffers: OfferView[]
   runs: RunView[]
   approvals: ApprovalView[]
+  /** E28: the missions and recurring missions the person may see. */
+  missions: { missions: MissionView[]; schedules: ScheduleView[] }
   settings: AiSettingsView
   /** Owners and managers (E27). */
   quality: { dashboard: QualityDashboard; page: QualityPage; evaluate: EvaluationPreset & { suite?: string } } | null
@@ -63,6 +67,8 @@ export function AgentsView(props: {
   useLiveRuns(props.userId, runs.some((r) => ACTIVE_STATUSES.includes(r.status)) || approvals.length > 0)
 
   const drafts = props.offers.filter((o) => o.status === "DRAFT").length
+  // Missions waiting for their person: to launch, paused, or a step waiting for a click.
+  const missionsWaiting = props.missions.missions.filter((m) => m.mine && (m.status === "PROPOSED" || m.status === "PAUSED" || m.steps.some((s) => s.approvalId))).length
   const worker = settings.worker
 
   function changeTab(next: string) {
@@ -131,6 +137,14 @@ export function AgentsView(props: {
               )}
             </TabsTrigger>
             <TabsTrigger value="runs">Exécutions</TabsTrigger>
+            <TabsTrigger value="missions" className="gap-1.5">
+              Missions
+              {missionsWaiting > 0 && (
+                <Badge variant="warning" className="px-1.5 py-0">
+                  {missionsWaiting}
+                </Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="approvals" className="gap-1.5">
               À valider
               {approvals.length > 0 && (
@@ -155,6 +169,9 @@ export function AgentsView(props: {
         </TabsContent>
         <TabsContent value="runs" className="mt-4">
           <RunsTab runs={runs} onOpen={setOpenRun} onCancel={cancel} acting={acting} />
+        </TabsContent>
+        <TabsContent value="missions" className="mt-4">
+          <MissionsTab userId={props.userId} missions={props.missions.missions} schedules={props.missions.schedules} />
         </TabsContent>
         <TabsContent value="approvals" className="mt-4 space-y-3">
           {approvals.length ? (

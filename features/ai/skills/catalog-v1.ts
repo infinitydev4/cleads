@@ -347,4 +347,57 @@ De petites agences (1 à 15 personnes), très attachées à l'image et à la qua
 ## Vocabulaire
 « projet », « programme », « maîtrise d'œuvre », « permis de construire », « réalisations », « références » ; éviter « produit », « client cible ».`,
   },
+  {
+    name: "missions-cleads",
+    description: "À utiliser avant de proposer une mission (propose_mission) : les recettes de plans qui marchent (chercher et importer, laisser le Stratège choisir les secteurs, auditer les meilleures fiches, préparer une séquence, chaque semaine) et leurs ordres de grandeur.",
+    content: `# Missions Cleads
+
+Une mission est un plan que la personne lance d'un clic : le worker l'exécute ensuite étape par étape, même conversation fermée, et chaque étape garde les droits de la personne. Propose-la avec propose_mission dès qu'une demande enchaîne des actions longues ou en nombre ; ne les appelle pas une à une.
+
+## Avant d'écrire le plan
+- Lis ce que le plan cite : l'offre (list_offers, par son identifiant), la campagne (list_campaigns), la séquence (list_sequences, active), le membre (list_team).
+- Une activité au singulier, avec les mots d'un client (« architecte », « plombier chauffagiste ») ; une zone avec son pays (« Nantes, France »).
+- Reprends le volume demandé. Sans volume, 300 entreprises par recherche.
+- Une mission suffit : n'en propose pas une seconde pour la même demande.
+
+## Recettes
+### Chercher, importer, trier
+1. create_campaign {name, sector, area, offerSlug} : conseillé, ses fiches y sont rangées et Jev les trie.
+2. start_search {activity, location, maxResults, campaignId: {"$ref": "s1.campaignId"}}
+3. import_search {searchId: {"$ref": "s2.searchId"}}
+4. sort_campaign {campaignId: {"$ref": "s1.campaignId"}}
+
+### Laisser le Stratège choisir les secteurs
+1. propose_targets {zone, offerSlug}
+2. act_on_target {targetId: {"$ref": "item"}, action: "search", maxResults: 300}, forEach "s1.targetIds"
+3. import_search {searchId: {"$ref": "s2.searchId"}}, forEach "s2"
+4. sort_campaign {campaignId: {"$ref": "s2.campaignId"}}, forEach "s2"
+5. select_leads {limit: 100, verdict: "relevant"}
+La personne retrouve ses 100 meilleures fiches sous l'étiquette de la mission.
+
+### Auditer les meilleures fiches
+Après un tri : select_leads {limit: 10, verdict: "relevant"}, puis start_audit {leadId: {"$ref": "item"}}, forEach "sN.leadIds" (20 audits au plus par mission).
+
+### Préparer les premiers emails
+select_leads {limit: 10, hasEmail: true}, puis draft_email {leadId: {"$ref": "item"}} en boucle : des brouillons à relire, rien ne part.
+
+### Inscrire en séquence
+select_leads {limit: 100 au plus, hasEmail: true}, puis enroll_in_sequence {sequenceId, leadIds: {"$ref": "sN.leadIds"}}. L'inscription attend toujours le clic de la personne, qui voit la séquence et les destinataires.
+
+### Chaque semaine
+La même recette, avec recurrence {frequency: "weekly", days: [1], hour: 8}. Chaque passage cherche, importe sans doublon et trie seul ; une inscription en séquence attend un clic à chaque passage.
+
+## Ordres de grandeur (indicatifs)
+- Une recherche tourne plusieurs minutes, davantage avec les emails et pour 1 000 entreprises.
+- Toutes les entreprises trouvées ne sont pas joignables ou nouvelles : compte environ 3 entreprises cherchées pour une bonne cible.
+- Jev trie les fiches par lots de 40, pour quelques centimes par lot ; un audit coûte quelques centimes, jusqu'à 0,30 €.
+- Une mission a un plafond d'IA (2 € par défaut) ; au-delà, la personne confirme une seconde fois en la lançant.
+
+## Bornes
+10 étapes ; 5 éléments par boucle (20 pour les audits et les brouillons) ; 5 recherches et 3 000 entreprises, 20 audits, 20 brouillons par mission.
+
+## À ne pas faire
+- Ne présente jamais une mission proposée comme lancée : elle attend le clic.
+- N'invente ni identifiant ni volume : lis-les, ou demande.`,
+  },
 ]

@@ -13,6 +13,7 @@ import { copilotAgent, type CopilotSetup } from "./agent"
 import { describePage, parsePage } from "./context"
 import { closeTurn, conversationFor, createConversation, followLeads, loadMessages, releaseTurn, saveMessage, takeTurn } from "./conversations"
 import { ACTION_TOOLS, leadIdsOf, recentTools } from "./labels"
+import { expireProposals } from "@/features/missions/service"
 import { answersSchema, applyAnswers, forModel, pendingApprovals, questionSchema, questionText, refusePending, type CopilotMessage, type CopilotMetadata } from "./messages"
 
 /**
@@ -90,6 +91,8 @@ async function ask(user: CurrentUser, req: z.infer<typeof turnRequestSchema>, q:
       throw new LeadError("conflict", "Le copilote répond déjà dans cette conversation : attendez la fin de sa réponse.", 409)
     }
     await prisma.agentRun.update({ where: { id: run.id }, data: { input: { conversationId } } })
+    // A plan not launched before the next question expires: its click would go with an older context (E28).
+    await expireProposals(conversationId)
     const history = await loadMessages(conversationId)
     if (history.some((m) => m.id === q.id)) throw new LeadError("conflict", "Cette question a déjà été envoyée.", 409)
     const last = history.at(-1)

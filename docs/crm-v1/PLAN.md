@@ -555,7 +555,7 @@ Seconde vue du CRM, isométrique et interactive, à côté de la vue 2D qui rest
 - **Critères** : aucune régression de la vue 2D (tests et parcours dans le navigateur) ; aucun chiffre sans définition ; fluide sur un portable récent.
 
 ### Couche agentique IA (E17 à E27, décidée le 2 novembre 2026)
-Décisions D13 à D35 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17 à E27 sont faits ; E28 est en cours (lot 1 fait).
+Décisions D13 à D35 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17 à E27 sont faits ; E28 est en cours (lots 1 et 2 faits).
 
 ### E17 — Socle IA · **M** *(absorbe E13)*
 > **Avancement (branche `feat/e17-socle-ia`)** — fait :
@@ -1011,7 +1011,19 @@ Le copilote exécute les actions du CRM sur une simple demande (« Recherche 1 0
 >
 > **Vérifié** : `tests/actions.test.ts`, `tests/copilot-actions.integration.test.ts`, tests du copilote mis à jour ; suite complète, `tsc`, lint, build du site et du worker.
 >
-> **À faire** : lot 2, missions (plan validé d'un clic, moteur du worker, missions récurrentes, onglet Missions, skill `missions-cleads`) ; lot 3, évaluation du copilote ; puis E29, serveur MCP du CRM.
+> **Lot 2 — missions (branche `feat/e28-missions`)** — fait :
+> - **proposer** : `propose_mission` (sans clic) écrit un plan de 10 étapes au plus, parmi 15 actions qu'une mission sait enchaîner, avec des références entre étapes et des boucles (sur les cibles du Stratège, sur des fiches retenues) ; le plan est vérifié avec les droits du moment (rôle, matrice, interdits, bornes) et chiffré (probable, maximal) ;
+> - **lancer d'un clic** depuis la carte du plan ; au-delà du plafond par mission (2 €, Réglages › IA), « Lancer quand même » (D32) ; une proposition expire à la question suivante ou après 24 h ;
+> - **moteur du worker** (`features/missions/engine.ts`) : étapes dans l'ordre, chacune au plus une fois ; attente des recherches (webhook ou relecture), des spécialistes et du tri complet de Jev ; ce qui contacte un prospect attend son propre clic (`mission_action`) ; pauses expliquées (échec, « peut-être faite », droit perdu, Extractor indisponible, plafond) ;
+> - **bilan** : une ligne par étape, étiquette `mission-…` sur les fiches produites, liens vers la liste filtrée et les campagnes, notification ;
+> - **missions récurrentes** (D35) : chaque jour ou certains jours à une heure de Paris, premier passage au lancement, droits et plafonds du jour, deux passages manqués mettent en pause, trois actives par personne ;
+> - **suivi** : carte en direct dans la conversation et onglet Agents IA › Missions ; `list_missions` et `manage_mission` pour le copilote ; skill `missions-cleads` (installé aussi dans les espaces existants : `AiSetting.catalogVersion`) ;
+> - **précisions du plan** : 5 recherches et 3 000 entreprises par mission (3 recherches à la fois, la suivante attend une place) ; boucles de 5 éléments, 20 pour les audits et les brouillons ; une même étiquette pour tous les passages d'une mission récurrente ;
+> - migration `20261113090000_missions` ; le worker doit être redéployé (moteur, `EXTRACTOR_URL` local) ; `EXTRACTOR_WEBHOOK_SECRET` facultatif sur le worker.
+>
+> **Vérifié** : `tests/missions.test.ts` et `tests/missions.integration.test.ts` (les deux exemples de bout en bout avec un faux Extractor, la validation propre d'une inscription, le plafond, la récurrence, l'annulation, l'étape « peut-être faite », le droit perdu) ; suite complète, `tsc`, lint, build du site et du worker.
+>
+> **À faire** : lot 3, évaluation du copilote ; puis E29, serveur MCP du CRM.
 
 ### Ordre conseillé
 | Jalon | Epics | Résultat visible |

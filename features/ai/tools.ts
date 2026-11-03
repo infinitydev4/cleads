@@ -124,7 +124,7 @@ export function clearTools() {
 }
 
 /** The person's right, then the agent's matrix: checked when the call is offered, asked for and made. */
-function checkRight(def: AnyToolDef, ctx: ToolContext) {
+export function checkRight(def: AnyToolDef, ctx: ToolContext) {
   if (def.family && !isOpen(def, policyOf(ctx))) {
     const label = AGENTS[ctx.run.agentId]?.label ?? "Cet agent"
     throw new LeadError("forbidden", `${label} n'a pas le droit « ${FAMILY_INFO[def.family].label} » dans cet espace : le propriétaire le règle dans Agents IA › Agents › Droits.`, 403)
@@ -141,7 +141,7 @@ async function executeTool<I, O>(def: ToolDef<I, O>, ctx: ToolContext, input: I)
   checkRight(def, ctx)
   const started = Date.now()
   try {
-    const output = await withActing({ agentId: ctx.run.agentId, runId: ctx.run.id, tool: def.name }, () => def.execute(ctx, input))
+    const output = await withActing({ agentId: ctx.run.agentId, runId: ctx.run.id, tool: def.name, ...(ctx.run.missionId ? { missionId: ctx.run.missionId } : {}) }, () => def.execute(ctx, input))
     await recordStep(ctx.run, { type: "TOOL", name: def.name, input, output, durationMs: Date.now() - started })
     return output
   } catch (error) {

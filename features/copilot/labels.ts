@@ -12,6 +12,7 @@ export const ACTION_TOOLS: ReadonlySet<string> = new Set([
   "create_campaign", "update_campaign", "start_search", "cancel_search", "import_search", "sort_campaign",
   "start_audit", "suggest_offers", "decide_offer", "draft_email", "draft_reply", "start_studio", "studio_build", "studio_revise", "share_studio_link", "propose_targets", "act_on_target",
   "enroll_in_sequence", "stop_enrollment", "pause_sequence", "resume_sequence", "book_meeting", "change_meeting", "record_meeting_outcome",
+  "propose_mission", "manage_mission",
 ])
 
 /** While a tool runs, then once it is done. */
@@ -81,6 +82,9 @@ export const TOOL_LABELS: Record<string, { running: string; done: string }> = {
   book_meeting: { running: "Planification du rendez-vous…", done: "Rendez-vous planifié" },
   change_meeting: { running: "Mise à jour du rendez-vous…", done: "Rendez-vous mis à jour" },
   record_meeting_outcome: { running: "Clôture du rendez-vous…", done: "Rendez-vous clôturé" },
+  propose_mission: { running: "Préparation du plan…", done: "Plan proposé" },
+  list_missions: { running: "Lecture des missions…", done: "Missions lues" },
+  manage_mission: { running: "Mise à jour de la mission…", done: "Mission mise à jour" },
 }
 
 export const toolLabel = (name: string, state: "running" | "done") => TOOL_LABELS[name]?.[state] ?? (state === "running" ? "Recherche…" : "Fait")
@@ -125,6 +129,8 @@ export const ACTION_TITLES: Record<string, string> = {
   book_meeting: "Planifier un rendez-vous",
   change_meeting: "Modifier un rendez-vous",
   record_meeting_outcome: "Clôturer un rendez-vous",
+  propose_mission: "Mission proposée",
+  manage_mission: "Gérer une mission",
 }
 
 /** Actions done without a click that their card can put back (features/copilot/undo.ts). */
