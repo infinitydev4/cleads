@@ -130,8 +130,26 @@ function sampleInput(infos: Info[], step: PlanStep, spec: MissionAction, input: 
   return out
 }
 
+/** The records a step may name. */
+export type NamedKind = "campaign" | "sequence" | "member" | "lead" | "search" | "target" | "offer"
+
+/**
+ * Where a plan's names and costs come from: the workspace's records, or the frozen CRM of an evaluation (E28 lot 3),
+ * which checks the copilot's plans by the same rules, without a database.
+ */
+export interface PlanWorld {
+  /** What the CRM calls a record (a campaign's name, a search's label), null when the person may not see it. */
+  name: (kind: NamedKind, id: string) => Promise<string | null>
+  /** The fiches a step would change, in words; throws when the person may change none of them. */
+  leads: (ids: readonly string[]) => Promise<string>
+  /** Fiches of a campaign Jev has not sorted yet. */
+  unsorted: (campaignId: string) => Promise<number>
+  /** What a run of the agent may cost at most (its cap) and usually costs here, in micro-euros. */
+  cost: (agentId: AgentId) => Promise<{ cap: number; typical: number }>
+}
+
 /** The values of a step in words, its references named by where they come from. */
-function wordsFor(user: CurrentUser, infos: Info[], step: PlanStep, loop: Loop | null): Words {
+function wordsFor(world: PlanWorld, infos: Info[], step: PlanStep, loop: Loop | null): Words {
   const refWords = (ref: Ref, item: string) => {
     if (ref.$ref === "item") return loop?.literal ? loop.literal[0] : item
     const { target, spec } = exportOf(infos, step, ref.$ref)
@@ -144,49 +162,30 @@ function wordsFor(user: CurrentUser, infos: Info[], step: PlanStep, loop: Loop |
     if (!name) throw stepError(step, missing)
     return name
   }
-  const ws = user.workspaceId
+  /** A record named in the step: « la campagne « Architectes Nantes » », or the words of a reference. */
+  const name = (kind: NamedKind, item: string, words: (name: string) => string, missing: string) => (v: unknown) =>
+    named(v, item, async (id) => {
+      const found = await world.name(kind, id)
+      return found && words(found)
+    }, missing)
   return {
     of: (v) => (isRef(v) ? refWords(v, "l'élément") : String(v ?? "")),
-    campaign: (v) =>
-      named(v, "la campagne", async (id) => {
-        const c = await prisma.campaign.findFirst({ where: { id, workspaceId: ws, archivedAt: null }, select: { name: true } })
-        return c && `la campagne « ${c.name} »`
-      }, "campagne introuvable : retrouve son campaignId avec list_campaigns."),
-    sequence: (v) =>
-      named(v, "la séquence", async (id) => {
-        const s = await prisma.sequence.findFirst({ where: { id, workspaceId: ws, archivedAt: null }, select: { name: true } })
-        return s && `la séquence « ${s.name} »`
-      }, "séquence introuvable : retrouve son sequenceId avec list_sequences."),
-    member: (v) =>
-      named(v, "le membre", async (id) => {
-        const u = await prisma.user.findFirst({ where: { id, workspaceId: ws, active: true }, select: { name: true, email: true } })
-        return u && (u.name ?? u.email ?? "un membre")
-      }, "membre introuvable : retrouve son userId avec list_team."),
+    campaign: name("campaign", "la campagne", (n) => `la campagne « ${n} »`, "campagne introuvable : retrouve son campaignId avec list_campaigns."),
+    sequence: name("sequence", "la séquence", (n) => `la séquence « ${n} »`, "séquence introuvable : retrouve son sequenceId avec list_sequences."),
+    member: name("member", "le membre", (n) => n, "membre introuvable : retrouve son userId avec list_team."),
     leads: async (v) => {
       if (isRef(v)) return refWords(v, "la fiche")
       const list = Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []
       try {
-        return (await targetsOf(user, list)).text
+        return await world.leads(list)
       } catch (error) {
         throw stepError(step, error instanceof Error ? error.message : String(error))
       }
     },
-    lead: (v) => named(v, "la fiche", (id) => visibleName(user, id).catch(() => null), "fiche introuvable pour cette personne : vérifie le leadId avec search_leads."),
-    search: (v) =>
-      named(v, "la recherche", async (id) => {
-        const s = await prisma.extractionSearch.findFirst({ where: { id, workspaceId: ws }, select: { label: true } })
-        return s && `la recherche « ${s.label} »`
-      }, "recherche introuvable : retrouve son searchId avec list_searches."),
-    target: (v) =>
-      named(v, "la cible", async (id) => {
-        const t = await prisma.strategyTarget.findFirst({ where: { id, proposal: { workspaceId: ws } }, select: { sector: true } })
-        return t && `la cible « ${t.sector} »`
-      }, "cible introuvable : retrouve son targetId avec get_strategy."),
-    offer: (v) =>
-      named(v, "l'offre", async (slug) => {
-        const o = await prisma.offer.findFirst({ where: { workspaceId: ws, slug, status: "ACTIVE" }, select: { name: true } })
-        return o && `« ${o.name} »`
-      }, "offre introuvable parmi les offres actives : lis-les avec list_offers."),
+    lead: name("lead", "la fiche", (n) => n, "fiche introuvable pour cette personne : vérifie le leadId avec search_leads."),
+    search: name("search", "la recherche", (n) => `la recherche « ${n} »`, "recherche introuvable : retrouve son searchId avec list_searches."),
+    target: name("target", "la cible", (n) => `la cible « ${n} »`, "cible introuvable : retrouve son targetId avec get_strategy."),
+    offer: name("offer", "l'offre", (n) => `« ${n} »`, "offre introuvable parmi les offres actives : lis-les avec list_offers."),
   }
 }
 
@@ -196,15 +195,46 @@ async function typicalMicros(workspaceId: string, agentId: AgentId): Promise<num
   const [row] = await prisma.$queryRaw<{ avg: number | null; n: bigint }[]>`
     SELECT AVG("costMicros")::float AS "avg", COUNT(*) AS "n" FROM "AgentRun"
      WHERE "workspaceId" = ${workspaceId} AND "agentId" = ${agentId} AND "status" = 'SUCCEEDED' AND "createdAt" >= ${since} AND ("input"->>'kind') IS NULL`
-  return row && Number(row.n) >= 3 && row.avg !== null ? Math.round(row.avg) : (TYPICAL_MICROS[agentId] ?? 50_000)
+  return row && Number(row.n) >= 3 && row.avg !== null ? Math.round(row.avg) : typicalCost(agentId)
 }
 
-/** Fiches a campaign still has to sort, for a plan that sorts a campaign it names. */
-async function unsortedIn(user: CurrentUser, campaignId: string): Promise<number> {
-  return prisma.lead.count({ where: { AND: [visibleLeads(user, { campaignId }), { relevances: { none: { campaignId } } }] } })
+/** What a run usually costs when the workspace has no history yet. */
+export const typicalCost = (agentId: AgentId) => TYPICAL_MICROS[agentId] ?? 50_000
+
+/** The workspace's records, as the person sees them. */
+export function workspaceWorld(user: CurrentUser): PlanWorld {
+  const ws = user.workspaceId
+  return {
+    name: async (kind, id) => {
+      switch (kind) {
+        case "campaign":
+          return (await prisma.campaign.findFirst({ where: { id, workspaceId: ws, archivedAt: null }, select: { name: true } }))?.name ?? null
+        case "sequence":
+          return (await prisma.sequence.findFirst({ where: { id, workspaceId: ws, archivedAt: null }, select: { name: true } }))?.name ?? null
+        case "member": {
+          const u = await prisma.user.findFirst({ where: { id, workspaceId: ws, active: true }, select: { name: true, email: true } })
+          return u && (u.name ?? u.email ?? "un membre")
+        }
+        case "lead":
+          return visibleName(user, id).catch(() => null)
+        case "search":
+          return (await prisma.extractionSearch.findFirst({ where: { id, workspaceId: ws }, select: { label: true } }))?.label ?? null
+        case "target":
+          return (await prisma.strategyTarget.findFirst({ where: { id, proposal: { workspaceId: ws } }, select: { sector: true } }))?.sector ?? null
+        case "offer":
+          return (await prisma.offer.findFirst({ where: { workspaceId: ws, slug: id, status: "ACTIVE" }, select: { name: true } }))?.name ?? null
+      }
+    },
+    leads: async (ids) => (await targetsOf(user, ids)).text,
+    unsorted: (campaignId) => prisma.lead.count({ where: { AND: [visibleLeads(user, { campaignId }), { relevances: { none: { campaignId } } }] } }),
+    cost: async (agentId) => {
+      const [agent, typical] = await Promise.all([effectiveAgent(ws, agentId), typicalMicros(ws, agentId)])
+      return { cap: agent.capMicros, typical }
+    },
+  }
 }
 
-export async function checkPlan(user: CurrentUser, policy: AgentPolicy, raw: unknown): Promise<PlanCheck> {
+export async function checkPlan(user: CurrentUser, policy: AgentPolicy, raw: unknown, world: PlanWorld = workspaceWorld(user)): Promise<PlanCheck> {
   const parsed = planSchema.safeParse(raw)
   if (!parsed.success) throw invalid(`Plan invalide : ${issuesText(parsed.error)}`)
   const plan = parsed.data
@@ -231,7 +261,7 @@ export async function checkPlan(user: CurrentUser, policy: AgentPolicy, raw: unk
     if (!checked.success) throw stepError(step, issuesText(checked.error))
     infos.push({ step: { ...step, input }, spec, input, loop })
 
-    const w = wordsFor(user, infos, step, loop)
+    const w = wordsFor(world, infos, step, loop)
     let text = await spec.describe(input, w)
     if (loop?.literal && loop.origin === step.id && loop.literal.length > 1) text = `${text}, puis de même pour ${listWords(loop.literal.slice(1))}`
     else if (loop && !(loop.literal && loop.origin === step.id)) text = `${loop.origin === step.id ? loop.first : loop.next} : ${lower(text)}`
@@ -244,7 +274,7 @@ export async function checkPlan(user: CurrentUser, policy: AgentPolicy, raw: unk
     volume.audits += (v.audits ?? 0) * times
     volume.drafts += (v.drafts ?? 0) * times
     if (spec.ai && spec.ai !== "qualifier") runs[spec.ai] = (runs[spec.ai] ?? 0) + times
-    if (step.action === "sort_campaign" && typeof input.campaignId === "string") unsorted += await unsortedIn(user, input.campaignId)
+    if (step.action === "sort_campaign" && typeof input.campaignId === "string") unsorted += await world.unsorted(input.campaignId)
   }
 
   if (volume.searches > MISSION_BOUNDS.searches) throw invalid(`Ce plan lance ${volume.searches} recherches : ${MISSION_BOUNDS.searches} au plus par mission.`)
@@ -261,7 +291,7 @@ export async function checkPlan(user: CurrentUser, policy: AgentPolicy, raw: unk
   let maxMicros = 0
   let probableMicros = 0
   for (const [agentId, n] of Object.entries(runs) as [AgentId, number][]) {
-    const [cap, typical] = await Promise.all([effectiveAgent(user.workspaceId, agentId).then((a) => a.capMicros), typicalMicros(user.workspaceId, agentId)])
+    const { cap, typical } = await world.cost(agentId)
     maxMicros += n * cap
     probableMicros += (agentId === "qualifier" ? qualifier.probable : n) * Math.min(typical, cap)
   }

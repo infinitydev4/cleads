@@ -17,7 +17,8 @@ import { personOf, visibleName } from "./shared"
 
 export const PAGES = ["lead", "leads", "campaign", "campaigns", "pipeline", "meetings", "today", "search", "searches", "studio", "mailbox", "sequences", "agents", "hq"] as const
 
-const RIGHTS: Partial<Record<(typeof PAGES)[number], Permission>> = {
+/** The right a page asks for, beyond seeing what it shows. */
+export const PAGE_RIGHTS: Partial<Record<(typeof PAGES)[number], Permission>> = {
   campaign: "campaign:read",
   campaigns: "campaign:read",
   pipeline: "deal:read",
@@ -61,7 +62,7 @@ export const openPageTool = defineTool({
   summarize: (input) => `Ouvrir la page « ${input.page} ».`,
   execute: async (ctx, input) => {
     const user = personOf(ctx)
-    const right = RIGHTS[input.page]
+    const right = PAGE_RIGHTS[input.page]
     if (right && !can(user.role, right)) throw new LeadError("forbidden", "Cette page n'est pas ouverte à la personne.", 403)
     const need = (what: string) => {
       if (!input.id) throw new LeadError("invalid", `Il faut l'identifiant ${what} (id).`, 400)

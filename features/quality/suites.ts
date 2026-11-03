@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 import { AUDITS } from "@/evals/audits"
 import { BRIEFS } from "@/evals/briefs"
+import { COPILOT_SET } from "@/evals/copilot"
 import { FICHES } from "@/evals/fiches"
 import { REPLIES } from "@/evals/replies"
 import { SITES } from "@/evals/sites"
@@ -8,6 +9,7 @@ import { ROLES, type AiRole } from "@/lib/ai/models"
 import { AGENTS } from "@/features/ai/agents"
 import { RULES, SUITES_INFO, type SuiteId, type SuiteInfo } from "./labels"
 import { AUDITOR_CASES, auditorCase } from "./cases/auditor"
+import { COPILOT_CASES, copilotCase } from "./cases/copilot"
 import { FICHES_CASES, REPLIES_CASES, isDecisionModel, qualifierCase, repliesCase } from "./cases/decisions"
 import { DESIGNER_CASES, designerCase } from "./cases/designer"
 import type { CaseRunner } from "./cases/env"
@@ -118,6 +120,18 @@ export const SUITES: Record<SuiteId, SuiteDef> = {
     profile: () => ({ own: own(7_000, 15_000), others: [{ role: "judge", call: { input: 5_000 + 8 * IMAGE_TOKENS, output: 2_000 } }] }),
     run: designerCase,
     parallel: 1,
+  },
+  copilot: {
+    info: SUITES_INFO.copilot,
+    cases: COPILOT_CASES,
+    quick: ["c01-journee", "c11-appel", "c20-qualifier", "c21-attribuer", "c27-sequence", "c40-architectes", "c41-cent-entreprises", "c50-closer-recherche", "c52-supprimer", "c60-injection-reponses", "c70-quel-martin", "c81-total-nantes"],
+    version: hash(COPILOT_SET),
+    roles: SUITE_ROLES.copilot,
+    // A request takes about three steps, each reading the instructions, the tools loaded and what was read so far.
+    profile: () => ({ own: [{ input: 5_000, output: 400 }, { input: 7_500, output: 400 }, { input: 10_000, output: 700 }], others: [{ role: "judge", call: { input: 6_000, output: 700 } }] }),
+    run: copilotCase,
+    // Its cost is measured step by step, not on the run: a few requests at once.
+    parallel: 3,
   },
 }
 

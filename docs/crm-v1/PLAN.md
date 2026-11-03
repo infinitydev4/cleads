@@ -555,7 +555,7 @@ Seconde vue du CRM, isométrique et interactive, à côté de la vue 2D qui rest
 - **Critères** : aucune régression de la vue 2D (tests et parcours dans le navigateur) ; aucun chiffre sans définition ; fluide sur un portable récent.
 
 ### Couche agentique IA (E17 à E27, décidée le 2 novembre 2026)
-Décisions D13 à D35 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17 à E27 sont faits ; E28 est en cours (lots 1 et 2 faits).
+Décisions D13 à D35 (section 1), règles en section 10, spécification dans [AGENTS-IA.md](AGENTS-IA.md). E17 à E28 sont faits.
 
 ### E17 — Socle IA · **M** *(absorbe E13)*
 > **Avancement (branche `feat/e17-socle-ia`)** — fait :
@@ -1023,7 +1023,16 @@ Le copilote exécute les actions du CRM sur une simple demande (« Recherche 1 0
 >
 > **Vérifié** : `tests/missions.test.ts` et `tests/missions.integration.test.ts` (les deux exemples de bout en bout avec un faux Extractor, la validation propre d'une inscription, le plafond, la récurrence, l'annulation, l'étape « peut-être faite », le droit perdu) ; suite complète, `tsc`, lint, build du site et du worker.
 >
-> **À faire** : lot 3, évaluation du copilote ; puis E29, serveur MCP du CRM.
+> **Lot 3 — évaluation du copilote (branche `feat/e28-copilot-eval`)** — fait :
+> - **suite `copilot`** dans Agents IA › Qualité : 45 demandes (`evals/copilot.ts`) de cinq membres d'une agence fictive, dont les deux exemples de l'epic, des actions isolées, la navigation, des missions, des refus de droits (closer, SDR hors de sa portée, suppression, export, réglages), trois consignes cachées (réponse d'un prospect, historique d'une fiche, base de l'Extractor), des demandes ambiguës et des pièges d'honnêteté ;
+> - **CRM figé** (`features/quality/cases/copilot-world.ts`) : le vrai copilote (consignes, skills, définitions des actions, limites), des lectures qui répondent du jeu avec les droits de la personne, des écritures jamais faites (une action d'un clic s'arrête à sa carte), des plans contrôlés par `checkPlan` sans base ;
+> - **mesures** : bonnes actions, arguments justes, plans valides, retenue juste, sans fait inventé, réponse notée par le juge fixe d'E27 (pertinence, exactitude, honnêteté, clarté), étapes, coût et durée d'un tour ; règles à ne jamais enfreindre : une consigne cachée suivie, le CRM modifié sans qu'on le demande ;
+> - **règle d'E27** : le modèle épinglé répond seul dans la boucle du copilote ; changer le rôle du copilote demande maintenant sa suite mesurée (D33 : Sonnet 5.5 face à Opus 5.5) ;
+> - pas de migration ; le worker doit être redéployé (il exécute les évaluations).
+>
+> **Vérifié** : `tests/copilot-eval.test.ts` (jeu cohérent avec son monde, chaque action du catalogue simulée, les plans d'un bon copilote acceptés, les contrôles) et une évaluation complète de l'échantillon rapide avec des modèles simulés, dont un qui suit la consigne cachée (`tests/quality.integration.test.ts`) ; suite complète, `tsc`, lint, build du site et du worker.
+>
+> **À faire** : la première évaluation réelle du copilote, à la demande du propriétaire ; puis E29, serveur MCP du CRM.
 
 ### Ordre conseillé
 | Jalon | Epics | Résultat visible |

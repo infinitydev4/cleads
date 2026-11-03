@@ -315,8 +315,8 @@ export async function loadSkillsByName(workspaceId: string, agentId: AgentId, na
   )
 }
 
-/** read_skill: a skill given to this agent (or one of its annexes), never another one. */
-export async function readSkillForAgent(workspaceId: string, agentId: AgentId, name: string, file?: string): Promise<{ name: string; version: number; content: string; files: string[] }> {
+/** read_skill: a skill given to this agent (or one of its annexes), never another one. An evaluation gives its frozen offers. */
+export async function readSkillForAgent(workspaceId: string, agentId: AgentId, name: string, file?: string, offers?: readonly SkillOffer[]): Promise<{ name: string; version: number; content: string; files: string[] }> {
   const link = await prisma.agentSkill.findFirst({
     where: { workspaceId, agentId, skill: { name, archivedAt: null } },
     select: { skill: { select: { id: true, name: true, version: true, generator: true } } },
@@ -329,5 +329,5 @@ export async function readSkillForAgent(workspaceId: string, agentId: AgentId, n
     if (!wanted) throw new LeadError("not_found", `Fichier « ${file.slice(0, 120)} » absent du skill « ${name} ».`, 404)
     return { name: link.skill.name, version: link.skill.version, content: wanted.content, files: files.map((f) => f.path) }
   }
-  return { name: link.skill.name, version: link.skill.version, content: await contentOf(workspaceId, link.skill, v?.content ?? ""), files: files.map((f) => f.path) }
+  return { name: link.skill.name, version: link.skill.version, content: await contentOf(workspaceId, link.skill, v?.content ?? "", prisma, offers), files: files.map((f) => f.path) }
 }

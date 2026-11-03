@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { notFound, redirect } from "next/navigation"
 import { toCrmRole, type CrmRole } from "@/lib/crm/roles"
 import { can, scopeOf, type Permission, type Scope } from "@/lib/rbac"
+import { AuthError } from "./errors"
 import { getSession } from "./session"
 
 export interface CurrentUser {
@@ -14,14 +15,7 @@ export interface CurrentUser {
   role: CrmRole
 }
 
-export class AuthError extends Error {
-  constructor(
-    public readonly status: 401 | 403,
-    message = status === 401 ? "Non authentifié" : "Accès refusé"
-  ) {
-    super(message)
-  }
-}
+export { AuthError }
 
 /** The signed-in CRM member. Former appointment clients (role USER) are not members. */
 export async function getCurrentUser(): Promise<CurrentUser | null> {

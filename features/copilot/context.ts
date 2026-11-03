@@ -60,6 +60,15 @@ export function describeFilters(f: LeadFilters): string {
 
 const quote = (s: string) => `« ${s.replace(/[«»\n\r]/g, " ").trim().slice(0, 120)} »`
 
+/** The lines the model reads, shared with the copilot's evaluation (features/quality/cases/copilot.ts). */
+export const PAGE_LINES = {
+  plain: (kind: PageKind) => `Page ouverte : ${PAGE_LABELS[kind]}.`,
+  lead: (name: string, city: string | null, id: string) => `Page ouverte : la fiche ${quote(name)}${city ? ` (${city})` : ""}, leadId ${id}. « Cette fiche » désigne celle-ci.`,
+  campaign: (name: string, id: string) => `Page ouverte : la campagne ${quote(name)}, campaignId ${id}. « Cette campagne » désigne celle-ci.`,
+  list: (filters: string) =>
+    filters ? `Page ouverte : la liste des prospects filtrée (${filters}). « La liste » désigne ces fiches : retrouve-les avec search_leads et les mêmes filtres.` : "Page ouverte : la liste des prospects, sans filtre.",
+}
+
 /**
  * The page in words, after checking that the person may see what it shows. A fiche or a campaign they may not see is
  * described as the page alone, without its id: the copilot never learns more than the person.
@@ -67,7 +76,7 @@ const quote = (s: string) => `« ${s.replace(/[«»\n\r]/g, " ").trim().slice(0,
 export async function describePage(user: CurrentUser, page: PageRef | null): Promise<PageContext | null> {
   if (!page) return null
   const base = { kind: page.kind, path: page.path }
-  const plain = (kind: PageKind = page.kind): PageContext => ({ ...base, kind, label: PAGE_LABELS[kind], line: `Page ouverte : ${PAGE_LABELS[kind]}.` })
+  const plain = (kind: PageKind = page.kind): PageContext => ({ ...base, kind, label: PAGE_LABELS[kind], line: PAGE_LINES.plain(kind) })
 
   if (page.kind === "lead" && page.id && can(user.role, "lead:read")) {
     const lead = await prisma.lead.findFirst({
@@ -76,13 +85,12 @@ export async function describePage(user: CurrentUser, page: PageRef | null): Pro
     })
     if (!lead) return plain("leads")
     const name = lead.company?.name ?? lead.contact?.name ?? "Sans nom"
-    const city = lead.company?.city ? ` (${lead.company.city})` : ""
-    return { ...base, label: `Fiche ${name}`, line: `Page ouverte : la fiche ${quote(name)}${city}, leadId ${lead.id}. « Cette fiche » désigne celle-ci.`, leadId: lead.id }
+    return { ...base, label: `Fiche ${name}`, line: PAGE_LINES.lead(name, lead.company?.city ?? null, lead.id), leadId: lead.id }
   }
   if (page.kind === "campaign" && page.id && can(user.role, "campaign:read")) {
     const campaign = await prisma.campaign.findFirst({ where: { id: page.id, workspaceId: user.workspaceId }, select: { id: true, name: true } })
     if (!campaign) return plain("campaigns")
-    return { ...base, label: `Campagne ${campaign.name}`, line: `Page ouverte : la campagne ${quote(campaign.name)}, campaignId ${campaign.id}. « Cette campagne » désigne celle-ci.`, campaignId: campaign.id }
+    return { ...base, label: `Campagne ${campaign.name}`, line: PAGE_LINES.campaign(campaign.name, campaign.id), campaignId: campaign.id }
   }
   if (page.kind === "site" && page.id && can(user.role, "studio:generate")) {
     const site = await prisma.generatedSite.findFirst({
@@ -97,7 +105,7 @@ export async function describePage(user: CurrentUser, page: PageRef | null): Pro
     return {
       ...base,
       label: filters ? `Prospects : ${filters}` : "Prospects",
-      line: filters ? `Page ouverte : la liste des prospects filtrée (${filters}). « La liste » désigne ces fiches : retrouve-les avec search_leads et les mêmes filtres.` : "Page ouverte : la liste des prospects, sans filtre.",
+      line: PAGE_LINES.list(filters),
     }
   }
   return plain()

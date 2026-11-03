@@ -122,7 +122,7 @@ export function EvaluationDialog({ suite, preset, onClose, onStarted }: { suite:
                 )
               })}
             </ul>
-            <p className="text-xs text-muted-foreground">Jusqu’à {MAX_EXTRA} modèles à côté de celui en service. Ce qu’un juge note (emails, pages) l’est toujours par le même modèle, facturé à part.</p>
+            <p className="text-xs text-muted-foreground">Jusqu’à {MAX_EXTRA} modèles à côté de celui en service. Ce qu’un juge note (emails, pages, réponses du copilote) l’est toujours par le même modèle, facturé à part.</p>
           </fieldset>
 
           <fieldset className="space-y-2">

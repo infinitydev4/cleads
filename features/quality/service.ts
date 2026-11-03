@@ -8,6 +8,7 @@ import { ACTIVE_RUN_STATUSES, eurToMicros, getAiSettings, microsToEur, type AiSe
 import { AI_ROLES, ROLES, modelLabel, resolveRole, type AiRole } from "@/lib/ai/models"
 import { costMicros, formatPrice, priceTable, type ModelPrice } from "@/lib/ai/pricing"
 import { BRIEFS } from "@/evals/briefs"
+import { scenarioById } from "@/evals/copilot"
 import { AUDITS } from "@/evals/audits"
 import { CAMPAIGNS, FICHES } from "@/evals/fiches"
 import { REPLIES } from "@/evals/replies"
@@ -66,6 +67,10 @@ export function caseTitle(suite: SuiteId, caseId: string): string {
     case "designer": {
       const b = BRIEFS.find((x) => x.id === caseId)
       return b ? `${b.company} — ${b.about}` : caseId
+    }
+    case "copilot": {
+      const s = scenarioById(caseId)
+      return s ? `${s.about} — « ${s.ask} »` : caseId
     }
   }
 }

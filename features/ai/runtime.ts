@@ -74,9 +74,10 @@ export interface AgentRuntime {
   tools: AnyToolDef[]
 }
 
-export async function agentRuntime(run: Pick<RunContext, "workspaceId" | "agentId">): Promise<AgentRuntime> {
+/** An evaluation's run gives its frozen offers to the skill written from them. */
+export async function agentRuntime(run: Pick<RunContext, "workspaceId" | "agentId" | "evaluation">): Promise<AgentRuntime> {
   await ensureAgentCatalog(run.workspaceId)
-  const [agent, skills] = await Promise.all([effectiveAgent(run.workspaceId, run.agentId), loadAgentSkills(run.workspaceId, run.agentId)])
+  const [agent, skills] = await Promise.all([effectiveAgent(run.workspaceId, run.agentId), loadAgentSkills(run.workspaceId, run.agentId, undefined, run.evaluation?.offers)])
   return {
     agent,
     system: composeInstructions(agent, skills.always, skills.onDemand),

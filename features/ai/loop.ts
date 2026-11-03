@@ -1,14 +1,15 @@
 import type { ModelMessage, StepResult, StopCondition, ToolSet } from "ai"
 import { getAiSettings } from "@/lib/ai/budget"
-import { resolveRole, type AiRole } from "@/lib/ai/models"
+import type { AiRole } from "@/lib/ai/models"
 import { estimateTokens, maxOutputTokensWithin, priceTable, tokenUsage, worstPrice, type ModelPrice } from "@/lib/ai/pricing"
-import { MIN_OUTPUT_TOKENS, type ModelDeps } from "./calls"
+import { MIN_OUTPUT_TOKENS, modelFor, type ModelDeps } from "./calls"
 import { recordModelStep, remainingMicros, type RunContext } from "./runs"
 
 /**
  * The budget of an agent that picks its own tools in a loop (the copilot E24, the Stratège E25): each step's answer is
  * capped by what the run can still pay at the worst price of the model and its fallbacks, the loop stops before a step
- * the run could not pay for, and every finished step is billed to the run before the next one starts.
+ * the run could not pay for, and every finished step is billed to the run before the next one starts. In an evaluation,
+ * the model pinned for the role answers alone (E27).
  */
 export interface LoopBudget {
   model: string
@@ -40,7 +41,7 @@ export interface LoopOptions {
 
 export async function loopBudget(run: RunContext, opts: LoopOptions, deps: ModelDeps = {}): Promise<LoopBudget> {
   const [settings, prices] = await Promise.all([getAiSettings(run.workspaceId), deps.prices ?? priceTable()])
-  const { model, fallbacks } = resolveRole(opts.role, settings.roleModels)
+  const { model, fallbacks } = modelFor(run, opts.role, settings.roleModels)
   const candidates = [model, ...fallbacks]
   const worst = worstPrice(candidates, prices)
   const toolsOf = (messages: readonly ModelMessage[]) => (typeof opts.toolsTokens === "function" ? opts.toolsTokens(messages) : opts.toolsTokens)

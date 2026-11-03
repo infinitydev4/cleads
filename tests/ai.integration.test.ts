@@ -325,8 +325,8 @@ suite("AI foundation (database)", () => {
       await expect(settings.updateAiSettings(u.manager, { monthlyCapEur: 50 })).rejects.toMatchObject({ status: 403 })
       // E27: another model for a role needs its evaluation on every suite the role touches.
       await expect(settings.updateAiSettings(u.owner, { roleModels: { writer: "mistral/mistral-large-4" } })).rejects.toMatchObject({ status: 409 })
-      const prove = (role: "writer" | "fast", model: string, suites: ("auditor" | "offers" | "writer")[]) => proveModel(prisma, { workspaceId: ws, requestedById: u.owner.id, suites, role, baseline: role === "writer" ? "anthropic/claude-sonnet-5.5" : "anthropic/claude-haiku-5.5", model })
-      await prove("writer", "mistral/mistral-large-4", ["auditor", "offers", "writer"])
+      const prove = (role: "writer" | "fast", model: string, suites: ("auditor" | "offers" | "writer" | "copilot")[]) => proveModel(prisma, { workspaceId: ws, requestedById: u.owner.id, suites, role, baseline: role === "writer" ? "anthropic/claude-sonnet-5.5" : "anthropic/claude-haiku-5.5", model })
+      await prove("writer", "mistral/mistral-large-4", ["auditor", "offers", "writer", "copilot"])
       await prove("fast", "openai/gpt-6-luna", ["auditor"])
       let view = await settings.updateAiSettings(u.owner, { roleModels: { writer: "mistral/mistral-large-4" }, monthlyCapEur: 50, userDailyCapEur: 2.5 })
       expect(view.caps).toEqual({ monthlyCapEur: 50, userDailyCapEur: 2.5, eurPerUsd: 0.92, missionCapEur: 2 })
