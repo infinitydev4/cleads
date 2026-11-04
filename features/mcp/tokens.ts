@@ -7,16 +7,18 @@ import { toCrmRole } from "@/lib/crm/roles"
 import { can } from "@/lib/rbac"
 import { LeadError } from "@/features/leads/errors"
 import { generateToken, hashToken } from "@/features/team/rules"
-import { MCP_ACTION, clientName } from "./names"
+import { ACCESS_PREFIX, MCP_ACTION, TOKEN_PREFIX, clientName } from "./names"
+import { isOurResource } from "./oauth/metadata"
+import { appOf, type AppIdentity } from "./oauth/redirects"
 
 /**
- * Personal tokens for the CRM's MCP server (E29, D36): a member creates them for Claude Code, Cursor or a local bridge to
- * Claude Desktop. A token stands for its member and nothing more: their role is read again at every request, and a
- * deactivated account, an expired or revoked token, or MCP switched off in the workspace stops it at once. Only the
- * token's hash is stored; the secret is shown once.
+ * The accesses to the CRM's MCP server (E29): a member's personal tokens (D36), made for a script or a tool without
+ * OAuth, and their OAuth connections (lot 2, D44), opened by clicking « Autoriser » for Claude, ChatGPT, Claude Code…
+ * Either stands for its member and nothing more: their role is read again at every request, and a deactivated account,
+ * an expired or revoked access, or MCP switched off in the workspace stops it at once. Only hashes are stored.
  */
 
-export const TOKEN_PREFIX = "cleads_mcp_"
+export { TOKEN_PREFIX }
 export const MAX_ACTIVE_TOKENS = 10
 /** The last use is written at most this often, not at every call. */
 const TOUCH_MS = 60_000
@@ -37,9 +39,13 @@ export type TokenStatus = "active" | "expired" | "revoked"
 
 export interface McpTokenView {
   id: string
+  /** A personal token, or an OAuth connection (its name is then the application's). */
+  kind: "token" | "connection"
   name: string
-  /** The first characters of the secret, to recognise it: cleads_mcp_ab12cd… */
+  /** The first characters of the secret, to recognise it: cleads_mcp_ab12cd… Empty for a connection. */
   hint: string
+  /** A connection's application: verified or as it names itself, and where its code went back. */
+  app: AppIdentity | null
   readOnly: boolean
   status: TokenStatus
   expiresAt: string
@@ -66,16 +72,21 @@ const select = {
   lastClient: true,
   createdAt: true,
   userId: true,
+  redirectUri: true,
   user: { select: { name: true, email: true } },
+  oauthClient: { select: { kind: true, clientId: true, name: true } },
 } satisfies Prisma.McpTokenSelect
 type Row = Prisma.McpTokenGetPayload<{ select: typeof select }>
 
 function toView(t: Row, actor: CurrentUser, withOwner: boolean): McpTokenView {
   const status = statusOf(t)
+  const app = t.oauthClient ? appOf(t.oauthClient, t.redirectUri) : null
   return {
     id: t.id,
+    kind: app ? "connection" : "token",
     name: t.name,
-    hint: `${TOKEN_PREFIX}${t.hint}…`,
+    hint: app ? "" : `${TOKEN_PREFIX}${t.hint}…`,
+    app,
     readOnly: t.readOnly,
     status,
     expiresAt: t.expiresAt.toISOString(),
@@ -104,7 +115,7 @@ export async function createToken(actor: CurrentUser, raw: CreateTokenInput, ip?
   if (!(await mcpEnabled(actor.workspaceId))) throw new LeadError("conflict", "L'accès MCP est coupé dans cet espace : le propriétaire l'active dans Réglages › Accès MCP.", 409)
   const input = createTokenSchema.parse(raw)
   const now = new Date()
-  const active = await prisma.mcpToken.count({ where: { userId: actor.id, revokedAt: null, expiresAt: { gt: now } } })
+  const active = await prisma.mcpToken.count({ where: { userId: actor.id, oauthClientId: null, revokedAt: null, expiresAt: { gt: now } } })
   if (active >= MAX_ACTIVE_TOKENS) throw new LeadError("conflict", `${MAX_ACTIVE_TOKENS} jetons actifs au plus : révoquez-en un d'abord.`, 409)
   const { secret, hash, hint } = newSecret()
   const row = await prisma.mcpToken.create({
@@ -115,7 +126,7 @@ export async function createToken(actor: CurrentUser, raw: CreateTokenInput, ip?
   return { token: toView(row, actor, false), secret }
 }
 
-/** One's own tokens; with `team`, the owner sees every member's. Newest first, the revoked and expired ones of 30 days. */
+/** One's own tokens and connections; with `team`, the owner sees every member's. Newest first, the closed ones of 30 days. */
 export async function listTokens(actor: CurrentUser, opts: { team?: boolean } = {}): Promise<McpTokenView[]> {
   if (!can(actor.role, "ai:use")) throw new LeadError("forbidden", "Accès refusé", 403)
   const team = !!opts.team && isOwner(actor)
@@ -134,76 +145,102 @@ export async function listTokens(actor: CurrentUser, opts: { team?: boolean } = 
 }
 
 /**
- * Revokes a token: its member, or the owner for anyone's. What it left waiting in « À valider » is refused with it: a
- * token revoked because it leaked must not leave its requests behind.
+ * Closes a token or a connection, once: what it left waiting in « À valider » is refused with it, since an access closed
+ * because it leaked must not leave its requests behind. `actorId` is null when Cleads closes it (stolen refresh token,
+ * replayed code, the connections' limit). Returns whether it was still open.
  */
-export async function revokeToken(actor: CurrentUser, tokenId: string, ip?: string | null): Promise<McpTokenView> {
-  const t = await prisma.mcpToken.findFirst({ where: { id: tokenId, workspaceId: actor.workspaceId }, select })
-  if (!t || (t.userId !== actor.id && !isOwner(actor))) throw new LeadError("not_found", "Jeton introuvable.", 404)
-  if (t.revokedAt) throw new LeadError("conflict", "Ce jeton est déjà révoqué.", 409)
-  const now = new Date()
-  const revoked = await prisma.$transaction(async (tx) => {
-    const row = await tx.mcpToken.update({ where: { id: t.id }, data: { revokedAt: now, revokedById: actor.id }, select })
+export async function closeToken(tokenId: string, workspaceId: string, actorId: string | null, note: string, now = new Date()): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
+    const closed = await tx.mcpToken.updateMany({ where: { id: tokenId, workspaceId, revokedAt: null }, data: { revokedAt: now, revokedById: actorId } })
+    if (closed.count !== 1) return false
     const waiting = await tx.agentRun.findMany({
-      where: { workspaceId: actor.workspaceId, status: "WAITING_APPROVAL", input: { path: ["tokenId"], equals: t.id } },
+      where: { workspaceId, status: "WAITING_APPROVAL", input: { path: ["tokenId"], equals: tokenId } },
       select: { id: true, input: true },
     })
     const runIds = waiting.filter((r) => (r.input as { kind?: unknown } | null)?.kind === MCP_ACTION).map((r) => r.id)
     if (runIds.length) {
-      await tx.agentApproval.updateMany({ where: { runId: { in: runIds }, status: "PENDING" }, data: { status: "REJECTED", decidedById: actor.id, decidedAt: now, note: "Jeton MCP révoqué" } })
-      await tx.agentRun.updateMany({ where: { id: { in: runIds } }, data: { status: "CANCELLED", finishedAt: now, reservedMicros: 0, error: "Jeton MCP révoqué" } })
+      await tx.agentApproval.updateMany({ where: { runId: { in: runIds }, status: "PENDING" }, data: { status: "REJECTED", decidedById: actorId, decidedAt: now, note } })
+      await tx.agentRun.updateMany({ where: { id: { in: runIds } }, data: { status: "CANCELLED", finishedAt: now, reservedMicros: 0, error: note } })
     }
-    return row
+    return true
   })
-  await audit({ action: "mcp.token_revoked", actorId: actor.id, workspaceId: actor.workspaceId, entityType: "McpToken", entityId: t.id, metadata: { name: t.name, ownerId: t.userId }, ip })
-  return toView(revoked, actor, isOwner(actor))
 }
 
-/** Who calls: the token's member as the CRM sees them now, and what the token allows. */
+/** Revokes a token or closes a connection: its member, or the owner for anyone's. */
+export async function revokeToken(actor: CurrentUser, tokenId: string, ip?: string | null): Promise<McpTokenView> {
+  const t = await prisma.mcpToken.findFirst({ where: { id: tokenId, workspaceId: actor.workspaceId }, select })
+  if (!t || (t.userId !== actor.id && !isOwner(actor))) throw new LeadError("not_found", "Accès introuvable.", 404)
+  const connection = !!t.oauthClient
+  if (t.revokedAt || !(await closeToken(t.id, actor.workspaceId, actor.id, connection ? "Connexion MCP fermée" : "Jeton MCP révoqué"))) {
+    throw new LeadError("conflict", connection ? "Cette connexion est déjà fermée." : "Ce jeton est déjà révoqué.", 409)
+  }
+  await audit({ action: "mcp.token_revoked", actorId: actor.id, workspaceId: actor.workspaceId, entityType: "McpToken", entityId: t.id, metadata: { name: t.name, ownerId: t.userId, kind: connection ? "connection" : "token" }, ip })
+  return toView(await prisma.mcpToken.findUniqueOrThrow({ where: { id: t.id }, select }), actor, isOwner(actor))
+}
+
+/** Who calls: the access's member as the CRM sees them now, and what the access allows. */
 export interface McpCaller {
   user: CurrentUser
   workspaceName: string
   /** `lastClient`: what a legacy client said at its handshake, for its later requests that do not say it again. */
-  token: { id: string; name: string; readOnly: boolean; lastClient: string | null }
+  token: { id: string; kind: "token" | "connection"; name: string; readOnly: boolean; lastClient: string | null }
 }
 
-export type AuthFailure = { status: 401 | 403; message: string }
+/** `invalidToken`: a token was presented and refused, which the 401's challenge says (RFC 6750 §3.1). */
+export type AuthFailure = { status: 401 | 403; message: string; invalidToken?: boolean }
+
+const callerSelect = {
+  id: true,
+  name: true,
+  workspaceId: true,
+  readOnly: true,
+  expiresAt: true,
+  revokedAt: true,
+  lastClient: true,
+  oauthClientId: true,
+  resource: true,
+  user: { select: { id: true, name: true, email: true, image: true, role: true, active: true, workspaceId: true } },
+  workspace: { select: { name: true, aiSetting: { select: { mcpEnabled: true } } } },
+} satisfies Prisma.McpTokenSelect
+
+/** The access a bearer stands for: a personal token by its own hash, a connection by one of its access tokens. */
+async function accessOf(secret: string, now: Date) {
+  const hash = hashToken(secret)
+  if (secret.startsWith(TOKEN_PREFIX)) {
+    const t = await prisma.mcpToken.findUnique({ where: { tokenHash: hash }, select: callerSelect })
+    return t && !t.oauthClientId ? t : null
+  }
+  if (!secret.startsWith(ACCESS_PREFIX)) return null
+  const a = await prisma.mcpAccessToken.findUnique({ where: { hash }, select: { expiresAt: true, token: { select: callerSelect } } })
+  return !a ? null : a.expiresAt <= now ? ("expired" as const) : a.token
+}
 
 /**
- * Reads `Authorization: Bearer <token>`. A missing, unknown, expired or revoked token, or an inactive member, is a 401;
- * MCP switched off or a role without AI is a 403.
+ * Reads `Authorization: Bearer <token>`: a personal token, or an OAuth connection's access token. A missing, unknown,
+ * expired or revoked one, or an inactive member, is a 401; MCP switched off or a role without AI is a 403. A refresh
+ * token never opens the server.
  */
 export async function authenticate(header: string | null, now = new Date()): Promise<McpCaller | AuthFailure> {
   const match = /^Bearer\s+(\S+)\s*$/i.exec(header ?? "")
-  if (!match) return { status: 401, message: "Jeton manquant : envoyez « Authorization: Bearer <jeton> » (Réglages › Accès MCP)." }
+  if (!match) return { status: 401, message: "Jeton manquant : connectez l'application à Cleads, ou envoyez « Authorization: Bearer <jeton> » (Réglages › Accès MCP)." }
   const secret = match[1]
-  if (!secret.startsWith(TOKEN_PREFIX) || secret.length > 120) return { status: 401, message: "Jeton invalide." }
-  const t = await prisma.mcpToken.findUnique({
-    where: { tokenHash: hashToken(secret) },
-    select: {
-      id: true,
-      name: true,
-      workspaceId: true,
-      readOnly: true,
-      expiresAt: true,
-      revokedAt: true,
-      lastClient: true,
-      user: { select: { id: true, name: true, email: true, image: true, role: true, active: true, workspaceId: true } },
-      workspace: { select: { name: true, aiSetting: { select: { mcpEnabled: true } } } },
-    },
-  })
-  if (!t) return { status: 401, message: "Jeton invalide." }
-  if (t.revokedAt) return { status: 401, message: "Ce jeton a été révoqué : créez-en un autre dans Réglages › Accès MCP." }
-  if (t.expiresAt <= now) return { status: 401, message: "Ce jeton a expiré : créez-en un autre dans Réglages › Accès MCP." }
+  const t = secret.length > 120 ? null : await accessOf(secret, now)
+  if (t === "expired") return { status: 401, message: "Jeton d'accès expiré : l'application le renouvelle.", invalidToken: true }
+  if (!t) return { status: 401, message: "Jeton invalide.", invalidToken: true }
+  const connection = !!t.oauthClientId
+  if (t.revokedAt) return { status: 401, message: connection ? "Cette connexion a été fermée : reconnectez l'application à Cleads." : "Ce jeton a été révoqué : créez-en un autre dans Réglages › Accès MCP.", invalidToken: true }
+  if (t.expiresAt <= now) return { status: 401, message: connection ? "Cette connexion a expiré après 90 jours sans usage : reconnectez l'application à Cleads." : "Ce jeton a expiré : créez-en un autre dans Réglages › Accès MCP.", invalidToken: true }
+  // RFC 8707: a connection is bound to this MCP server.
+  if (connection && t.resource && !isOurResource(t.resource)) return { status: 401, message: "Ce jeton n'a pas été délivré pour ce serveur.", invalidToken: true }
   const u = t.user
   const role = toCrmRole(u.role)
-  if (!u.active || !role || u.workspaceId !== t.workspaceId) return { status: 401, message: "Le compte de ce jeton n'a plus accès au CRM." }
+  if (!u.active || !role || u.workspaceId !== t.workspaceId) return { status: 401, message: "Le compte de cet accès n'a plus accès au CRM.", invalidToken: true }
   if (!t.workspace.aiSetting?.mcpEnabled) return { status: 403, message: "L'accès MCP est coupé dans cet espace : le propriétaire l'active dans Réglages › Accès MCP." }
   if (!can(role, "ai:use")) return { status: 403, message: "Votre rôle ne permet pas d'utiliser l'IA dans le CRM." }
   return {
     user: { id: u.id, workspaceId: t.workspaceId, name: u.name ?? u.email ?? "", email: u.email ?? "", image: u.image, role },
     workspaceName: t.workspace.name,
-    token: { id: t.id, name: t.name, readOnly: t.readOnly, lastClient: t.lastClient },
+    token: { id: t.id, kind: connection ? "connection" : "token", name: t.name, readOnly: t.readOnly, lastClient: t.lastClient },
   }
 }
 
@@ -228,10 +265,10 @@ export interface McpCallView {
   createdAt: string
 }
 
-/** A token's last calls, for its member or the owner. */
+/** An access's last calls, for its member or the owner. */
 export async function tokenCalls(actor: CurrentUser, tokenId: string, limit = 50): Promise<McpCallView[]> {
   const t = await prisma.mcpToken.findFirst({ where: { id: tokenId, workspaceId: actor.workspaceId }, select: { userId: true } })
-  if (!t || (t.userId !== actor.id && !isOwner(actor))) throw new LeadError("not_found", "Jeton introuvable.", 404)
+  if (!t || (t.userId !== actor.id && !isOwner(actor))) throw new LeadError("not_found", "Accès introuvable.", 404)
   const rows = await prisma.mcpCall.findMany({ where: { tokenId }, orderBy: { createdAt: "desc" }, take: Math.min(limit, 100) })
   return rows.map((c) => ({ id: c.id, tool: c.tool, client: c.client, outcome: c.outcome, approvalId: c.approvalId, durationMs: c.durationMs, createdAt: c.createdAt.toISOString() }))
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useSyncExternalStore } from "react"
 import { useRouter } from "next/navigation"
 import { signIn } from "next-auth/react"
 import Image from "next/image"
@@ -20,6 +20,27 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 
+/**
+ * Where to go once signed in: a path of this site only, such as a link into /app or an application's authorization
+ * (E29 lot 2). Anything else, another site included, goes to /app.
+ */
+function safeCallback(raw: string | null): string | null {
+  if (!raw) return null
+  let path = raw
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const url = new URL(raw)
+      if (url.origin !== window.location.origin) return null
+      path = `${url.pathname}${url.search}`
+    } catch {
+      return null
+    }
+  }
+  return path.startsWith("/") && !path.startsWith("//") && !path.startsWith("/\\") && !path.startsWith("/auth/login") && path.length < 4000 ? path : null
+}
+
+const noSubscription = () => () => {}
+
 const formSchema = z.object({
   email: z.string().email("Email invalide"),
   password: z.string().min(6, "Le mot de passe doit contenir au moins 6 caractères"),
@@ -29,6 +50,9 @@ export default function LoginPage() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Read in the browser only: the page itself stays static.
+  const search = useSyncExternalStore(noSubscription, () => window.location.search, () => "")
+  const next = safeCallback(new URLSearchParams(search).get("callbackUrl"))
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -47,7 +71,7 @@ export default function LoginPage() {
         email: values.email,
         password: values.password,
         redirect: true,
-        callbackUrl: "/app"
+        callbackUrl: next ?? "/app"
       })
 
       if (result?.error) {
@@ -73,7 +97,9 @@ export default function LoginPage() {
           <div className="flex flex-col items-center mb-8">
             <Image src="/logo-white.svg" alt="Logo" width={150} height={40} className="mb-6" />
             <h1 className="text-2xl font-bold text-white">Connexion</h1>
-            <p className="text-gray-400 text-sm">Accédez à votre espace Cleads</p>
+            <p className="text-gray-400 text-sm">
+              {next?.startsWith("/auth/authorize") ? "Connectez-vous pour autoriser l’application à accéder à Cleads" : "Accédez à votre espace Cleads"}
+            </p>
           </div>
 
           {error && (

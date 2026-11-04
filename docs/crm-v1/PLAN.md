@@ -78,6 +78,10 @@ Détails et conséquences techniques : [AGENTS-IA.md](AGENTS-IA.md).
 | D38 | Droits des clients MCP | **Une ligne « Clients MCP » dans la matrice**, réglée comme le copilote au départ ; un jeton peut être en lecture seule | Le propriétaire restreint MCP sans toucher au copilote. |
 | D39 | Ouverture de MCP | **Coupé tant que le propriétaire ne l'active pas** ; ensuite, chaque membre qui a l'IA crée ses jetons, et le propriétaire voit et révoque ceux de l'équipe | Les fiches lues partent vers l'IA choisie par le membre, hors des contrats de D16. |
 | D40 | Hébergement du serveur MCP | **Une route du site** (`POST /api/mcp`, Netlify), sans état, protocole 2026-07-28 et versions 2025 | Chaque appel est court (le long part au worker) ; rien de plus à exposer sur le VPS. |
+| D41 | Applications admises par OAuth (E29 lot 2, 4 novembre 2026) | **Applications connues** : Claude (web, Desktop, mobile), Claude Code, ChatGPT, VS Code, et toute application de l'ordinateur du membre (adresse locale, lien d'application comme `cursor://`) | Un code ne part jamais vers un autre site, même si le membre clique « Autoriser » : un lien piégé ne peut pas emporter d'accès. Les autres outils gardent le jeton personnel. |
+| D42 | Accès coché sur l'écran d'accord | **Lecture seule** ; le membre coche « Lecture et actions » | Comme les jetons : le moindre accès par défaut. |
+| D43 | Durée d'une connexion OAuth | **90 jours sans usage** : jeton d'accès d'une heure, rafraîchissement tournant ; révocable à tout moment | Une connexion qui sert reste ouverte ; une connexion oubliée se ferme seule. |
+| D44 | Serveur d'autorisation | **Intégré à Cleads**, documents d'identité (CIMD) et enregistrement dynamique ; une connexion est un `McpToken` de plus | Les comptes sont ceux du CRM ; mêmes contrôles, même journal et même page de révocation que les jetons. |
 
 ---
 
@@ -1039,8 +1043,8 @@ Le copilote exécute les actions du CRM sur une simple demande (« Recherche 1 0
 >
 > **À faire** : la première évaluation réelle du copilote, à la demande du propriétaire.
 
-### E29 — Le serveur MCP du CRM · **M**, en deux lots *(décidé le 3 novembre 2026, D36 à D40)*
-Le catalogue d'actions d'E28 s'ouvre aux clients MCP : Claude Code, Cursor, Claude Desktop. Un membre pilote le CRM depuis son outil, avec son jeton, ses droits et le même journal. Le copilote reste la porte en processus ; MCP est la seconde (D30).
+### E29 — Le serveur MCP du CRM · **M**, en deux lots *(décidé le 3 novembre 2026, D36 à D40 ; lot 2 le 4 novembre, D41 à D44)*
+Le catalogue d'actions d'E28 s'ouvre aux clients MCP : Claude (web, Desktop, mobile), ChatGPT, Claude Code, Cursor. Un membre pilote le CRM depuis son outil, avec son jeton, ses droits et le même journal. Le copilote reste la porte en processus ; MCP est la seconde (D30).
 
 > **Lot 1 — jetons et serveur MCP (branche `feat/e29-mcp`)** — fait :
 > - **serveur** `POST /api/mcp` (`features/mcp/`) :
@@ -1071,9 +1075,22 @@ Le catalogue d'actions d'E28 s'ouvre aux clients MCP : Claude Code, Cursor, Clau
 > - suite complète, `tsc`, lint, build du site et du worker ;
 > - navigateur, sur la base de démonstration : activer MCP, créer un jeton, un vrai client MCP en HTTP (2026-07-28) qui lit, note et demande un statut, validé dans « À valider », l'historique « via Claude Code (MCP) », la ligne de la matrice, l'activité du jeton, la révocation, 375 px.
 >
-> **Lot 2 — OAuth (au signal du propriétaire)** :
-> - un serveur d'autorisation dans Cleads : métadonnées (RFC 9728 et 8414), enregistrement dynamique (RFC 7591), PKCE, écran de consentement, jetons courts et de rafraîchissement liés à la ressource ;
-> - le résultat : « Ajouter un connecteur » dans Claude Desktop et claude.ai, sans pont local.
+> **Lot 2 — OAuth (branche `feat/e29-oauth`)** — fait :
+> - **serveur d'autorisation** dans Cleads (`features/mcp/oauth/`), selon l'autorisation de MCP 2026-07-28 :
+>   - découverte : le 401 de `/api/mcp` nomme ses métadonnées (RFC 9728) ; celles du serveur d'autorisation (RFC 8414) annoncent PKCE S256, les documents d'identité (CIMD) et `iss` (RFC 9207) ;
+>   - applications : document d'identité (Claude, Claude Code, ChatGPT), lu pour un membre connecté seulement, ou enregistrement dynamique (RFC 7591 ; Cursor, VS Code) ;
+>   - règle D41 : un code ne part que vers une application de l'ordinateur du membre ou le retour exact d'un service connu ;
+> - **écran d'accord** `/auth/authorize` : l'application (reconnue ou nom déclaré), l'adresse où part l'accès, le compte, « Lecture seule » cochée (D42) ou « Lecture et actions » ; la page de connexion y revient après la connexion ;
+> - **jetons** : code de 5 minutes à usage unique ; jeton d'accès d'une heure ; rafraîchissement tournant, réutilisation détectée ; 90 jours sans usage (D43) ; 10 connexions par membre ; révocation RFC 7009 ;
+> - **une connexion vaut un jeton (D44)** : un `McpToken` au nom de l'application, mêmes contrôles, même « À valider », même journal ; Réglages › Accès MCP montre « Vos connexions » et explique comment brancher Claude, Claude Code, ChatGPT et Cursor ; le pont `mcp-remote` disparaît ;
+> - **journal** : `mcp.oauth_authorized` et `mcp.oauth_refresh_reused` ; libellés français et filtre « Accès MCP » pour toutes les entrées `mcp.*` ;
+> - **migration** `20261115090000_mcp_oauth`, additive ; le worker n'a rien à redéployer.
+>
+> **Vérifié** :
+> - `tests/mcp-oauth.test.ts` : la découverte, la règle D41, PKCE (vecteur de la RFC 7636), la ressource, les portées, les documents d'identité ;
+> - `tests/mcp-oauth.integration.test.ts` : le vrai client OAuth de l'AI SDK (401, découverte, enregistrement ou document, accord, échange, rafraîchissement automatique), Claude, Claude Code et un outil local, la lecture seule, les refus D41, le code unique, le secret d'un client confidentiel, la rotation et sa réutilisation, les fermetures (Réglages, RFC 7009), MCP coupé, un membre désactivé, le plafond de 10 connexions ;
+> - les suites du lot 1, la suite complète, `tsc`, lint, build du site (les routes `.well-known`, `/api/oauth/*` et `/auth/authorize` y figurent) et du worker (sans code OAuth) ;
+> - navigateur, sur la base de démonstration : le client OAuth de l'AI SDK joue Claude Code, avec son vrai document d'identité lu en direct sur claude.ai. Non connecté, la page de connexion le dit puis revient à l'accord ; MCP coupé, la page le dit ; l'écran d'accord montre Claude Code reconnu, l'avertissement « application de cet ordinateur » et la lecture seule cochée ; « Autoriser » donne le code (avec `iss` et `state`), les jetons, 68 outils et une recherche ; « Refuser » renvoie `access_denied` ; Réglages › Accès MCP montre la connexion, et « Déconnecter » la ferme aussitôt (401) ; 375 px sans débordement, aucune erreur dans la console. La base de démonstration a été remise en l'état.
 
 ### Ordre conseillé
 | Jalon | Epics | Résultat visible |

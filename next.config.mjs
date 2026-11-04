@@ -59,6 +59,14 @@ const nextConfig = {
         source: '/(dashboard|auth|api)/:path*',
         headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }],
       },
+      {
+        // E29 lot 2: sign-in and consent pages are never framed by another site (clickjacking on « Autoriser »).
+        source: '/auth/:path*',
+        headers: [
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
+        ],
+      },
     ];
   },
 };

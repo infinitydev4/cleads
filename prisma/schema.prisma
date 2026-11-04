@@ -76,8 +76,9 @@ model User {
   /// E28: missions the member launched, and the recurring ones.
   missions               AgentMission[]          @relation("MissionRequester")
   missionSchedules       AgentMissionSchedule[]  @relation("MissionScheduleRequester")
-  /// E29: the member's personal tokens for the CRM's MCP server.
+  /// E29: the member's personal tokens and OAuth connections for the CRM's MCP server.
   mcpTokens              McpToken[]
+  mcpOAuthCodes          McpOAuthCode[]
 }
 
 /// LEGACY (blog, AI keys, NextAuth adapter): unused, dropped by prisma/pending/drop-legacy-blog.sql once a dump is taken.
@@ -618,6 +619,7 @@ model Workspace {
   agentMissionSchedules  AgentMissionSchedule[]
   mcpTokens              McpToken[]
   mcpCalls               McpCall[]
+  mcpOAuthCodes          McpOAuthCode[]
 }
 
 enum LeadSource {
@@ -2590,9 +2592,24 @@ model McpToken {
   lastClient  String?
   createdAt   DateTime  @default(now())
 
-  calls McpCall[]
+  /// E29 lot 2 (D44): the OAuth client of a connection; null for a personal token. For a connection, `tokenHash` is the
+  /// current refresh token's hash, rotated at each use, and `expiresAt` slides 90 days ahead at each refresh (D43).
+  oauthClientId String?
+  oauthClient   McpOAuthClient? @relation(fields: [oauthClientId], references: [id], onDelete: Cascade)
+  /// The refresh token the last rotation replaced: presented again, it closes the connection (stolen token).
+  previousHash  String?         @unique
+  rotatedAt     DateTime?
+  /// The MCP server the connection was granted for (RFC 8707).
+  resource      String?
+  /// Where the connection's code went back: tells which application holds it (Claude, an app of the member's computer).
+  redirectUri   String?
+
+  calls        McpCall[]
+  accessTokens McpAccessToken[]
+  codes        McpOAuthCode[]
 
   @@index([workspaceId, userId])
+  @@index([oauthClientId])
 }
 
 enum McpCallOutcome {
@@ -2621,4 +2638,73 @@ model McpCall {
 
   @@index([tokenId, createdAt])
   @@index([workspaceId, createdAt])
+}
+
+enum McpOAuthClientKind {
+  /// Client ID Metadata Document: the client_id is the URL of the client's own JSON document, read again every hour.
+  CIMD
+  /// Dynamic Client Registration (RFC 7591), kept for the clients without CIMD (Cursor, VS Code).
+  DCR
+}
+
+/// E29 lot 2: an OAuth client of the CRM's MCP server. It is the application, not an access: no workspace.
+model McpOAuthClient {
+  id              String             @id @default(cuid())
+  /// The OAuth client_id: the document's URL (CIMD) or a random identifier (DCR).
+  clientId        String             @unique
+  kind            McpOAuthClientKind
+  /// As the client names itself: shown as declared, never a proof.
+  name            String
+  redirectUris    String[]
+  /// none (public client with PKCE), client_secret_basic or client_secret_post.
+  tokenAuthMethod String             @default("none")
+  /// A DCR client that asked for a secret: its hash.
+  secretHash      String?
+  /// CIMD: when the document was last read.
+  fetchedAt       DateTime?
+  lastUsedAt      DateTime?
+  createdAt       DateTime           @default(now())
+
+  tokens McpToken[]
+  codes  McpOAuthCode[]
+
+  @@index([kind, createdAt])
+}
+
+/// E29 lot 2: an authorization code, given once the member clicked « Autoriser ». One use, five minutes; only its hash.
+model McpOAuthCode {
+  id            String         @id @default(cuid())
+  codeHash      String         @unique
+  oauthClientId String
+  oauthClient   McpOAuthClient @relation(fields: [oauthClientId], references: [id], onDelete: Cascade)
+  workspaceId   String
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  redirectUri   String
+  codeChallenge String
+  resource      String
+  readOnly      Boolean
+  expiresAt     DateTime
+  usedAt        DateTime?
+  /// The connection it created: closed if the code is presented again.
+  tokenId       String?
+  token         McpToken?      @relation(fields: [tokenId], references: [id], onDelete: SetNull)
+  createdAt     DateTime       @default(now())
+
+  @@index([expiresAt])
+}
+
+/// E29 lot 2: an access token of an OAuth connection, valid one hour; only its hash. Several live at once, so a call
+/// already under way survives a refresh; closing the connection stops them all.
+model McpAccessToken {
+  id        String   @id @default(cuid())
+  tokenId   String
+  token     McpToken @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  hash      String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([tokenId])
+  @@index([expiresAt])
 }
