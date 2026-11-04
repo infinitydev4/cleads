@@ -10,6 +10,10 @@ export type LeadSort = (typeof SORTS)[number]
 export const RELEVANCE_FILTERS = ["relevant", "maybe", "not", "pending", "unsorted"] as const
 export type RelevanceFilter = (typeof RELEVANCE_FILTERS)[number]
 
+/** E30: created in the last six months, a recent signal, a takeover or a new leader, in proceedings or closed. */
+export const REGISTRY_FILTERS = ["new", "signal", "takeover", "blocked"] as const
+export type RegistryFilter = (typeof REGISTRY_FILTERS)[number]
+
 export interface LeadFilters {
   q?: string
   status: (typeof LEAD_STATUSES)[number][]
@@ -27,6 +31,8 @@ export interface LeadFilters {
   campaign?: string
   /** E25: Jev's sorting for the campaign (or any campaign): relevant, maybe, not relevant, to decide, not sorted. */
   relevance?: RelevanceFilter
+  /** E30: what the registry and the BODACC say. */
+  registry?: RegistryFilter
   sort: LeadSort
   dir: "asc" | "desc"
   page: number
@@ -63,6 +69,7 @@ export function parseLeadFilters(params: Params): LeadFilters {
     batch: one("batch"),
     campaign: one("campaign"),
     relevance: RELEVANCE_FILTERS.find((r) => r === one("relevance")),
+    registry: REGISTRY_FILTERS.find((r) => r === one("registry")),
     sort,
     dir: one("dir") === "asc" ? "asc" : one("dir") === "desc" ? "desc" : sort === "name" ? "asc" : "desc",
     page: page >= 1 ? page : 1,
@@ -84,6 +91,7 @@ export const viewFiltersSchema = z.object({
   minScore: z.number().int().min(0).max(100).optional(),
   campaign: optionalText(100),
   relevance: z.enum(RELEVANCE_FILTERS).optional(),
+  registry: z.enum(REGISTRY_FILTERS).optional(),
   sort: z.enum(SORTS).default("score"),
   dir: z.enum(["asc", "desc"]).default("desc"),
 })

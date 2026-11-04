@@ -183,7 +183,7 @@ async function memberLoads(user: CurrentUser, ids: string[], start: Date, end: D
 // One space in detail (panel opened on click)
 // ---------------------------------------------------------------------------------------------------------------
 
-const SOURCE_LABELS: Record<string, string> = { EXTRACTOR: "Cleads Extractor", CSV: "Import CSV", INBOUND: "Formulaire du site", MANUAL: "Saisie", LEGACY: "Ancien back-office" }
+const SOURCE_LABELS: Record<string, string> = { EXTRACTOR: "Cleads Extractor", CSV: "Import CSV", INBOUND: "Formulaire du site", MANUAL: "Saisie", LEGACY: "Ancien back-office", REGISTRY: "Veille du registre" }
 
 export async function getZone(user: CurrentUser, zone: ZoneId, days: PeriodDays = 30, now = new Date()): Promise<ZoneDetail> {
   const def = ZONES.find((z) => z.id === zone)

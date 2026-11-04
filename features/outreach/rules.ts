@@ -77,6 +77,7 @@ export type Blocker =
   | "mailbox_inactive"
   | "quota_reached"
   | "just_sent"
+  | "legal_state"
 
 export const BLOCKER_LABELS: Record<Blocker, string> = {
   no_email: "Aucune adresse email sur la fiche.",
@@ -88,6 +89,7 @@ export const BLOCKER_LABELS: Record<Blocker, string> = {
   mailbox_inactive: "Cette boîte d’envoi est en pause ou en erreur.",
   quota_reached: "Le plafond du jour de cette boîte est atteint. Réessayez demain ou choisissez une autre boîte.",
   just_sent: "Un email vient de partir vers cette adresse. Attendez quelques minutes avant de réécrire.",
+  legal_state: "L’entreprise est en procédure collective, radiée ou fermée (BODACC, annuaire) : prospection suspendue. Un propriétaire ou un manager peut la reprendre depuis la fiche.",
 }
 
 /** A second message to the same address within this delay is almost always a double click. */
@@ -99,6 +101,8 @@ export interface LeadCheck {
   contactDoNotContact: boolean
   suppressed: boolean
   mayWrite: boolean
+  /** E30: the company is in collective proceedings or closed, and nobody chose to prospect it anyway. */
+  legalBlocked?: boolean
 }
 
 /** Reasons tied to the fiche itself, in the order a person would fix them. The mailbox is checked separately. */
@@ -106,6 +110,7 @@ export function leadBlockers(c: LeadCheck): Blocker[] {
   const out: Blocker[] = []
   if (!c.mayWrite) out.push("not_yours")
   if (c.status === "DO_NOT_CONTACT") out.push("lead_closed")
+  if (c.legalBlocked) out.push("legal_state")
   // The person asked not to be contacted: writing to the company's shared address instead would get round it.
   if (c.contactDoNotContact) out.push("do_not_contact")
   if (!c.recipient) out.push("no_email")

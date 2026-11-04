@@ -79,6 +79,7 @@ model User {
   /// E29: the member's personal tokens and OAuth connections for the CRM's MCP server.
   mcpTokens              McpToken[]
   mcpOAuthCodes          McpOAuthCode[]
+  campaignWatches        CampaignWatch[]         @relation("CampaignWatchOwner")
 }
 
 /// LEGACY (blog, AI keys, NextAuth adapter): unused, dropped by prisma/pending/drop-legacy-blog.sql once a dump is taken.
@@ -620,6 +621,9 @@ model Workspace {
   mcpTokens              McpToken[]
   mcpCalls               McpCall[]
   mcpOAuthCodes          McpOAuthCode[]
+  companySignals         CompanySignal[]
+  campaignWatches        CampaignWatch[]
+  signalSweep            SignalSweep?
 }
 
 enum LeadSource {
@@ -628,6 +632,8 @@ enum LeadSource {
   INBOUND
   MANUAL
   LEGACY
+  /// E30: found by a campaign's watch of the BODACC.
+  REGISTRY
 }
 
 enum EmailKind {
@@ -707,38 +713,52 @@ enum SavedViewEntity {
 
 /// A business. `externalId` is the stable identifier given by the source (Cleads Extractor) and makes imports replayable.
 model Company {
-  id             String     @id @default(cuid())
-  workspaceId    String
-  workspace      Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  name           String
+  id                String     @id @default(cuid())
+  workspaceId       String
+  workspace         Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name              String
   /// Lower-case host without "www.", the second deduplication key after externalId.
-  domain         String?
-  website        String?
-  phone          String?
-  email          String?
-  address        String?
-  city           String?
-  postalCode     String?
-  country        String     @default("FR")
-  sector         String?
-  siret          String?
+  domain            String?
+  website           String?
+  phone             String?
+  email             String?
+  address           String?
+  city              String?
+  postalCode        String?
+  country           String     @default("FR")
+  sector            String?
+  siret             String?
   /// normalizeName(name)|normalizeName(city): third deduplication key. Maintained by the application.
-  nameKey        String?
-  rating         Float?
-  reviewCount    Int?
+  nameKey           String?
+  rating            Float?
+  reviewCount       Int?
   /// 0-100 completeness reported by the source.
-  completeness   Int?
-  source         LeadSource @default(MANUAL)
-  externalId     String?
-  externalSource String?
+  completeness      Int?
+  source            LeadSource @default(MANUAL)
+  externalId        String?
+  externalSource    String?
   /// Raw useful fields kept for later enrichment; never read by business rules.
-  data           Json?
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  data              Json?
+  /// E30: identity read from the registry (annuaire des entreprises); its officers and provenance are in data.identity.
+  siren             String?
+  nafCode           String?
+  foundedOn         DateTime?  @db.Date
+  /// INSEE headcount band ("NN", "00", "01", "02", "03", "11"…), shown as a range.
+  headcountBand     String?
+  legalState        LegalState @default(ACTIVE)
+  legalStateAt      DateTime?
+  /// An owner or a manager chose to prospect it despite its legal state (journaled).
+  legalOverrideAt   DateTime?
+  legalOverrideById String?
+  /// Last registry lookup, found or not; null while still to do.
+  identityCheckedAt DateTime?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
 
   contacts Contact[]
   leads    Lead[]
   audits   ProspectAudit[]
+  signals  CompanySignal[]
 
   @@unique([workspaceId, externalId])
   @@index([workspaceId, domain])
@@ -746,31 +766,35 @@ model Company {
   @@index([workspaceId, nameKey])
   @@index([workspaceId, siret])
   @@index([workspaceId, phone])
+  @@index([workspaceId, siren])
+  @@index([identityCheckedAt])
 }
 
 model Contact {
-  id                 String     @id @default(cuid())
+  id                 String      @id @default(cuid())
   workspaceId        String
-  workspace          Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace          Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   companyId          String?
-  company            Company?   @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  company            Company?    @relation(fields: [companyId], references: [id], onDelete: SetNull)
   name               String?
   jobTitle           String?
   /// Stored lower-case (CHECK constraint).
   email              String?
-  emailKind          EmailKind  @default(UNKNOWN)
+  emailKind          EmailKind   @default(UNKNOWN)
+  /// E30: an officer from the registry, or a decision maker found later.
+  role               ContactRole @default(OTHER)
   phone              String?
-  doNotContact       Boolean    @default(false)
+  doNotContact       Boolean     @default(false)
   doNotContactReason String?
-  source             LeadSource @default(MANUAL)
+  source             LeadSource  @default(MANUAL)
   /// Where and when the data was collected, and on which legal basis: required to answer an access or opposition request.
   collectedFrom      String?
   collectedAt        DateTime?
   legalBasis         String?
   /// Former appointment "client" account this contact was created from (idempotent backfill).
-  legacyUserId       String?    @unique
-  createdAt          DateTime   @default(now())
-  updatedAt          DateTime   @updatedAt
+  legacyUserId       String?     @unique
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
 
   leads    Lead[]
   meetings Meeting[]
@@ -1323,6 +1347,8 @@ enum EnrollmentStopReason {
   MISSING_DATA
   SEND_FAILED
   MANUAL
+  /// E30: the company went into collective proceedings or was struck off (BODACC).
+  LEGAL_STATE
 }
 
 model Sequence {
@@ -1435,6 +1461,7 @@ model Campaign {
   agentRuns       AgentRun[]
   strategyTargets StrategyTarget[]
   relevances      LeadRelevance[]
+  watch           CampaignWatch?
 
   @@unique([workspaceId, name])
   @@index([workspaceId, status])
@@ -2707,4 +2734,113 @@ model McpAccessToken {
 
   @@index([tokenId])
   @@index([expiresAt])
+}
+
+// ─── E30: prospect enrichment V1 (docs/crm-v1/ENRICHISSEMENT.md) ─────────────────────────────────────────────────
+
+/// A company's legal state, from the registry (annuaire des entreprises) and the BODACC.
+enum LegalState {
+  ACTIVE
+  /// Collective proceedings (safeguard, receivership, liquidation) published in the BODACC.
+  INSOLVENT
+  /// Closed in the registry, or struck off (BODACC radiation).
+  CLOSED
+}
+
+enum ContactRole {
+  /// An officer listed by the registry (gérant, président…).
+  EXECUTIVE
+  /// The marketing, communication or sales lead of a larger company.
+  DECISION_MAKER
+  OTHER
+}
+
+/// What happened to a company, as a public source tells it.
+enum SignalKind {
+  CREATED
+  TAKEOVER
+  NEW_LEADER
+  MOVED
+  NEW_SITE
+  INSOLVENCY
+  CLOSED
+}
+
+/// A dated event about a company: a BODACC notice. Written by code from the source, never by a model.
+model CompanySignal {
+  id            String         @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  companyId     String
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  kind          SignalKind
+  /// The event's date: the judgment or the start of activity when the notice gives one, else its publication.
+  occurredAt    DateTime
+  /// One French sentence written by code from the notice.
+  summary       String
+  /// Useful fields of the notice (activity, court, previous owner…) for the fiche and the agents.
+  details       Json?
+  source        String
+  sourceUrl     String?
+  /// The notice at its source ("bodacc:A20260212794"): one notice gives one signal per company.
+  externalKey   String
+  /// The watch that found it, if one did.
+  watchId       String?
+  watch         CampaignWatch? @relation(fields: [watchId], references: [id], onDelete: SetNull)
+  /// Recent for 90 days; purged after a year.
+  expiresAt     DateTime
+  dismissedAt   DateTime?
+  dismissedById String?
+  createdAt     DateTime       @default(now())
+
+  @@unique([companyId, externalKey])
+  @@index([workspaceId, occurredAt])
+  @@index([companyId, occurredAt])
+}
+
+/// A campaign's daily watch of the BODACC (D50). It imports the companies it finds into the campaign and Jev sorts them;
+/// nobody is contacted without a click. It acts for its owner, whose rights are read again at every pass.
+model CampaignWatch {
+  id          String       @id @default(cuid())
+  workspaceId String
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaignId  String       @unique
+  campaign    Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  ownerId     String?
+  owner       User?        @relation("CampaignWatchOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  /// CREATED and/or TAKEOVER.
+  kinds       SignalKind[]
+  /// Département codes ("69", "2A", "974").
+  departments String[]
+  /// Extractor sectors copied when saved: { key, label, naf, keywords }[]. Empty: every activity.
+  sectors     Json         @default("[]")
+  active      Boolean      @default(false)
+  /// Next pass, at 7:30 Paris time; null while switched off.
+  nextRunAt   DateTime?
+  lockedBy    String?
+  lockedAt    DateTime?
+  /// Last publication day fully read.
+  cursorDay   DateTime?    @db.Date
+  lastRunAt   DateTime?
+  /// Counters and errors of the last pass, shown on the campaign.
+  lastReport  Json?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  signals CompanySignal[]
+
+  @@index([active, nextRunAt])
+}
+
+/// The morning pass that matches the BODACC's notices with the workspace's companies, one row per workspace.
+model SignalSweep {
+  workspaceId String    @id
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  nextRunAt   DateTime
+  lockedBy    String?
+  lockedAt    DateTime?
+  /// Last publication day fully read.
+  cursorDay   DateTime? @db.Date
+  lastRunAt   DateTime?
+  lastReport  Json?
 }

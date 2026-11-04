@@ -120,6 +120,7 @@ export const STOP_LABELS = {
   MISSING_DATA: "adresse ou information manquante",
   SEND_FAILED: "envoi impossible",
   MANUAL: "arrêtée à la main",
+  LEGAL_STATE: "entreprise en procédure collective ou radiée",
 } as const
 
 export type StopReasonKey = keyof typeof STOP_LABELS

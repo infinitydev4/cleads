@@ -82,6 +82,15 @@ Détails et conséquences techniques : [AGENTS-IA.md](AGENTS-IA.md).
 | D42 | Accès coché sur l'écran d'accord | **Lecture seule** ; le membre coche « Lecture et actions » | Comme les jetons : le moindre accès par défaut. |
 | D43 | Durée d'une connexion OAuth | **90 jours sans usage** : jeton d'accès d'une heure, rafraîchissement tournant ; révocable à tout moment | Une connexion qui sert reste ouverte ; une connexion oubliée se ferme seule. |
 | D44 | Serveur d'autorisation | **Intégré à Cleads**, documents d'identité (CIMD) et enregistrement dynamique ; une connexion est un `McpToken` de plus | Les comptes sont ceux du CRM ; mêmes contrôles, même journal et même page de révocation que les jetons. |
+| D45 | Cible de l'enrichissement (E30, 4 novembre 2026) | **TPE et PME** : le dirigeant du registre d'abord ; pour une PME de 10 salariés ou plus, aussi le responsable marketing, communication ou commercial | Dans une TPE, le dirigeant décide ; dans une PME, il faut aussi la personne qui porte le sujet. |
+| D46 | Sources de la V1 | **BODACC, Exa, Perplexity et Meta** (bibliothèque publicitaire), plus l'annuaire des entreprises déjà branché ; Exa et Perplexity par les outils de la passerelle IA, sans nouvelle clé ; pas de Firecrawl | Une V1 simple : quatre sources, aucun abonnement de plus, le reste en V2 (D53). |
+| D47 | Budget de l'enrichissement | **Dans le budget IA** (D22) : chaque exécution a son plafond ; environ 17 € par mois attendus ; le plafond IA peut monter de 50 € si le volume grandit | Pas d'enveloppe de plus à suivre en V1. |
+| D48 | Décideurs | **Sans aspirer LinkedIn** : le dirigeant vient du registre, son profil d'une recherche Exa ; aucun email deviné | Proxycurl a fermé en juillet 2025 après un procès de LinkedIn ; les comptes des SDR ne se risquent pas. |
+| D49 | Signaux | **Créations, reprises et changements** (BODACC) ; **publicités en cours** (Meta). Exclusions automatiques : procédure collective, radiation, fermeture, opposition | Le bon moment pour appeler, et personne à démarcher en pleine procédure. |
+| D50 | Veilles | **Elles importent et trient seules** dans la campagne de la veille (Jev) ; tout contact attend un clic | Comme les missions (D35) : l'humain valide ce qui contacte un prospect (D18). |
+| D51 | Recherche profonde | **Un brief sourcé avant chaque rendez-vous, et à la demande** | Le closer arrive préparé ; aucune dépense en masse. |
+| D52 | Sonde GEO | **Sur les fiches qualifiées** : 2 ou 3 recherches « métier + ville », entreprises citées et sources. Lève l'interdiction de sonde externe de D23 | Une preuve directe pour l'offre GEO, pour environ un centime. |
+| D53 | Reporté en V2 | Emails nominatifs vérifiés (Icypeas), bugs des sites (Chromium du worker), recrutements (France Travail), chiffres Instagram, créations d'artisans en nom propre (Sirene), enveloppe séparée | Mis de côté, pas abandonnés. |
 
 ---
 
@@ -1092,6 +1101,43 @@ Le catalogue d'actions d'E28 s'ouvre aux clients MCP : Claude (web, Desktop, mob
 > - les suites du lot 1, la suite complète, `tsc`, lint, build du site (les routes `.well-known`, `/api/oauth/*` et `/auth/authorize` y figurent) et du worker (sans code OAuth) ;
 > - navigateur, sur la base de démonstration : le client OAuth de l'AI SDK joue Claude Code, avec son vrai document d'identité lu en direct sur claude.ai. Non connecté, la page de connexion le dit puis revient à l'accord ; MCP coupé, la page le dit ; l'écran d'accord montre Claude Code reconnu, l'avertissement « application de cet ordinateur » et la lecture seule cochée ; « Autoriser » donne le code (avec `iss` et `state`), les jetons, 68 outils et une recherche ; « Refuser » renvoie `access_denied` ; Réglages › Accès MCP montre la connexion, et « Déconnecter » la ferme aussitôt (401) ; 375 px sans débordement, aucune erreur dans la console. La base de démonstration a été remise en l'état.
 
+### E30 — Enrichissement des prospects, V1 · **M**, en trois lots *(décidé le 4 novembre 2026, D45 à D53)*
+Quatre sources, chacune pour une question : **quand appeler** (BODACC), **à qui parler** (Exa), **quoi dire** (Perplexity), **la preuve d'un budget** (Meta). Référence : [ENRICHISSEMENT.md](ENRICHISSEMENT.md).
+
+> **Lot 1 — BODACC : veilles, signaux, exclusions (branche `feat/e30-bodacc`)** — fait :
+> - **migration additive** `20261116090000_enrichment_bodacc` :
+>   - `Company` gagne l'identité du registre : SIREN, NAF, date de création, effectif, état légal ;
+>   - `Contact.role` ;
+>   - trois tables : `CompanySignal`, `CampaignWatch` et `SignalSweep` ;
+>   - la migration reprend les SIREN et NAF que les fiches portaient déjà ;
+> - **sources** (`features/enrichment/sources/`) :
+>   - `bodacc.ts` : open data de la DILA, sans clé, lu par jour de parution ;
+>   - `annuaire.ts` : quitte l'audit pour être partagé ;
+> - **identité** (`features/enrichment/identity.ts`) : chaque fiche française est cherchée dans l'annuaire en arrière-plan, puis relue tous les 90 jours. Les dirigeants sont proposés, jamais ajoutés seuls ;
+> - **veille d'une campagne** (`features/signals/watch.ts`), chaque matin à 7 h 30 :
+>   1. créations et reprises des départements choisis ;
+>   2. tri par l'activité, puis vérification dans l'annuaire (code NAF, entreprise ouverte, diffusible, sans opposition) ;
+>   3. import dans la campagne (source « Registre ») et tri par Jev ;
+>   4. notification au responsable ; rien n'est envoyé sans clic ;
+> - **balayage du matin** (`features/signals/sweep.ts`) : toutes les annonces de France, rapprochées par SIREN des fiches. Reprise, nouveau dirigeant, déménagement, procédure ou radiation deviennent un signal ; le responsable est prévenu ;
+> - **exclusions** : une entreprise en procédure collective, radiée ou fermée est bloquée partout (email individuel, séquence, arrêt d'une séquence en cours, tri de Jev par règle). Un propriétaire ou un manager lève le blocage, et c'est consigné au journal ;
+> - **interface** :
+>   - la carte « Registre et signaux » de la fiche ;
+>   - le filtre « Registre » de la liste ;
+>   - la carte « Veille du registre » de la campagne, avec un aperçu de 7 jours sans écriture ;
+> - **copilote et MCP** : `get_lead_registry` et `list_signals`, en lecture ;
+> - **worker** : une boucle légère à côté des missions (`tickSignals`), une tâche à la fois, sans modèle ni dépense.
+>
+> **Écarts** :
+> - pas d'exécution `AgentRun` pour ce travail : il n'appelle aucun modèle et ne coûte rien ;
+> - pas de tri par signal dans la liste : le filtre suffit ;
+> - le panneau 3D ne montre pas encore les signaux ;
+> - la veille se règle sur la page de la campagne, pas encore par le copilote.
+>
+> **Lot 2 — Exa et Perplexity** : décideurs (profils LinkedIn par recherche), adresses des réseaux, brief avant chaque rendez-vous, sonde GEO. À faire d'abord : compter le coût des recherches de la passerelle dans le budget IA.
+>
+> **Lot 3 — Meta** : publicités en cours (bibliothèque publicitaire). Le propriétaire doit d'abord créer l'application Meta et faire vérifier son identité.
+
 ### Ordre conseillé
 | Jalon | Epics | Résultat visible |
 |---|---|---|
@@ -1108,6 +1154,7 @@ Le catalogue d'actions d'E28 s'ouvre aux clients MCP : Claude (web, Desktop, mob
 | **M9 Copilote et sourcing** | E24, E25 | Un assistant partout, des campagnes proposées par l'IA |
 | **M10 QG IA** | E26 | L'agence IA visible dans le QG 3D |
 | **M11 Copilote opérateur** | E28, puis E29 | Le copilote agit dans tout le CRM, puis le CRM s'ouvre en MCP |
+| **M12 Enrichissement** | E30 (trois lots) | Chaque matin, de nouveaux prospects et la raison de les appeler ; personne de démarché en pleine procédure |
 
 E1 peut démarrer en parallèle d'E0 ; E5 peut commencer dès que E3 fixe le modèle. M6 ne dépend pas de M5, mais mieux vaut disposer des sauvegardes et de la supervision d'E14 avant d'ouvrir les agents à toute l'équipe.
 

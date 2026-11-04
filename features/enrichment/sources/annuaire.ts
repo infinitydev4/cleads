@@ -5,7 +5,7 @@ import { normalizeName } from "@/lib/crm/normalize"
  * The Annuaire des entreprises (recherche-entreprises.api.gouv.fr, public data from INSEE and the RNE, free, no key):
  * SIREN, activity code, legal form, creation date, labels, and the company's officers. Officers are proposed as
  * contacts only when the company did not object to commercial use of its data and its record is fully public; an
- * email address is never guessed.
+ * email address is never guessed. Shared by the audit (E20) and the registry enrichment (E30).
  */
 export const ANNUAIRE_SOURCE = "Annuaire des entreprises (recherche-entreprises.api.gouv.fr)"
 export const LEGAL_BASIS = "Intérêt légitime (RGPD art. 6.1.f) : prospection B2B d'un dirigeant, données publiques du registre"
@@ -17,12 +17,18 @@ export interface Officer {
 
 export interface CompanyRecord {
   siren: string
+  /** The head office's SIRET. */
+  siret: string | null
   name: string
   naf: string | null
   legalForm: string | null
   createdOn: string | null
   active: boolean
   employees: string | null
+  /** INSEE category: PME, ETI or GE. */
+  category: string | null
+  /** False when the record is partly public: the company asked for its data not to be reused. */
+  diffusible: boolean
   postalCode: string | null
   city: string | null
   /** Labels the registry lists: RGE, Qualiopi, organic, health establishments… */
@@ -47,10 +53,11 @@ const result = z
     date_creation: z.string().nullish(),
     etat_administratif: z.string().nullish(),
     tranche_effectif_salarie: z.string().nullish(),
+    categorie_entreprise: z.string().nullish(),
     statut_diffusion: z.string().nullish(),
     opposition_diffusion_commerciale: z.boolean().nullish(),
     siege: z
-      .object({ code_postal: z.string().nullish(), libelle_commune: z.string().nullish(), nom_commercial: z.string().nullish(), liste_enseignes: z.array(z.string()).nullish() })
+      .object({ siret: z.string().nullish(), code_postal: z.string().nullish(), libelle_commune: z.string().nullish(), nom_commercial: z.string().nullish(), liste_enseignes: z.array(z.string()).nullish() })
       .passthrough()
       .nullish(),
     dirigeants: z.array(officer).nullish(),
@@ -86,12 +93,15 @@ function toRecord(r: Result): CompanyRecord {
   const complements = r.complements ?? {}
   return {
     siren: r.siren,
+    siret: r.siege?.siret ?? null,
     name: r.nom_complet ?? r.nom_raison_sociale ?? r.siren,
     naf: r.activite_principale ?? null,
     legalForm: r.nature_juridique ?? null,
     createdOn: r.date_creation ?? null,
     active: (r.etat_administratif ?? "A") === "A",
     employees: r.tranche_effectif_salarie ?? null,
+    category: r.categorie_entreprise ?? null,
+    diffusible,
     postalCode: r.siege?.code_postal ?? null,
     city: r.siege?.libelle_commune ?? null,
     labels: LABELS.filter(([k]) => complements[k] === true).map(([, label]) => label),

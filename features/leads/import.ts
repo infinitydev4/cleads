@@ -60,7 +60,8 @@ export interface ImportResult {
 
 export interface ImportOptions {
   commit: boolean
-  source: "CSV" | "EXTRACTOR"
+  /** E30: REGISTRY for the companies a campaign's watch of the BODACC finds. */
+  source: "CSV" | "EXTRACTOR" | "REGISTRY"
   fileName?: string
   extractorJobId?: string
   /** E15: new fiches, and existing ones outside every campaign, are filed in it; a fiche of another campaign stays there. */
@@ -304,7 +305,7 @@ export async function runImport(user: CurrentUser, raws: ImportRow[], options: I
           filled.push("étiquettes")
         }
         if (known.leadId && !known.hasContact && (c.contactName || c.email) && !(c.email && existingContacts.has(c.email))) {
-          contactForExisting.push({ leadId: known.leadId, contact: { id: randomUUID(), workspaceId: ws, companyId: known.companyId, name: c.contactName, jobTitle: c.jobTitle, email: c.email, emailKind: c.emailKind, phone: c.phone, source: options.source === "CSV" ? "CSV" : "EXTRACTOR", collectedFrom: options.fileName ?? options.source, collectedAt: now, legalBasis: c.email ? "legitimate_interest_b2b" : null, doNotContact: suppressed, doNotContactReason: suppressed ? "Adresse présente dans la liste d’exclusion" : null } })
+          contactForExisting.push({ leadId: known.leadId, contact: { id: randomUUID(), workspaceId: ws, companyId: known.companyId, name: c.contactName, jobTitle: c.jobTitle, email: c.email, emailKind: c.emailKind, phone: c.phone, source: options.source, collectedFrom: options.fileName ?? options.source, collectedAt: now, legalBasis: c.email ? "legitimate_interest_b2b" : null, doNotContact: suppressed, doNotContactReason: suppressed ? "Adresse présente dans la liste d’exclusion" : null } })
           if (c.email) existingContacts.set(c.email, known.companyId)
           known.hasContact = true
           filled.push("contact")
@@ -312,7 +313,7 @@ export async function runImport(user: CurrentUser, raws: ImportRow[], options: I
         if (!known.leadId) {
           const leadId = randomUUID()
           known.leadId = leadId
-          newLeadForExisting.push({ id: leadId, workspaceId: ws, companyId: known.companyId, source: options.source === "CSV" ? "CSV" : "EXTRACTOR", importBatchId: batchId, tags: c.tags, campaignId })
+          newLeadForExisting.push({ id: leadId, workspaceId: ws, companyId: known.companyId, source: options.source, importBatchId: batchId, tags: c.tags, campaignId })
           if (campaignId) { known.campaignId = campaignId; summary.campaign!.filed++ }
           filled.push("fiche créée")
         }
@@ -342,7 +343,7 @@ export async function runImport(user: CurrentUser, raws: ImportRow[], options: I
     const companyId = randomUUID()
     const leadId = randomUUID()
     const contactId = c.contactName || c.email ? randomUUID() : null
-    const source = options.source === "CSV" ? "CSV" : "EXTRACTOR"
+    const source = options.source
     newCompanies.push({ id: companyId, workspaceId: ws, name: c.name, domain: c.domain, website: c.website, phone: c.phone, email: c.email, address: c.address, city: c.city, postalCode: c.postalCode, country: c.country, sector: c.sector, siret: c.siret, nameKey: c.nameKey, source, externalId: c.externalId, externalSource: c.externalId ? options.source.toLowerCase() : null, rating: c.rating, reviewCount: c.reviewCount, completeness: c.completeness, ...(c.data ? { data: c.data } : {}) })
     if (contactId) newContacts.push({ id: contactId, workspaceId: ws, companyId, name: c.contactName, jobTitle: c.jobTitle, email: c.email, emailKind: c.emailKind, phone: c.phone, source, collectedFrom: options.fileName ?? options.source, collectedAt: now, legalBasis: c.email ? "legitimate_interest_b2b" : null, doNotContact: suppressed, doNotContactReason: suppressed ? "Adresse présente dans la liste d’exclusion" : null })
     const { score, reasons } = scoreLead({ email: c.email, emailKind: c.emailKind, phone: c.phone, website: c.website, domain: c.domain, contactName: c.contactName, address: c.address, city: c.city, rating: c.rating, reviewCount: c.reviewCount, completeness: c.completeness })

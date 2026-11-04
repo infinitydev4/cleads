@@ -15,7 +15,7 @@ import { MATCH_LABELS, cleanCompany, cleanContact, matchCompany, normalizeTags }
 import { scoreLead } from "./scoring"
 import { stopForLead } from "@/features/outreach/stops"
 import { assertCampaign, setLeadCampaign } from "@/features/campaigns/filing"
-import type { BulkInput, CreateLeadInput, LeadFilters, LeadSort, RelevanceFilter, UpdateLeadInput } from "./schemas"
+import type { BulkInput, CreateLeadInput, LeadFilters, LeadSort, RegistryFilter, RelevanceFilter, UpdateLeadInput } from "./schemas"
 import type { LeadDetail, LeadList, LeadRow } from "./types"
 import { leadAiReason } from "@/features/prospect-audit/latest"
 import { latestPitchSummary } from "@/features/offer-pitch/latest"
@@ -70,7 +70,7 @@ function filterWhere(user: CurrentUser, f: LeadFilters): Prisma.LeadWhereInput {
   if (f.owner === "me") and.push({ ownerId: user.id })
   else if (f.owner === "none") and.push({ ownerId: null })
   else if (f.owner) and.push({ ownerId: f.owner })
-  if (f.source && ["EXTRACTOR", "CSV", "INBOUND", "MANUAL", "LEGACY"].includes(f.source)) and.push({ source: f.source as never })
+  if (f.source && ["EXTRACTOR", "CSV", "INBOUND", "MANUAL", "LEGACY", "REGISTRY"].includes(f.source)) and.push({ source: f.source as never })
   if (f.sector) and.push({ company: { sector: { contains: f.sector, mode: "insensitive" } } })
   if (f.city) and.push({ company: { city: { contains: f.city, mode: "insensitive" } } })
   if (f.tag) and.push({ tags: { has: f.tag } })
@@ -81,7 +81,17 @@ function filterWhere(user: CurrentUser, f: LeadFilters): Prisma.LeadWhereInput {
   if (f.campaign === "none") and.push({ campaignId: null })
   else if (f.campaign) and.push({ campaignId: f.campaign })
   if (f.relevance) and.push(relevanceWhere(f.relevance, f.campaign && f.campaign !== "none" ? f.campaign : null))
+  if (f.registry) and.push(registryWhere(f.registry))
   return { AND: and }
+}
+
+/** E30: what the registry and the BODACC say about the fiche's company. */
+function registryWhere(filter: RegistryFilter, now = new Date()): Prisma.LeadWhereInput {
+  const since = (days: number) => new Date(now.getTime() - days * 86_400_000)
+  if (filter === "new") return { company: { foundedOn: { gte: since(183) } } }
+  if (filter === "signal") return { company: { signals: { some: { dismissedAt: null, occurredAt: { gte: since(30) } } } } }
+  if (filter === "takeover") return { company: { signals: { some: { dismissedAt: null, kind: { in: ["TAKEOVER", "NEW_LEADER"] }, occurredAt: { gte: since(90) } } } } }
+  return { company: { legalState: { not: "ACTIVE" } } }
 }
 
 const VERDICT_OF = { relevant: "RELEVANT", maybe: "MAYBE", not: "NOT_RELEVANT" } as const

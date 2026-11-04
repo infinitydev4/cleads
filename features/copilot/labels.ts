@@ -22,6 +22,8 @@ export const TOOL_LABELS: Record<string, { running: string; done: string }> = {
   get_lead: { running: "Lecture de la fiche…", done: "Fiche lue" },
   get_timeline: { running: "Lecture de l’historique…", done: "Historique lu" },
   get_lead_audit: { running: "Lecture de l’audit…", done: "Audit lu" },
+  get_lead_registry: { running: "Lecture du registre…", done: "Registre lu" },
+  list_signals: { running: "Lecture des signaux…", done: "Signaux lus" },
   get_lead_offers: { running: "Lecture des offres suggérées…", done: "Offres lues" },
   get_today: { running: "Lecture de votre journée…", done: "Journée lue" },
   list_meetings: { running: "Lecture de l’agenda…", done: "Agenda lu" },

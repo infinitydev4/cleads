@@ -25,6 +25,7 @@ import { listSequences } from "@/features/outreach/sequences"
 import { listReplies } from "@/features/outreach/replies"
 import { periodsOf, periodCounts, topSectors } from "@/features/metrics/service"
 import { listMembers } from "@/features/team/service"
+import { recentSignals, registryView } from "@/features/signals/service"
 import { ROLE_LABELS } from "@/lib/crm/roles"
 import { can } from "@/lib/rbac"
 import { defineTool } from "@/features/ai/tools"
@@ -199,6 +200,44 @@ export const getLeadAuditTool = defineTool({
       strengths: a.report.strengths.slice(0, 4).map((p) => p.text),
       note: running,
     }
+  },
+})
+
+/** E30: what the registry and the BODACC say about the fiche's company. The notices' wording comes from outside. */
+export const getLeadRegistryTool = defineTool({
+  name: "get_lead_registry",
+  description: "Lit le registre de la fiche : SIREN, activité (NAF), date de création, effectif, état légal (procédure collective, radiée), dirigeants listés et signaux du BODACC (création, reprise, nouveau dirigeant, déménagement…). Une entreprise bloquée ne se prospecte pas.",
+  permission: "lead:read",
+  approval: "auto",
+  costClass: "free",
+  family: "read_crm",
+  input: z.object({ leadId }),
+  execute: async (ctx, input) => {
+    const v = await registryView(personOf(ctx), input.leadId)
+    return {
+      identity: v.identity.found === false ? { found: false, note: "Introuvable dans l'annuaire des entreprises." } : { siren: v.identity.siren, naf: v.identity.nafCode, foundedOn: v.identity.foundedOn, headcount: v.identity.headcount, category: v.identity.category, labels: v.identity.labels },
+      legal: { state: v.legal.label, since: v.legal.since ? iso(v.legal.since) : null, prospectingBlocked: v.legal.blocked },
+      officers: v.officers.map((o) => ({ name: o.name, role: o.role, alreadyContact: o.added })),
+      signals: v.signals.filter((s) => !s.dismissed).slice(0, 8).map((s) => ({ date: s.occurredAt, kind: s.label, recent: s.recent, summary: untrusted(s.summary, { source: "BODACC", maxChars: 300 }) })),
+    }
+  },
+})
+
+/** E30: the recent signals of the fiches the person may see, newest first. */
+export const listSignalsTool = defineTool({
+  name: "list_signals",
+  description: "Liste les signaux récents du BODACC sur les fiches visibles : créations, reprises, nouveaux dirigeants, déménagements, nouveaux établissements, procédures collectives, radiations. Pour savoir qui appeler maintenant et pourquoi.",
+  permission: "lead:read",
+  approval: "auto",
+  costClass: "free",
+  family: "read_crm",
+  input: z.object({
+    kinds: z.array(z.enum(["CREATED", "TAKEOVER", "NEW_LEADER", "MOVED", "NEW_SITE", "INSOLVENCY", "CLOSED"])).max(7).optional(),
+    days: z.number().int().min(1).max(365).optional().describe("Fenêtre en jours, 30 par défaut"),
+  }),
+  execute: async (ctx, input) => {
+    const rows = await recentSignals(personOf(ctx), { kinds: input.kinds, days: input.days })
+    return { signals: rows.map((r) => ({ leadId: r.leadId, company: r.company, city: r.city, date: r.occurredAt, kind: r.label, summary: untrusted(r.summary, { source: "BODACC", maxChars: 300 }) })) }
   },
 })
 
@@ -615,6 +654,8 @@ export const READ_ACTIONS = [
   getLeadTool,
   getTimelineTool,
   getLeadAuditTool,
+  getLeadRegistryTool,
+  listSignalsTool,
   getLeadOffersTool,
   getTodayTool,
   listMeetingsTool,

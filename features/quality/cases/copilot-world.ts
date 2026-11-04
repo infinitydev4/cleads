@@ -392,6 +392,15 @@ const SIMS: Record<string, Sim> = {
       }
     },
   },
+  get_lead_registry: {
+    run: (w, i) => {
+      w.lead(str(i.leadId))
+      return { identity: { found: false, note: "Introuvable dans l'annuaire des entreprises." }, legal: { state: "Active", since: null, prospectingBlocked: false }, officers: [], signals: [] }
+    },
+  },
+  list_signals: {
+    run: () => ({ signals: [] }),
+  },
   get_lead_offers: {
     run: (w, i) => {
       const p = w.lead(str(i.leadId)).pitch

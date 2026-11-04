@@ -19,11 +19,12 @@ import { NO_AUDIT_FOR_DRAFT } from "@/features/email-draft/labels"
 import { latestFor } from "@/features/prospect-audit/latest"
 import { activeShareLink } from "@/features/studio/service"
 import { can, canAccessRecord } from "@/lib/rbac"
+import { legallyBlocked } from "@/features/signals/kinds"
 
 type Tx = Prisma.TransactionClient
 
 const leadInclude = {
-  company: { select: { name: true, email: true, city: true, sector: true, website: true, domain: true } },
+  company: { select: { name: true, email: true, city: true, sector: true, website: true, domain: true, legalState: true, legalStateAt: true, legalOverrideAt: true } },
   contact: { select: { id: true, name: true, email: true, emailKind: true, doNotContact: true, doNotContactReason: true } },
   deals: { select: { ownerId: true, stage: true } },
 } satisfies Prisma.LeadInclude
@@ -38,7 +39,7 @@ async function loadLead(user: CurrentUser, leadId: string): Promise<LeadForMail>
 async function checkLead(user: CurrentUser, lead: LeadForMail, db: Pick<Tx, "suppression"> = prisma) {
   const recipient = recipientOf(lead)
   const suppressed = recipient ? await isSuppressed(db, user.workspaceId, recipient.email) : false
-  const blockers = leadBlockers({ status: lead.status, recipient, contactDoNotContact: !!lead.contact?.doNotContact, suppressed, mayWrite: mayEmailLead(user, lead) })
+  const blockers = leadBlockers({ status: lead.status, recipient, contactDoNotContact: !!lead.contact?.doNotContact, suppressed, mayWrite: mayEmailLead(user, lead), legalBlocked: legallyBlocked(lead.company) })
   return { recipient, blockers }
 }
 

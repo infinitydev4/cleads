@@ -8,7 +8,7 @@ import { aiBotsAccess, isAllowed, parseRobots } from "@/features/prospect-audit/
 import { isSocialProfile, networkOf, parsePage } from "@/features/prospect-audit/html"
 import { detectStack, isOutdatedCms } from "@/features/prospect-audit/stack"
 import { parsePsi, runPageSpeed } from "@/features/prospect-audit/pagespeed"
-import { findCompany, pickCompany } from "@/features/prospect-audit/annuaire"
+import { findCompany, pickCompany } from "@/features/enrichment/sources/annuaire"
 import { isBookingSector, isHighIntentSector, isVisualSector, playbookFor } from "@/features/prospect-audit/sectors"
 import { choosePages, collectSite } from "@/features/prospect-audit/collect"
 import { measure, type AuditFacts } from "@/features/prospect-audit/rules"
