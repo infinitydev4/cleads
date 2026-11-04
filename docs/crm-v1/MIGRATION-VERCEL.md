@@ -46,4 +46,4 @@ Rien ne change pour le connecteur Claude, les jetons MCP, les webhooks et le wor
 ## 3. Après
 - Garder Netlify une semaine comme repli (remettre les anciens DNS suffit, en retirant `CRON_RUNNER`).
 - Puis supprimer `netlify.toml` et `netlify/functions/` du dépôt.
-- **Rappels de rendez-vous** : pour les activer, ajouter à `vercel.json` `{ "path": "/api/cron/meeting-reminders", "schedule": "0 * * * *" }`. Ils écrivent au contact et au closer 24 h avant un rendez-vous.
+- **Rappels de rendez-vous** : activés le 4 novembre 2026 (cron horaire dans `vercel.json`). Ils écrivent au contact et au closer 24 h avant un rendez-vous, une fois chacun.
