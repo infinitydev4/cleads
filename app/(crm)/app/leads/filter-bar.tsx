@@ -48,7 +48,7 @@ export function FilterBar({ filters, assignees, campaigns, canSeeOthers, onChang
     const next = filters.status.includes(s as never) ? filters.status.filter((x) => x !== s) : [...filters.status, s as never]
     onChange({ status: next.join(",") || undefined })
   }
-  const active = !!(filters.q || filters.status.length || filters.owner || filters.minScore || filters.hasEmail || filters.hasPhone || filters.city || filters.sector || filters.tag || filters.source || filters.campaign || filters.relevance)
+  const active = !!(filters.q || filters.status.length || filters.owner || filters.minScore || filters.hasEmail || filters.hasPhone || filters.city || filters.sector || filters.tag || filters.source || filters.campaign || filters.relevance || filters.registry)
 
   return (
     <div className="space-y-3">
@@ -91,6 +91,17 @@ export function FilterBar({ filters, assignees, campaigns, canSeeOthers, onChang
             </SelectContent>
           </Select>
         )}
+        {/* E30: what the registry and the BODACC say. */}
+        <Select value={filters.registry ?? ANY} onValueChange={(v) => onChange({ registry: v === ANY ? undefined : v })}>
+          <SelectTrigger className="w-52" aria-label="Registre et signaux"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ANY}>Tout le registre</SelectItem>
+            <SelectItem value="new">Créées depuis moins de 6 mois</SelectItem>
+            <SelectItem value="signal">Signal récent (30 jours)</SelectItem>
+            <SelectItem value="takeover">Reprise ou nouveau dirigeant</SelectItem>
+            <SelectItem value="blocked">Procédure ou radiée</SelectItem>
+          </SelectContent>
+        </Select>
         <Select value={String(filters.minScore ?? ANY)} onValueChange={(v) => onChange({ minScore: v === ANY ? undefined : v })}>
           <SelectTrigger className="w-36" aria-label="Score minimum"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -103,7 +114,7 @@ export function FilterBar({ filters, assignees, campaigns, canSeeOthers, onChang
           <SlidersHorizontal className="h-4 w-4" aria-hidden="true" /> Filtres
         </Button>
         {active && (
-          <Button variant="ghost" onClick={() => { setQ(""); onChange({ q: undefined, status: undefined, owner: undefined, minScore: undefined, hasEmail: undefined, hasPhone: undefined, city: undefined, sector: undefined, tag: undefined, source: undefined, campaign: undefined, relevance: undefined }) }}>
+          <Button variant="ghost" onClick={() => { setQ(""); onChange({ q: undefined, status: undefined, owner: undefined, minScore: undefined, hasEmail: undefined, hasPhone: undefined, city: undefined, sector: undefined, tag: undefined, source: undefined, campaign: undefined, relevance: undefined, registry: undefined }) }}>
             <X className="h-4 w-4" aria-hidden="true" /> Effacer
           </Button>
         )}

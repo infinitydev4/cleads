@@ -1,6 +1,6 @@
 import { normalizeName, normalizePhone } from "@/lib/crm/normalize"
 import type { OfferSignal } from "@/features/offers/signals"
-import type { CompanyRecord } from "./annuaire"
+import type { CompanyRecord } from "@/features/enrichment/sources/annuaire"
 import type { SiteFacts } from "./collect"
 import { networkOf } from "./html"
 import type { PsiOk, PsiResult } from "./pagespeed"

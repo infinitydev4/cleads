@@ -40,7 +40,7 @@ suite("Prospect audits (database)", () => {
   let audit: typeof import("@/features/prospect-audit/handler")
   let service: typeof import("@/features/prospect-audit/service")
   let pagespeed: typeof import("@/features/prospect-audit/pagespeed")
-  let annuaire: typeof import("@/features/prospect-audit/annuaire")
+  let annuaire: typeof import("@/features/enrichment/sources/annuaire")
   let leads: typeof import("@/features/leads/service")
   let FetchRefused: typeof import("@/features/prospect-audit/net").FetchRefused
   let PRICES: typeof import("@/lib/ai/pricing").DEFAULT_PRICES
@@ -63,7 +63,7 @@ suite("Prospect audits (database)", () => {
     audit = await import("@/features/prospect-audit/handler")
     service = await import("@/features/prospect-audit/service")
     pagespeed = await import("@/features/prospect-audit/pagespeed")
-    annuaire = await import("@/features/prospect-audit/annuaire")
+    annuaire = await import("@/features/enrichment/sources/annuaire")
     leads = await import("@/features/leads/service")
     FetchRefused = (await import("@/features/prospect-audit/net")).FetchRefused
     PRICES = (await import("@/lib/ai/pricing")).DEFAULT_PRICES

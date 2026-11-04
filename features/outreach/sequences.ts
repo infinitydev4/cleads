@@ -11,6 +11,7 @@ import { stopEnrollments } from "./stops"
 import { renderTemplate, templateErrors, templateValues } from "./template"
 import type { EnrollInput, SequenceInput } from "./schemas"
 import { withVia } from "@/lib/ai/acting"
+import { legallyBlocked } from "@/features/signals/kinds"
 
 const duplicate = (error: unknown) => error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002"
 
@@ -209,7 +210,7 @@ export interface EnrollResult {
 }
 
 const fiche = {
-  company: { select: { name: true, email: true, city: true, sector: true, website: true } },
+  company: { select: { name: true, email: true, city: true, sector: true, website: true, legalState: true, legalStateAt: true, legalOverrideAt: true } },
   contact: { select: { id: true, name: true, email: true, emailKind: true, doNotContact: true, doNotContactReason: true } },
   deals: { select: { ownerId: true, stage: true } },
 } satisfies Prisma.LeadInclude
@@ -239,7 +240,7 @@ export async function enrollLeads(user: CurrentUser, sequenceId: string, input: 
     const skip = (reason: string) => result.skipped.push({ leadId: lead.id, name, reason })
     const recipient = recipientOf(lead)
     const suppressed = recipient ? await isSuppressed(prisma, user.workspaceId, recipient.email) : false
-    const [blocker] = leadBlockers({ status: lead.status, recipient, contactDoNotContact: !!lead.contact?.doNotContact, suppressed, mayWrite: mayEmailLead(user, lead) })
+    const [blocker] = leadBlockers({ status: lead.status, recipient, contactDoNotContact: !!lead.contact?.doNotContact, suppressed, mayWrite: mayEmailLead(user, lead), legalBlocked: legallyBlocked(lead.company) })
     if (blocker) { skip(BLOCKER_LABELS[blocker]); continue }
     if (lead.status !== "NEW" && lead.status !== "CONTACTED") { skip("Seuls les prospects « Nouveau » ou « Contacté » entrent dans une séquence."); continue }
     if (recipient!.kind === "GENERIC" && !input.confirmGeneric) { skip("Adresse générique (contact@, info@…) : confirmez pour l’inclure."); continue }

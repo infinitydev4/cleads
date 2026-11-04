@@ -11,6 +11,7 @@ import { finishRun, loadRunContext } from "@/features/ai/runs"
 import { effectiveAgent } from "@/features/ai/definitions"
 import { executeApprovedCalls } from "@/features/ai/tools"
 import { advanceMission, claimMission } from "@/features/missions/engine"
+import { claimSignalWork, runSignalWork } from "@/features/signals/engine"
 import { errorFields, log } from "./log"
 
 /**
@@ -31,6 +32,11 @@ export interface WorkerConfig {
   heartbeatMs?: number
   /** E28: missions advanced at once; 2 by default. */
   missionConcurrency?: number
+  /**
+   * E30: how often the worker looks for registry work (watches, the morning sweep, identity lookups), one piece at a
+   * time. Off when unset.
+   */
+  signalsEveryMs?: number
 }
 
 /** The Studio and audits are heavy (browser, long generations): fewer at once. */
@@ -64,6 +70,8 @@ export class AgentWorker {
   readonly startedAt = new Date()
   private readonly running = new Map<string, Running>()
   private readonly missions = new Map<string, { controller: AbortController; done: Promise<void> }>()
+  private signalWork: { controller: AbortController; done: Promise<void> } | null = null
+  private lastSignalCheck = 0
   private stopping = false
   private loopTimer: NodeJS.Timeout | null = null
   private intervals: NodeJS.Timeout[] = []
@@ -82,7 +90,7 @@ export class AgentWorker {
 
   /** Resolves when the runs in progress have ended. */
   async idle(): Promise<void> {
-    await Promise.all([...this.running.values(), ...this.missions.values()].map((r) => r.done))
+    await Promise.all([...this.running.values(), ...this.missions.values(), ...(this.signalWork ? [this.signalWork] : [])].map((r) => r.done))
   }
 
   /** Agents with a free slot on this worker. */
@@ -130,6 +138,28 @@ export class AgentWorker {
       started++
     }
     return started
+  }
+
+  /**
+   * E30: one piece of registry work at a time (features/signals/engine.ts), so the annuaire is read at its pace. While
+   * there is work, the next piece is looked for at once; otherwise after `signalsEveryMs`.
+   */
+  async tickSignals(now = Date.now()): Promise<number> {
+    const every = this.cfg.signalsEveryMs
+    if (!every || this.stopping || this.signalWork || now - this.lastSignalCheck < every) return 0
+    this.lastSignalCheck = now
+    const work = await claimSignalWork(this.cfg.id)
+    if (!work) return 0
+    const controller = new AbortController()
+    const done = runSignalWork(work, this.cfg.id, { signal: controller.signal })
+      .then((result) => log("info", "registry work", { kind: work.kind, ...result }))
+      .catch((error) => log("error", "registry work failed", { kind: work.kind, ...errorFields(error) }))
+      .finally(() => {
+        this.signalWork = null
+        this.lastSignalCheck = 0
+      })
+    this.signalWork = { controller, done }
+    return 1
   }
 
   private async publish(runId: string) {
@@ -221,6 +251,7 @@ export class AgentWorker {
       try {
         started = await this.tick()
         started += await this.tickMissions()
+        started += await this.tickSignals()
         this.lastError = null
       } catch (error) {
         this.lastError = error instanceof Error ? error.message : String(error)
@@ -244,7 +275,8 @@ export class AgentWorker {
     for (const t of this.intervals) clearInterval(t)
     // A mission's pass ends after the step in progress and gives the mission back.
     for (const m of this.missions.values()) m.controller.abort()
-    const all = Promise.all([...this.running.values(), ...this.missions.values()].map((r) => r.done))
+    this.signalWork?.controller.abort()
+    const all = Promise.all([...this.running.values(), ...this.missions.values(), ...(this.signalWork ? [this.signalWork] : [])].map((r) => r.done))
     await Promise.race([all, new Promise((resolve) => setTimeout(resolve, graceMs))])
     for (const [runId, r] of this.running) {
       r.controller.abort()

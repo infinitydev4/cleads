@@ -5,6 +5,7 @@ import type { HandlerContext } from "@/features/ai/handlers"
 import { startRun } from "@/features/ai/runs"
 import { visibleLeads } from "@/features/metrics/service"
 import { RELEVANCE_QUESTIONS, relevanceFields, relevanceState, type RelevanceFields } from "./rules"
+import { legallyBlocked } from "@/features/signals/kinds"
 
 /**
  * The Analyste qualification in the worker (E25): Jev judges each fiche of a campaign it has not judged yet, one
@@ -42,13 +43,22 @@ export async function runQualifier(job: HandlerContext, deps: ModelDeps = {}): P
   // The fiches named, still in the campaign, visible to the person, and not judged yet (an earlier try may have).
   const fiches = await prisma.lead.findMany({
     where: { AND: [visibleLeads(user, { campaignId: campaign.id }), { id: { in: input.leadIds } }, { relevances: { none: { campaignId: campaign.id } } }] },
-    select: { id: true, company: { select: { name: true, sector: true, city: true, postalCode: true, website: true, rating: true, reviewCount: true, phone: true, email: true } } },
+    select: { id: true, company: { select: { name: true, sector: true, city: true, postalCode: true, website: true, rating: true, reviewCount: true, phone: true, email: true, legalState: true, legalStateAt: true, legalOverrideAt: true } } },
   })
   const target = { name: campaign.name, sector: campaign.sector, area: campaign.area, offer: campaign.offer }
   let judged = 0
   for (const fiche of fiches) {
     if (job.signal.aborted) throw new LeadError("conflict", "Exécution arrêtée", 409)
     const c = fiche.company
+    // E30: a company in collective proceedings or closed is no target, by rule: no question to Jev, nothing spent.
+    if (legallyBlocked(c)) {
+      const created = await prisma.leadRelevance.createMany({
+        data: [{ workspaceId: ctx.workspaceId, leadId: fiche.id, campaignId: campaign.id, offerName: campaign.offer?.name ?? null, runId: ctx.id, model: "règle", verdict: "NOT_RELEVANT", confidence: 1, outcome: "AUTO" }],
+        skipDuplicates: true,
+      })
+      judged += created.count
+      continue
+    }
     const state = relevanceState(target, { company: c && { name: c.name, sector: c.sector, city: c.city, postalCode: c.postalCode, website: c.website, rating: c.rating, reviewCount: c.reviewCount, hasPhone: !!c.phone, hasEmail: !!c.email } })
     const { fields, model } = await decideForRun(ctx, { name: "score_import", state, stateForLog: `Fiche ${fiche.id}`, questions: RELEVANCE_QUESTIONS, abortSignal: job.signal }, deps)
       .then(({ answers, model }) => ({ fields: relevanceFields(answers.relevance), model }))

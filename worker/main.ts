@@ -56,6 +56,8 @@ const worker = new AgentWorker({
   maintenanceMs: 30_000,
   beatMs: 15_000,
   missionConcurrency: 2,
+  // E30: watches of the BODACC, the morning sweep and the annuaire lookups.
+  signalsEveryMs: 60_000,
 })
 
 try {

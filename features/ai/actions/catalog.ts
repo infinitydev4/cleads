@@ -41,6 +41,8 @@ const KEYWORDS: Record<string, string> = {
   get_lead: "fiche prospect detail entreprise contact",
   get_timeline: "historique echanges notes appels emails passe",
   get_lead_audit: "audit site seo vitesse mobile constats",
+  get_lead_registry: "registre siren naf creation effectif dirigeants gerant procedure redressement liquidation bodacc",
+  list_signals: "signaux bodacc creations reprises cessions nouveau dirigeant demenagement procedure appeler maintenant",
   get_lead_offers: "offres suggerees conseiller pitch prix",
   get_today: "journee aujourdhui taches retard rendez-vous agenda planning",
   list_meetings: "agenda rendez-vous semaine calendrier rdv",

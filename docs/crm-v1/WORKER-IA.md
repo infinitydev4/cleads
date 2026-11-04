@@ -56,6 +56,13 @@ La file est la **table `AgentRun`** elle-même :
 - **Arrêt propre** : le passage en cours finit son étape et rend la mission.
 - Le champ `missions` de `/healthz` compte les passages en cours.
 
+**Registre** (E30, `features/signals/engine.ts`, [ENRICHISSEMENT.md](ENRICHISSEMENT.md)). Le worker fait, une tâche à la fois, ce qui vient du BODACC et de l'annuaire des entreprises : sources publiques gratuites, sans clé ni modèle.
+- **Ordre de prise** : d'abord une veille de campagne due (7 h 30, heure de Paris, ou dans la minute après son activation), puis le balayage du matin de l'espace, puis 25 entreprises à chercher dans l'annuaire.
+- **Verrou** : chaque prise passe par `FOR UPDATE SKIP LOCKED` et un verrou de 15 minutes (30 pour le balayage). Un worker arrêté rend la main, et les entreprises qu'il n'a pas cherchées retournent dans la file.
+- **Rythme** : une recherche dans l'annuaire toutes les 200 ms (l'annuaire en admet 7 par seconde et par adresse). S'il n'y a rien à faire, la boucle regarde de nouveau dans une minute (`signalsEveryMs`).
+- **Erreurs** : un BODACC qui ne répond pas fait réessayer la veille ou le balayage une heure plus tard, sans perdre de jour.
+- **Journal** : `registry work` (type et chiffres) ou `registry work failed`.
+
 **Maintenance** (toutes les 30 s ; un verrou consultatif la réserve à un seul worker s'il y en a plusieurs) :
 - reprises et abandons ;
 - exécutions interrompues pendant une requête du CRM ;

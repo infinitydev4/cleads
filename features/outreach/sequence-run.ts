@@ -10,6 +10,7 @@ import { inSendWindow, scheduleAt } from "./sequence-rules"
 import { renderStep } from "./sequences"
 import { deliver, recordSent, reserve, type Actor } from "./service"
 import { stopEnrollments } from "./stops"
+import { legallyBlocked } from "@/features/signals/kinds"
 
 /** Another run may pick an enrollment up again after this: it covers a run that died between claiming and sending. */
 const LEASE_MS = 10 * 60_000
@@ -32,7 +33,7 @@ export interface RunSummary {
 const empty = (): RunSummary => ({ closed: false, sent: 0, stopped: 0, waiting: 0, failed: 0, completed: 0, autoPaused: 0 })
 
 const ficheInclude = {
-  company: { select: { name: true, email: true, city: true, sector: true, website: true } },
+  company: { select: { name: true, email: true, city: true, sector: true, website: true, legalState: true, legalStateAt: true, legalOverrideAt: true } },
   contact: { select: { id: true, name: true, email: true, emailKind: true, doNotContact: true, doNotContactReason: true } },
 } satisfies Prisma.LeadInclude
 
@@ -59,6 +60,7 @@ async function stopReason(e: Enrollment): Promise<EnrollmentStopReason | null> {
   const recipient = recipientOf(e.lead)
   if (!recipient) return "MISSING_DATA"
   if (e.lead.contact?.doNotContact) return "DO_NOT_CONTACT"
+  if (legallyBlocked(e.lead.company)) return "LEGAL_STATE"
   if (await isSuppressed(prisma, e.workspaceId, recipient.email)) {
     const row = await prisma.suppression.findFirst({ where: { workspaceId: e.workspaceId, email: recipient.email }, select: { reason: true } })
     return row ? suppressionReason[row.reason] : "SUPPRESSED"

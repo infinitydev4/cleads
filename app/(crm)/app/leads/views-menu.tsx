@@ -24,7 +24,7 @@ export interface SavedViewDto {
 
 const toView = (f: LeadFilters): ViewFilters => ({
   q: f.q, status: f.status, owner: f.owner === "me" || f.owner === "none" ? f.owner : undefined, source: f.source, sector: f.sector, city: f.city, tag: f.tag,
-  hasEmail: f.hasEmail, hasPhone: f.hasPhone, minScore: f.minScore, campaign: f.campaign, relevance: f.relevance, sort: f.sort, dir: f.dir,
+  hasEmail: f.hasEmail, hasPhone: f.hasPhone, minScore: f.minScore, campaign: f.campaign, relevance: f.relevance, registry: f.registry, sort: f.sort, dir: f.dir,
 })
 
 export function ViewsMenu({ views, current, canShare }: { views: SavedViewDto[]; current: LeadFilters; canShare: boolean }) {

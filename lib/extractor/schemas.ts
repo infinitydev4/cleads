@@ -67,7 +67,7 @@ export const businessesPageSchema = z.object({
 })
 
 export const sectorsSchema = z.object({
-  sectors: z.array(z.object({ key: z.string(), label: z.string(), synonyms: z.array(z.string()).optional() })),
+  sectors: z.array(z.object({ key: z.string(), label: z.string(), naf: z.array(z.string()).optional(), synonyms: z.array(z.string()).optional() })),
 })
 
 export const healthSchema = z.object({

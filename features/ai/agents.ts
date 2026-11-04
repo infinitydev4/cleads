@@ -195,6 +195,8 @@ export const AGENTS: Record<AgentId, Readonly<AgentDef>> = {
       "get_lead",
       "get_timeline",
       "get_lead_audit",
+      "get_lead_registry",
+      "list_signals",
       "get_lead_offers",
       "get_today",
       "list_meetings",

@@ -479,6 +479,8 @@ Peut valider l'action d'un agent : la personne qui a lancé l'exécution, ou un 
 
 ## 13. Audit et enrichissement (E20)
 
+> **E30 (4 novembre 2026)** : l'enrichissement continue hors de l'audit. Chaque fiche reçoit l'identité du registre (annuaire des entreprises), et les signaux du BODACC arrivent chaque matin : créations, reprises, nouveaux dirigeants, procédures. Une campagne peut avoir sa veille, et une entreprise en procédure collective ou radiée n'est plus prospectée. Le copilote et MCP lisent tout cela par `get_lead_registry` et `list_signals`. Le client de l'annuaire est maintenant dans `features/enrichment/sources/annuaire.ts`. Détails : [ENRICHISSEMENT.md](ENRICHISSEMENT.md).
+
 | Volet | Contrôles | Source |
 |---|---|---|
 | Technique | HTTPS, redirections, temps de réponse, poids, `title`, `description`, H1, OpenGraph, `sitemap.xml`, `robots.txt` | site |
