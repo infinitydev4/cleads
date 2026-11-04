@@ -3,14 +3,14 @@ import type { CurrentUser } from "@/lib/auth/guard"
 import { LeadError } from "@/features/leads/errors"
 import { RUN_STATUS_LABELS } from "@/features/ai/labels"
 import { runStatus } from "@/features/ai/runs"
-import { clientOfInput } from "./names"
+import { appOrigin, clientOfInput } from "./names"
 
 /**
  * What an MCP client reads back after asking (E29): where an action waiting in « À valider » stands, and where a piece of
  * AI work it started stands. Only the member's own requests.
  */
 
-export const appOrigin = () => new URL(process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXTAUTH_URL ?? "https://cleads.fr").origin
+export { appOrigin }
 export const approvalsLink = () => `${appOrigin()}/app/agents?tab=approvals`
 
 const STATES = {

@@ -8,12 +8,21 @@ export const AUDIT_LABELS: Record<string, string> = {
   "team.role_changed": "Rôle modifié",
   "team.deactivated": "Accès désactivé",
   "team.reactivated": "Accès réactivé",
+  // E29: the CRM's MCP server.
+  "mcp.enabled": "Accès MCP activé",
+  "mcp.disabled": "Accès MCP coupé",
+  "mcp.policy_changed": "Droits des clients MCP modifiés",
+  "mcp.token_created": "Jeton MCP créé",
+  "mcp.token_revoked": "Accès MCP fermé",
+  "mcp.oauth_authorized": "Application autorisée (MCP)",
+  "mcp.oauth_refresh_reused": "Connexion MCP fermée : jeton réutilisé",
 }
 
 export const AUDIT_FILTERS = [
   { value: "", label: "Tout" },
   { value: "auth.", label: "Connexions" },
   { value: "team.", label: "Équipe" },
+  { value: "mcp.", label: "Accès MCP" },
 ] as const
 
 export const auditLabel = (action: string) => AUDIT_LABELS[action] ?? action

@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
-import { Check, Copy, KeyRound, Plug, ShieldCheck } from "lucide-react"
+import { BadgeCheck, Check, Copy, KeyRound, Plug, ShieldCheck } from "lucide-react"
 import { toast } from "sonner"
 import {
   AlertDialog,
@@ -31,8 +31,9 @@ import type { McpCallView, McpTokenView } from "@/features/mcp/tokens"
 import { api } from "../../leads/api"
 
 /**
- * Réglages › Accès MCP (E29): the owner opens MCP for the workspace (D39); each member makes a token per client, sees
- * what it did and revokes it; the owner also sees the team's. The secret is shown once, with what to paste where.
+ * Réglages › Accès MCP (E29): the owner opens MCP for the workspace (D39). Each member connects their applications by
+ * OAuth (lot 2: Claude, ChatGPT, Claude Code, Cursor), or makes a personal token for another tool; they see what each
+ * did and close it; the owner also sees the team's. A token's secret is shown once, with what to paste where.
  */
 
 const day = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", year: "numeric" })
@@ -40,17 +41,11 @@ const moment = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short"
 
 const PLACEHOLDER = "<votre jeton>"
 
+/** With a personal token: a tool that sends a header. The applications that know OAuth connect without one. */
 function snippets(endpoint: string, token: string) {
   return [
     { id: "claude-code", title: "Claude Code", where: "Dans un terminal", code: `claude mcp add --transport http cleads ${endpoint} --header "Authorization: Bearer ${token}"` },
     { id: "cursor", title: "Cursor", where: "Dans ~/.cursor/mcp.json", code: JSON.stringify({ mcpServers: { cleads: { url: endpoint, headers: { Authorization: `Bearer ${token}` } } } }, null, 2) },
-    {
-      id: "claude-desktop",
-      title: "Claude Desktop",
-      where: "Dans claude_desktop_config.json, par le pont mcp-remote (Node.js requis)",
-      // mcp-remote reads the header from the environment: no space to escape in its arguments.
-      code: JSON.stringify({ mcpServers: { cleads: { command: "npx", args: ["-y", "mcp-remote", endpoint, "--header", "Authorization:${CLEADS_AUTH}"], env: { CLEADS_AUTH: `Bearer ${token}` } } } }, null, 2),
-    },
   ]
 }
 
@@ -86,7 +81,7 @@ function CodeBlock({ code, label }: { code: string; label: string }) {
 
 function Connect({ endpoint, token = PLACEHOLDER }: { endpoint: string; token?: string }) {
   return (
-    <div className="grid gap-3 lg:grid-cols-3">
+    <div className="grid gap-3 lg:grid-cols-2">
       {snippets(endpoint, token).map((s) => (
         <div key={s.id} className="min-w-0 space-y-2">
           <p className="text-sm font-semibold">{s.title}</p>
@@ -98,13 +93,82 @@ function Connect({ endpoint, token = PLACEHOLDER }: { endpoint: string; token?: 
   )
 }
 
+/** The applications that connect by OAuth: the member authorizes them in Cleads, no token to copy (lot 2). */
+function oauthGuides(endpoint: string) {
+  return [
+    {
+      id: "claude",
+      title: "Claude",
+      where: "claude.ai, Claude Desktop et mobile",
+      steps: [
+        "Personnaliser › Connecteurs › Ajouter un connecteur personnalisé.",
+        "Nom : Cleads ; URL du serveur : l’adresse ci-dessous. Ajoutez, puis cliquez « Se connecter ».",
+        "Cleads s’ouvre : connectez-vous, choisissez l’accès et cliquez « Autoriser ».",
+      ],
+      note: "Sur un compte Claude Team ou Enterprise, le propriétaire de l’organisation ajoute le connecteur ; chacun s’y connecte ensuite.",
+      code: endpoint,
+    },
+    {
+      id: "claude-code",
+      title: "Claude Code",
+      where: "Dans un terminal",
+      steps: ["Ajoutez le serveur avec la commande ci-dessous.", "Dans Claude Code, tapez /mcp, choisissez cleads, puis « Authenticate » : Cleads s’ouvre pour autoriser l’accès."],
+      code: `claude mcp add --transport http cleads ${endpoint}`,
+    },
+    {
+      id: "chatgpt",
+      title: "ChatGPT",
+      where: "Mode développeur, offres payantes",
+      steps: ["Ajoutez une application MCP avec l’adresse ci-dessous et l’authentification OAuth.", "Cleads s’ouvre pour autoriser l’accès."],
+      code: endpoint,
+    },
+    {
+      id: "cursor",
+      title: "Cursor",
+      where: "Dans ~/.cursor/mcp.json",
+      steps: ["Ajoutez le serveur, sans jeton : Cursor ouvre Cleads pour autoriser l’accès."],
+      code: JSON.stringify({ mcpServers: { cleads: { url: endpoint } } }, null, 2),
+    },
+  ]
+}
+
+function OAuthGuides({ endpoint }: { endpoint: string }) {
+  return (
+    <div className="grid gap-5 lg:grid-cols-2">
+      {oauthGuides(endpoint).map((g) => (
+        <div key={g.id} className="min-w-0 space-y-2">
+          <p className="text-sm font-semibold">
+            {g.title} <span className="font-normal text-muted-foreground">· {g.where}</span>
+          </p>
+          <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+            {g.steps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+          <CodeBlock code={g.code} label={g.title} />
+          {g.note && <p className="text-xs text-muted-foreground">{g.note}</p>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
+
 function usage(t: McpTokenView): string {
+  if (t.kind === "connection") {
+    const parts = [`autorisée le ${day.format(new Date(t.createdAt))}`]
+    if (t.status === "revoked" && t.revokedAt) parts.push(`fermée le ${day.format(new Date(t.revokedAt))}`)
+    else if (t.status === "expired") parts.push(`expirée le ${day.format(new Date(t.expiresAt))}`)
+    parts.push(t.lastUsedAt ? `utilisée le ${moment.format(new Date(t.lastUsedAt))}${t.lastClient ? ` par ${t.lastClient}` : ""}` : "pas encore utilisée")
+    if (t.status === "active") parts.push("se ferme après 90 jours sans usage")
+    return capitalize(parts.join(" · "))
+  }
   const parts = [`créé le ${day.format(new Date(t.createdAt))}`]
   if (t.status === "revoked" && t.revokedAt) parts.push(`révoqué le ${day.format(new Date(t.revokedAt))}`)
   else parts.push(`${t.status === "expired" ? "expiré" : "expire"} le ${day.format(new Date(t.expiresAt))}`)
   parts.push(t.lastUsedAt ? `utilisé le ${moment.format(new Date(t.lastUsedAt))}${t.lastClient ? ` par ${t.lastClient}` : ""}` : "jamais utilisé")
-  const text = parts.join(" · ")
-  return text.charAt(0).toUpperCase() + text.slice(1)
+  return capitalize(parts.join(" · "))
 }
 
 const OUTCOMES: Record<McpCallView["outcome"], { label: string; tone: "success" | "warning" | "neutral" | "destructive" }> = {
@@ -126,7 +190,9 @@ function Activity({ activity, onClose }: { activity: ActivityState | null; onClo
       <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
         <SheetHeader>
           <SheetTitle>Activité de « {activity?.token.name} »</SheetTitle>
-          <SheetDescription>Les derniers appels de ce jeton, sur 90 jours. Ce qui a changé une fiche figure aussi dans son historique, « via … (MCP) ».</SheetDescription>
+          <SheetDescription>
+            Les derniers appels {activity?.token.kind === "connection" ? "de cette connexion" : "de ce jeton"}, sur 90 jours. Ce qui a changé une fiche figure aussi dans son historique, « via … (MCP) ».
+          </SheetDescription>
         </SheetHeader>
         <div className="mt-4 text-sm">
           {activity?.error ? (
@@ -157,14 +223,14 @@ function Activity({ activity, onClose }: { activity: ActivityState | null; onClo
   )
 }
 
-function TokenList({ tokens, onActivity, onRevoked, empty }: { tokens: McpTokenView[]; onActivity: (t: McpTokenView) => void; onRevoked: (t: McpTokenView) => void; empty: string }) {
+function TokenList({ tokens, onActivity, onRevoked, empty, team = false }: { tokens: McpTokenView[]; onActivity: (t: McpTokenView) => void; onRevoked: (t: McpTokenView) => void; empty: string; team?: boolean }) {
   const [busy, setBusy] = useState<string | null>(null)
   if (!tokens.length) return <p className="text-sm text-muted-foreground">{empty}</p>
   async function revoke(t: McpTokenView) {
     setBusy(t.id)
     try {
       onRevoked(await api<McpTokenView>(`/api/ai/mcp/tokens/${t.id}`, { method: "DELETE" }))
-      toast.success(`« ${t.name} » est révoqué`)
+      toast.success(t.kind === "connection" ? `« ${t.name} » est déconnecté` : `« ${t.name} » est révoqué`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Révocation impossible")
     } finally {
@@ -178,11 +244,17 @@ function TokenList({ tokens, onActivity, onRevoked, empty }: { tokens: McpTokenV
           <div className="min-w-0 space-y-1">
             <p className="flex flex-wrap items-center gap-2 font-medium">
               <span className="min-w-0 break-words">{t.name}</span>
+              {t.app?.verified && <BadgeCheck className="h-4 w-4 text-success" aria-label="Application reconnue par Cleads" />}
+              {team && <Badge variant="outline">{t.kind === "connection" ? "Connexion" : "Jeton"}</Badge>}
               <Badge variant={t.readOnly ? "neutral" : "info"}>{t.readOnly ? "Lecture seule" : "Lecture et actions"}</Badge>
-              {t.status !== "active" && <Badge variant={t.status === "revoked" ? "destructive" : "warning"}>{t.status === "revoked" ? "Révoqué" : "Expiré"}</Badge>}
+              {t.status !== "active" && (
+                <Badge variant={t.status === "revoked" ? "destructive" : "warning"}>
+                  {t.kind === "connection" ? (t.status === "revoked" ? "Fermée" : "Expirée") : t.status === "revoked" ? "Révoqué" : "Expiré"}
+                </Badge>
+              )}
             </p>
-            <p className="break-all font-mono text-xs text-muted-foreground">
-              {t.hint}
+            <p className={cn("break-all text-xs text-muted-foreground", !t.app && "font-mono")}>
+              {t.app ? `Vers ${t.app.destination}` : t.hint}
               {t.owner ? ` · ${t.owner.name}` : ""}
             </p>
             <p className="text-xs text-muted-foreground">{usage(t)}</p>
@@ -195,17 +267,21 @@ function TokenList({ tokens, onActivity, onRevoked, empty }: { tokens: McpTokenV
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button type="button" variant="outline" size="sm" disabled={busy === t.id}>
-                    Révoquer
+                    {t.kind === "connection" ? "Déconnecter" : "Révoquer"}
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>Révoquer « {t.name} » ?</AlertDialogTitle>
-                    <AlertDialogDescription>Le client qui l’utilise perd l’accès tout de suite, et ce qu’il a laissé en attente dans « À valider » est refusé. Un jeton révoqué ne se réactive pas.</AlertDialogDescription>
+                    <AlertDialogTitle>{t.kind === "connection" ? `Déconnecter « ${t.name} » ?` : `Révoquer « ${t.name} » ?`}</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {t.kind === "connection"
+                        ? `${t.name} perd l’accès tout de suite, et ce qu’il a laissé en attente dans « À valider » est refusé. Pour le rebrancher, il faudra l’autoriser de nouveau.`
+                        : "Le client qui l’utilise perd l’accès tout de suite, et ce qu’il a laissé en attente dans « À valider » est refusé. Un jeton révoqué ne se réactive pas."}
+                    </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Annuler</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => void revoke(t)}>Révoquer</AlertDialogAction>
+                    <AlertDialogAction onClick={() => void revoke(t)}>{t.kind === "connection" ? "Déconnecter" : "Révoquer"}</AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
@@ -232,6 +308,10 @@ export function McpAccessView({ enabled: initialEnabled, canManage, endpoint, mi
   const [secret, setSecret] = useState<{ name: string; value: string } | null>(null)
   const [activity, setActivity] = useState<ActivityState | null>(null)
   const replace = (list: McpTokenView[], t: McpTokenView) => list.map((x) => (x.id === t.id ? { ...t, owner: x.owner } : x))
+  const onRevoked = (t: McpTokenView) => {
+    setMine((list) => replace(list, t))
+    setTeam((list) => (list ? replace(list, t) : list))
+  }
 
   function openActivity(token: McpTokenView) {
     setActivity({ token, calls: null })
@@ -246,7 +326,7 @@ export function McpAccessView({ enabled: initialEnabled, canManage, endpoint, mi
     try {
       await api("/api/ai/mcp", { method: "PUT", body: JSON.stringify({ enabled: next }) })
       setEnabled(next)
-      toast.success(next ? "Accès MCP activé" : "Accès MCP coupé : tous les jetons sont arrêtés")
+      toast.success(next ? "Accès MCP activé" : "Accès MCP coupé : tous les accès sont arrêtés")
       router.refresh()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Enregistrement impossible")
@@ -283,7 +363,7 @@ export function McpAccessView({ enabled: initialEnabled, canManage, endpoint, mi
                 Autoriser l’accès MCP
               </h2>
               <p className="max-w-3xl text-sm text-muted-foreground">
-                Les membres qui ont l’IA (propriétaire, manager, SDR, closer) pourront brancher Claude Code, Cursor ou Claude Desktop sur le CRM, avec leurs droits et rien de plus. Les fiches que ces outils lisent partent vers l’IA de chacun, hors des contrats de traitement de Cleads : n’activez qu’avec des outils que l’agence accepte.
+                Les membres qui ont l’IA (propriétaire, manager, SDR, closer) pourront brancher Claude, ChatGPT, Claude Code ou Cursor sur le CRM, avec leurs droits et rien de plus. Les fiches que ces outils lisent partent vers l’IA de chacun, hors des contrats de traitement de Cleads : n’activez qu’avec des outils que l’agence accepte.
               </p>
             </div>
             {/*
@@ -295,13 +375,13 @@ export function McpAccessView({ enabled: initialEnabled, canManage, endpoint, mi
               <Switch checked={enabled} aria-labelledby="mcp-switch" disabled={switching} onCheckedChange={(v) => (v ? setConfirming(true) : void toggle(false))} />
             </label>
           </div>
-          {!enabled && <p className="text-sm font-medium">L’accès est coupé : aucun jeton ne peut être créé ni utilisé. Activez-le avec l’interrupteur pour que l’équipe puisse brancher ses outils.</p>}
+          {!enabled && <p className="text-sm font-medium">L’accès est coupé : aucune application ne peut se connecter, et aucun jeton ne peut être créé ni utilisé. Activez-le avec l’interrupteur pour que l’équipe puisse brancher ses outils.</p>}
           <AlertDialog open={confirming} onOpenChange={setConfirming}>
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Activer l’accès MCP ?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Chaque membre pourra créer ses jetons. Ce qu’un client MCP lit du CRM part vers l’IA qu’il utilise. Les changements attendront la validation dans Cleads, et ce qui contacte un prospect, toujours son propre clic. Vous pourrez tout couper ici.
+                  Chaque membre pourra connecter ses outils. Ce qu’un client MCP lit du CRM part vers l’IA qu’il utilise. Les changements attendront la validation dans Cleads, et ce qui contacte un prospect, toujours son propre clic. Vous pourrez tout couper ici.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -323,10 +403,41 @@ export function McpAccessView({ enabled: initialEnabled, canManage, endpoint, mi
         !enabled && (
           <Card className="p-5 text-sm">
             <p className="font-semibold">L’accès MCP est coupé dans cet espace</p>
-            <p className="mt-1 text-muted-foreground">Le propriétaire l’active ici ; vous pourrez alors créer vos jetons.</p>
+            <p className="mt-1 text-muted-foreground">Le propriétaire l’active ici ; vous pourrez alors connecter vos outils.</p>
           </Card>
         )
       )}
+
+      <section aria-labelledby="mcp-connect" className="space-y-4">
+        <div>
+          <h2 id="mcp-connect" className="text-lg font-bold">
+            Se connecter
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Adresse du serveur : <span className="break-all font-mono text-foreground">{endpoint}</span>. Ces applications vous envoient sur Cleads pour autoriser l’accès : aucun jeton à copier.
+          </p>
+        </div>
+        <Card className="p-5">
+          <OAuthGuides endpoint={endpoint} />
+        </Card>
+      </section>
+
+      <section aria-labelledby="mcp-connections" className="space-y-4">
+        <div>
+          <h2 id="mcp-connections" className="text-lg font-bold">
+            Vos connexions
+          </h2>
+          <p className="text-sm text-muted-foreground">Les applications que vous avez autorisées. Chacune agit avec vos droits ; une connexion en lecture seule ne change rien.</p>
+        </div>
+        <Card className="p-5">
+          <TokenList
+            tokens={mine.filter((t) => t.kind === "connection")}
+            empty="Aucune connexion pour l’instant. Ajoutez Cleads dans Claude, ChatGPT ou Claude Code : l’application vous enverra ici pour autoriser l’accès."
+            onActivity={openActivity}
+            onRevoked={onRevoked}
+          />
+        </Card>
+      </section>
 
       <section aria-labelledby="mcp-tokens" className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
@@ -334,7 +445,7 @@ export function McpAccessView({ enabled: initialEnabled, canManage, endpoint, mi
             <h2 id="mcp-tokens" className="text-lg font-bold">
               Vos jetons
             </h2>
-            <p className="text-sm text-muted-foreground">Un jeton par outil : vous pourrez le révoquer seul. Il agit avec vos droits, et un jeton en lecture seule ne change rien.</p>
+            <p className="text-sm text-muted-foreground">Pour un script ou un outil sans OAuth : un jeton par outil, révocable seul. Il agit avec vos droits, et un jeton en lecture seule ne change rien.</p>
           </div>
           <div className="flex flex-col items-start gap-1.5 sm:items-end">
             <Button type="button" onClick={() => setCreating(true)} disabled={!enabled} aria-describedby={enabled ? undefined : "mcp-create-why"}>
@@ -349,30 +460,12 @@ export function McpAccessView({ enabled: initialEnabled, canManage, endpoint, mi
             )}
           </div>
         </div>
-        <Card className="p-5">
-          <TokenList
-            tokens={mine}
-            empty="Aucun jeton pour l’instant. Créez-en un par outil, par exemple « Claude Code (portable) »."
-            onActivity={openActivity}
-            onRevoked={(t) => {
-              setMine((list) => replace(list, t))
-              setTeam((list) => (list ? replace(list, t) : list))
-            }}
-          />
-        </Card>
-      </section>
-
-      <section aria-labelledby="mcp-connect" className="space-y-4">
-        <div>
-          <h2 id="mcp-connect" className="text-lg font-bold">
-            Se connecter
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Adresse du serveur : <span className="break-all font-mono text-foreground">{endpoint}</span>. Remplacez {PLACEHOLDER} par votre jeton. Le connecteur natif de Claude Desktop et de claude.ai demande OAuth : il arrive dans un prochain lot.
-          </p>
-        </div>
-        <Card className="p-5">
-          <Connect endpoint={endpoint} />
+        <Card className="space-y-5 p-5">
+          <TokenList tokens={mine.filter((t) => t.kind === "token")} empty="Aucun jeton pour l’instant. Créez-en un par outil, par exemple « Script d’export (serveur) »." onActivity={openActivity} onRevoked={onRevoked} />
+          <div className="space-y-3 border-t pt-5">
+            <p className="text-sm text-muted-foreground">Avec un jeton, remplacez {PLACEHOLDER} par sa valeur :</p>
+            <Connect endpoint={endpoint} />
+          </div>
         </Card>
       </section>
 
@@ -380,12 +473,12 @@ export function McpAccessView({ enabled: initialEnabled, canManage, endpoint, mi
         <section aria-labelledby="mcp-team" className="space-y-4">
           <div>
             <h2 id="mcp-team" className="text-lg font-bold">
-              Jetons de l’équipe
+              Accès de l’équipe
             </h2>
-            <p className="text-sm text-muted-foreground">Ceux des autres membres, que vous pouvez révoquer. Couper l’accès MCP les arrête tous sans les effacer.</p>
+            <p className="text-sm text-muted-foreground">Les connexions et les jetons des autres membres, que vous pouvez fermer. Couper l’accès MCP les arrête tous sans les effacer.</p>
           </div>
           <Card className="p-5">
-            <TokenList tokens={team} empty="Aucun autre membre n’a de jeton." onActivity={openActivity} onRevoked={(t) => setTeam((list) => (list ? replace(list, t) : list))} />
+            <TokenList tokens={team} team empty="Aucun autre membre n’a de connexion ni de jeton." onActivity={openActivity} onRevoked={(t) => setTeam((list) => (list ? replace(list, t) : list))} />
           </Card>
         </section>
       )}

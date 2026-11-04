@@ -9,7 +9,7 @@ import { McpAccessView } from "./mcp-access"
 export const metadata = { title: "Accès MCP" }
 export const dynamic = "force-dynamic"
 
-/** E29: the CRM's MCP server, seen from the CRM: the owner's switch, each member's tokens, how to connect a client. */
+/** E29: the CRM's MCP server, seen from the CRM: the owner's switch, how to connect, each member's connections and tokens. */
 export default async function McpSettingsPage() {
   const { user } = await requirePagePermission("ai:use")
   const owner = can(user.role, "ai:manage")
@@ -18,7 +18,7 @@ export default async function McpSettingsPage() {
     <>
       <PageHeader
         title="Accès MCP"
-        description="Pilotez le CRM depuis Claude Code, Cursor ou Claude Desktop, avec vos droits et rien de plus : un jeton personnel par outil, révocable à tout moment. Ce qui change le CRM attend votre validation dans Cleads ; ce qui contacte un prospect, toujours votre propre clic."
+        description="Pilotez le CRM depuis Claude, ChatGPT, Claude Code ou Cursor, avec vos droits et rien de plus : vous autorisez chaque application dans Cleads, et vous la déconnectez quand vous voulez. Ce qui change le CRM attend votre validation dans Cleads ; ce qui contacte un prospect, toujours votre propre clic."
         breadcrumbs={[{ label: "CRM", href: "/app" }, { label: "Accès MCP" }]}
       />
       <McpAccessView enabled={access.enabled} canManage={owner} endpoint={`${appOrigin()}/api/mcp`} mine={mine} team={team?.filter((t) => t.owner?.id !== user.id) ?? null} />

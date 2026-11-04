@@ -254,7 +254,7 @@ Un outil appelle un service existant ; il ne touche jamais la base directement.
 
 **Serveur MCP du CRM (E29, D36 à D40, `features/mcp/`).**
 - **Adresse** : `POST https://cleads.fr/api/mcp`, une route du site, sans état.
-  - Chaque requête porte son jeton (`Authorization: Bearer cleads_mcp_…`), relu en base avec le rôle du membre.
+  - Chaque requête porte son jeton, relu en base avec le rôle du membre : un jeton personnel (`cleads_mcp_…`) ou le jeton d'accès d'une connexion OAuth (`cleads_oat_…`, lot 2).
   - GET et DELETE reçoivent 405, une origine de navigateur autre que le CRM 403, et un jeton au-delà de 120 requêtes par minute 429.
 - **Protocole** : MCP 2026-07-28, sans session ni `initialize`.
   - `server/discover` ; la version et le client voyagent dans `_meta`, reflétés dans `MCP-Protocol-Version`, `Mcp-Method` et `Mcp-Name`, que le serveur contrôle contre le corps.
@@ -278,9 +278,30 @@ Un outil appelle un service existant ; il ne touche jamais la base directement.
   - « via Claude Code (MCP) » ; le nom est celui que le client se donne, jamais une preuve ;
   - l'activité de chaque jeton est gardée 90 jours (`McpCall`).
 - **Clients** :
-  - Claude Code : `claude mcp add --transport http … --header "Authorization: Bearer …"` ;
-  - Cursor : `mcp.json` ;
-  - Claude Desktop : le pont `mcp-remote`. Son connecteur natif exige OAuth et viendra au lot 2.
+  - Claude (web, Desktop, mobile), ChatGPT, Claude Code et Cursor se connectent par OAuth : le membre les autorise dans Cleads, sans jeton à copier (ci-dessous) ;
+  - un script, ou un outil sans OAuth, garde le jeton personnel : `claude mcp add --transport http … --header "Authorization: Bearer …"`, ou `headers` dans le `mcp.json` de Cursor.
+
+**Connexion OAuth (E29 lot 2, D41 à D44, `features/mcp/oauth/`).** Cleads est le serveur d'autorisation de son propre serveur MCP, selon l'autorisation de MCP 2026-07-28 (OAuth 2.1).
+- **Découverte** :
+  - sans jeton valide, `/api/mcp` répond 401 avec `WWW-Authenticate: Bearer resource_metadata="…", scope="crm:read crm:write"` ; s'y ajoute `error="invalid_token"` quand un jeton a été présenté ;
+  - `/.well-known/oauth-protected-resource/api/mcp` (RFC 9728, et sa variante à la racine) : la ressource `https://cleads.fr/api/mcp`, son serveur d'autorisation `https://cleads.fr`, les portées `crm:read` et `crm:write` ;
+  - `/.well-known/oauth-authorization-server` (RFC 8414) : PKCE S256, documents d'identité (CIMD), `iss` dans la réponse (RFC 9207), méthodes `none`, `client_secret_basic` et `client_secret_post`.
+- **Applications** :
+  - **document d'identité (CIMD)** : le `client_id` est l'URL du document de l'application (Claude, Claude Code, ChatGPT). Cleads le lit seulement pour un membre connecté, en https sur une adresse publique, sans suivre de redirection, en 5 s et 10 Ko au plus, et le garde une heure ;
+  - **enregistrement dynamique** (RFC 7591, `POST /api/oauth/register`) pour les autres (Cursor, VS Code), 20 par heure et par adresse ;
+  - **règle D41** : un code ne part que vers une application de l'ordinateur du membre (adresse locale sur n'importe quel port, lien d'application comme `cursor://`), ou vers le retour exact d'un service connu (claude.ai, claude.com, chatgpt.com, vscode.dev). Tout autre site est refusé, à l'enregistrement comme dans un document.
+- **Écran d'accord** (`/auth/authorize`) :
+  - le membre se connecte s'il ne l'est pas, puis voit l'application (reconnue par Cleads, ou nom donné par elle-même), l'adresse où partira l'accès et son compte ; il choisit « Lecture seule » (cochée, D42) ou « Lecture et actions » ;
+  - une application ou une adresse de retour qu'on ne peut pas croire s'affiche en erreur, sans renvoi ; les autres erreurs repartent vers l'application avec `state` et `iss` ; MCP coupé ou un rôle sans IA : la page le dit ;
+  - la décision (`POST /api/oauth/authorize`) doit venir de la page du CRM (son `Origin`) et du membre connecté, tous les paramètres revérifiés. « Autoriser » donne un code de 5 minutes, à usage unique.
+- **Jetons** (`POST /api/oauth/token`) :
+  - le code devient une connexion : un `McpToken` au nom de l'application, avec un jeton d'accès d'une heure (`cleads_oat_…`, plusieurs valides en même temps) et un jeton de rafraîchissement (`cleads_ort_…`) ;
+  - contrôles : PKCE, même application, même adresse de retour, même ressource (RFC 8707). Un code rejoué ferme la connexion qu'il a ouverte ;
+  - chaque rafraîchissement tourne le jeton et repousse la fin de la connexion à 90 jours (D43). L'ancien jeton présenté de nouveau ferme la connexion, sauf dans les 30 s : deux rafraîchissements parallèles ;
+  - MCP coupé bloque l'usage, pas le rafraîchissement ; un membre désactivé ne rafraîchit plus ;
+  - 10 connexions au plus par membre : une onzième ferme la moins utilisée, ce que l'écran d'accord dit avant le clic ;
+  - révocation par l'application (RFC 7009, `POST /api/oauth/revoke`).
+- **Une connexion vaut un jeton** : mêmes contrôles à chaque requête, même « À valider », même journal (« via Claude (MCP) »), même page de révocation (Réglages › Accès MCP).
 
 **MCP de l'Extractor.**
 - **Connexion** : client `@ai-sdk/mcp` en Streamable HTTP vers `/mcp`, avec la clé `crm`, côté serveur seulement ; le worker passe par le réseau local du VPS.
@@ -351,6 +372,11 @@ Migrations additives uniquement ; chaque table porte `workspaceId`.
 | `AiMessage` | E24 | conversation, ordre, rôle, contenu au format de l'AI SDK (texte, appels d'outils, validations, résultats), métadonnées (page et date d'une question ; exécutions, coût et arrêt d'une réponse), dernière exécution |
 | `McpToken` | E29 | membre, nom, empreinte du jeton (le jeton lui-même n'est jamais gardé), indice affiché, lecture seule, expiration, révocation et par qui, dernière utilisation et client |
 | `McpCall` | E29 | jeton, outil, client, issue (faite, en attente, refusée, erreur), validation liée, durée ; gardé 90 jours |
+| `McpOAuthClient` | E29 lot 2 | application OAuth : `client_id` (URL de son document, ou identifiant aléatoire si elle s'est enregistrée), nom déclaré, adresses de retour, méthode d'authentification et empreinte de son secret, date de lecture du document |
+| `McpOAuthCode` | E29 lot 2 | code d'autorisation : empreinte, application, membre, adresse de retour, défi PKCE, ressource, lecture seule ; 5 minutes, usage unique, avec la connexion qu'il a ouverte |
+| `McpAccessToken` | E29 lot 2 | jeton d'accès d'une connexion : empreinte et fin (1 h) ; plusieurs valides en même temps |
+
+E29 lot 2 : une connexion OAuth est un `McpToken` qui porte son application (`oauthClientId`), son adresse de retour et sa ressource ; son empreinte est celle du jeton de rafraîchissement courant, la précédente (`previousHash`) sert à détecter une réutilisation.
 
 `AgentRun.missionId` (E28) relie une exécution à sa mission ; `AiSetting.missionCapMicros` garde le plafond par mission (2 € par défaut, D32), `AiSetting.catalogVersion` les ajouts du catalogue installés. E29 : `AiSetting.mcpEnabled` ouvre MCP pour l'espace (coupé par défaut, D39) et `AiSetting.mcpPolicy` garde la ligne « Clients MCP » de la matrice (seulement l'écart au code, D38).
 
@@ -424,7 +450,11 @@ Peut valider l'action d'un agent : la personne qui a lancé l'exécution, ou un 
 - **Clients MCP** (E29, D38) : une ligne de plus, réglée comme le copilote au départ. Elle ne restreint que MCP ; stockée dans `AiSetting.mcpPolicy`, enregistrée par `PUT /api/ai/mcp` et journalisée (`mcp.policy_changed`, avant et après).
 
 **Accès MCP** (E29, Réglages › Accès MCP, `/app/settings/mcp`) :
-- **Ouverture** (D39) : le propriétaire active MCP pour l'espace (`ai:manage`, `mcp.enabled` et `mcp.disabled` au journal). Coupé, plus aucun jeton ne répond, sans être effacé.
+- **Ouverture** (D39) : le propriétaire active MCP pour l'espace (`ai:manage`, `mcp.enabled` et `mcp.disabled` au journal). Coupé, plus aucun jeton ni aucune connexion ne répond, sans être effacé.
+- **Connexions** (lot 2) :
+  - chaque membre qui a `ai:use` autorise ses applications sur l'écran d'accord, en lecture seule (cochée, D42) ou avec actions (`mcp.oauth_authorized` au journal) ;
+  - il voit leur activité et les déconnecte ; le propriétaire voit et ferme celles de l'équipe ;
+  - 10 ouvertes au plus ; 90 jours sans usage les ferment (D43).
 - **Jetons** :
   - chaque membre qui a `ai:use` crée les siens (un lecteur n'en a pas), en lecture seule (par défaut) ou avec actions, pour 30, 90 ou 365 jours, 10 actifs au plus ;
   - il voit leur activité et les révoque ;
@@ -433,7 +463,10 @@ Peut valider l'action d'un agent : la personne qui a lancé l'exécution, ou un 
 - **Droits** : un jeton vaut son membre, dont le rôle est relu à chaque requête. La ligne « Clients MCP » de la matrice le restreint, et les interdits aux agents s'appliquent.
 - **Validation** : une action MCP en attente se valide comme les autres. Peuvent la valider la personne qui l'a demandée, un manager ou le propriétaire, s'ils ont eux-mêmes le droit de la faire.
 - **Routes** :
-  - `POST /api/mcp` : le serveur, par jeton ;
+  - `POST /api/mcp` : le serveur, par jeton ou par connexion ;
+  - `GET /.well-known/oauth-protected-resource/api/mcp` et `/.well-known/oauth-authorization-server` : la découverte OAuth ;
+  - `GET /auth/authorize` : l'écran d'accord ; `POST /api/oauth/authorize` : sa décision ;
+  - `POST /api/oauth/register`, `POST /api/oauth/token` et `POST /api/oauth/revoke` ;
   - `GET` et `PUT /api/ai/mcp` : l'interrupteur et la ligne de la matrice ;
   - `GET` et `POST /api/ai/mcp/tokens` (`?team=1` pour le propriétaire) ;
   - `DELETE /api/ai/mcp/tokens/[id]` ;
@@ -747,6 +780,11 @@ Cache-Control: private, no-store
   - **Jetons** : 256 bits, dont seule l'empreinte est gardée ; expirants et révocables ; valables seulement pour un membre actif qui a l'IA, dans un espace où MCP est activé.
   - **Contrôles** : l'origine d'un navigateur est vérifiée ; 120 requêtes par minute au plus par jeton ; un corps d'1 Mo au plus.
   - **Validation** : rien ne se valide depuis un client MCP.
+  - **OAuth (lot 2)** :
+    - PKCE S256 obligatoire ; codes de 5 minutes à usage unique, qui ferment la connexion s'ils reviennent ; jetons d'accès d'une heure ; rafraîchissement tournant, qui ferme la connexion s'il revient ; tout est haché ;
+    - un code ne part que vers une application de l'ordinateur du membre ou un service connu (D41) : un lien piégé vers un autre site ne peut pas emporter d'accès ;
+    - un document d'identité n'est lu que pour un membre connecté, en https sur une adresse publique vérifiée après résolution DNS, sans redirection, en 5 s et 10 Ko au plus ;
+    - l'écran d'accord affiche toujours l'adresse de retour, avertit pour une application locale, et ne se laisse pas encadrer par un autre site (`frame-ancestors 'none'` sur `/auth/*`) ; sa décision n'est acceptée que de la page du CRM.
   - **Données** : ce qu'un client lit part vers l'IA que le membre a choisie, hors des contrats de D16. C'est pourquoi MCP reste coupé tant que le propriétaire ne l'active pas. Les réponses gardent la minimisation du catalogue : l'email et le téléphone du contact restent sur la fiche, et un contenu externe arrive balisé.
 
 ## 20. Qualité et évaluations (E27)
@@ -833,6 +871,6 @@ Le code est dans `features/quality/`, les jeux de référence dans `evals/` (voi
 | Première mission réelle (une petite recherche, par exemple 50 entreprises), lancée par le propriétaire | le propriétaire | usage des missions |
 | Première évaluation du copilote : échantillon rapide, Sonnet 5.5 face à Opus 5.5 (environ 2,40 €, dont 0,90 € pour Sonnet ; le jeu complet, environ 9 €) | le propriétaire | décision D33 |
 | Activer l'accès MCP (Réglages › Accès MCP) une fois choisis les outils que l'agence accepte (D39) | le propriétaire | usage de MCP |
-| OAuth pour le connecteur natif de Claude Desktop et de claude.ai (E29, lot 2) | le propriétaire, à son signal | connecteur natif |
+| Ajouter Cleads dans Claude (Personnaliser › Connecteurs › Ajouter un connecteur personnalisé, `https://cleads.fr/api/mcp`) et autoriser l'accès ; sur un compte Claude Team ou Enterprise, c'est le propriétaire de l'organisation Claude qui l'ajoute | le propriétaire | usage du connecteur natif |
 
-**E17 à E28 sont faits** (E28 : catalogue d'actions, matrice des droits, navigation, dictée ; missions et missions récurrentes ; évaluation du copilote). Les évaluations se lancent à la demande : la première de chaque suite, sur le modèle en service, sert de référence aux suivantes. **E29, lot 1 est fait** : serveur MCP du CRM, jetons personnels, validation dans « À valider ».
+**E17 à E28 sont faits** (E28 : catalogue d'actions, matrice des droits, navigation, dictée ; missions et missions récurrentes ; évaluation du copilote). Les évaluations se lancent à la demande : la première de chaque suite, sur le modèle en service, sert de référence aux suivantes. **E29 est fait** : serveur MCP du CRM, jetons personnels, validation dans « À valider » (lot 1) ; OAuth pour Claude, ChatGPT, Claude Code et Cursor (lot 2).

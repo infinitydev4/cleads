@@ -2,6 +2,7 @@ import { rateLimit } from "@/lib/rate-limit"
 import { ROLE_LABELS } from "@/lib/crm/roles"
 import { callTool, mcpContext } from "./call"
 import { clientName } from "./names"
+import { bearerChallenge } from "./oauth/metadata"
 import { mcpAccess } from "./policy"
 import {
   ERRORS,
@@ -22,12 +23,13 @@ import {
 } from "./protocol"
 import { authenticate, touchToken, type McpCaller } from "./tokens"
 import { describeTool, offeredTools } from "./tools"
-import { appOrigin } from "./status"
+import { appOrigin } from "./names"
 
 /**
  * The CRM's MCP server (E29, D30, D40): one endpoint, `POST /api/mcp`, on the site itself. Stateless: every request
  * carries its token, read again; nothing is kept between requests, so serverless instances answer any of them. Each call
- * is short (long work goes to the worker), well within Netlify's limit.
+ * is short (long work goes to the worker), well within Netlify's limit. Without a valid token, the 401 tells an OAuth
+ * client where to sign in (lot 2): Claude, ChatGPT and Claude Code then open Cleads' consent screen.
  */
 
 export const SERVER_INFO = { name: "cleads-crm", title: "Cleads CRM", version: "1.0.0" }
@@ -43,7 +45,7 @@ const fail = (status: number, id: Message["id"], error: ErrorObject, headers?: R
 /** What the client's model reads first: whom it works for, and how the CRM works with it. */
 export function instructions(caller: McpCaller): string {
   const u = caller.user
-  return `Tu travailles dans Cleads, le CRM de prospection${caller.workspaceName ? ` de « ${caller.workspaceName} »` : ""}, pour ${u.name || u.email} (${ROLE_LABELS[u.role]}). Les outils voient et font exactement ce que cette personne peut faire dans le CRM, rien de plus${caller.token.readOnly ? " ; ce jeton est en lecture seule" : ""}.
+  return `Tu travailles dans Cleads, le CRM de prospection${caller.workspaceName ? ` de « ${caller.workspaceName} »` : ""}, pour ${u.name || u.email} (${ROLE_LABELS[u.role]}). Les outils voient et font exactement ce que cette personne peut faire dans le CRM, rien de plus${caller.token.readOnly ? " ; cet accès est en lecture seule" : ""}.
 - Lis avant d'agir : retrouve les fiches avec search_leads (leadId) plutôt que de deviner un identifiant, un chiffre ou un volume.
 - Lire, ouvrir une page, noter, enregistrer un appel, gérer une tâche et étiqueter des fiches se fait tout de suite, au nom de la personne.
 - Les autres changements (statut, attribution, campagnes, recherches, imports, travaux d'IA…) attendent sa validation dans Cleads : la réponse donne un approvalId. Ne présente jamais l'action comme faite ; get_action_status dit où elle en est.
@@ -106,7 +108,7 @@ export async function handleMcp(request: Request): Promise<Response> {
 
   // Who calls, before anything is answered.
   const caller = await authenticate(request.headers.get("authorization"))
-  if ("status" in caller) return fail(caller.status, m.id, { code: ERRORS.SERVER, message: caller.message }, caller.status === 401 ? { "www-authenticate": 'Bearer realm="Cleads", error="invalid_token"' } : {})
+  if ("status" in caller) return fail(caller.status, m.id, { code: ERRORS.SERVER, message: caller.message }, caller.status === 401 ? { "www-authenticate": bearerChallenge(caller.invalidToken ? "invalid_token" : undefined) } : {})
   if (!(await rateLimit("mcp", caller.token.id, RATE_LIMIT.requests, RATE_LIMIT.windowSec))) {
     return fail(429, m.id, { code: ERRORS.SERVER, message: `Trop de requêtes : ${RATE_LIMIT.requests} par minute au plus pour un jeton. Réessayez dans une minute.` }, { "retry-after": String(RATE_LIMIT.windowSec) })
   }

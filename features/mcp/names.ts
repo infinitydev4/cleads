@@ -14,6 +14,17 @@ export const MCP_LABEL = "Clients MCP"
 /** A token's expiry choices, in days (features/mcp/tokens.ts): there is no token without an end. */
 export const TOKEN_DAYS = [30, 90, 365] as const
 
+/**
+ * The secrets' prefixes, which say what each is and let secret scanners spot them: a personal token, then an OAuth
+ * connection's access token (one hour) and refresh token (rotated at each use). Only the first two open /api/mcp.
+ */
+export const TOKEN_PREFIX = "cleads_mcp_"
+export const ACCESS_PREFIX = "cleads_oat_"
+export const REFRESH_PREFIX = "cleads_ort_"
+
+/** The site's origin: the links given to MCP clients, the OAuth issuer and the MCP server's address start with it. */
+export const appOrigin = () => new URL(process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXTAUTH_URL ?? "https://cleads.fr").origin
+
 /** What a client calls itself (`clientInfo`), kept short and printable: for display, never a proof of who it is. */
 export function clientName(value: unknown): string {
   const name = typeof value === "string" ? value.replace(/[^\p{L}\p{N} ._()/+-]/gu, "").trim().slice(0, 40) : ""

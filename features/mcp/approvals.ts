@@ -58,7 +58,7 @@ export async function requestMcpApproval(ctx: ToolContext, def: AnyToolDef, inpu
 async function blocked(workspaceId: string, tokenId: unknown): Promise<string | null> {
   if (!(await mcpAccess(workspaceId)).enabled) return "L'accès MCP a été coupé dans cet espace : l'action n'a pas été faite."
   const token = typeof tokenId === "string" ? await prisma.mcpToken.findUnique({ where: { id: tokenId }, select: { revokedAt: true } }) : null
-  if (!token || token.revokedAt) return "Le jeton MCP qui l'a demandée a été révoqué : l'action n'a pas été faite."
+  if (!token || token.revokedAt) return "L'accès MCP qui l'a demandée a été révoqué : l'action n'a pas été faite."
   return null
 }
 
