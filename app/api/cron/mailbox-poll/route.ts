@@ -16,10 +16,26 @@ function authorized(request: Request) {
 /** Every few minutes: reads replies and bounces in the prospecting mailboxes. Safe to run twice (a claim per mailbox). */
 export async function POST(request: Request) {
   if (!authorized(request)) return NextResponse.json({ error: "Non autorisé" }, { status: 401 })
+  // On Vercel the tasks come from Vercel Cron (GET): a call from Netlify's functions after the switch is ignored.
+  if (process.env.VERCEL) return NextResponse.json({ skipped: "Sur Vercel, ces tâches passent par Vercel Cron." }, { status: 202 })
+  return run()
+}
+
+async function run() {
   try {
     return NextResponse.json({ success: true, ...(await pollAll()) })
   } catch (error) {
     console.error("[CRON_MAILBOX_POLL]", error)
     return NextResponse.json({ error: "Erreur lors de la lecture des boîtes" }, { status: 500 })
   }
+}
+
+/**
+ * Vercel Cron calls in GET, with the same secret. It runs only once the tasks are switched to Vercel
+ * (CRON_RUNNER=vercel, docs/crm-v1/MIGRATION-VERCEL.md): Netlify and Vercel never send at once.
+ */
+export async function GET(request: Request) {
+  if (!authorized(request)) return NextResponse.json({ error: "Non autorisé" }, { status: 401 })
+  if (process.env.CRON_RUNNER !== "vercel") return NextResponse.json({ skipped: "Tâches planifiées pas encore basculées sur Vercel (CRON_RUNNER)." }, { status: 202 })
+  return run()
 }
