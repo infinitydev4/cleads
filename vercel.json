@@ -4,6 +4,7 @@
   "buildCommand": "npm run vercel-build",
   "crons": [
     { "path": "/api/cron/mailbox-poll", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/sequence-run", "schedule": "*/5 * * * *" }
+    { "path": "/api/cron/sequence-run", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/meeting-reminders", "schedule": "0 * * * *" }
   ]
 }
