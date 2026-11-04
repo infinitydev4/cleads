@@ -137,10 +137,11 @@ export function transcriptionMicros(model: string, seconds: number, eurPerUsd: n
 
 /**
  * E30: web searches the Gateway runs for a model (its exaSearch and perplexitySearch tools, lib/ai/search.ts), billed
- * per search on top of the model's tokens. List prices of 2026-11-04 (USD). The price list of the Gateway gives token
- * prices only, so these are counted here: a search is billed when the model asks for it, failed or not, and a
- * Perplexity call with several queries is billed one search per query, so an estimate never understates a cost. Each
- * tool has its own usage key, shown apart in Réglages › IA.
+ * per search on top of the model's tokens. List prices of 2026-11-04 (USD), checked on a real dry run the same day:
+ * each step's estimate was within 0.0002 $ of the Gateway's own figure. The price list of the Gateway gives token
+ * prices only, so these are counted here: a search is billed when the model asks for it, failed or not, and a list of
+ * queries is counted one search per query (the code sends one query per call), so an estimate never understates a
+ * search. Each tool has its own usage key, shown apart in Réglages › IA.
  */
 export const SEARCH_PRICES = {
   exa_search: { usage: "exa/search", usdPerSearch: 0.007 },

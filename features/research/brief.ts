@@ -26,7 +26,8 @@ import { gatewaySearcher, numbered, type ResearchDeps } from "./search"
  * only the facts that cite a page it read or the fiche itself. Prepared the day before each meeting, and on demand.
  */
 export const BRIEF_CAP_MICROS = 300_000
-export const BRIEF_OUTPUT_TOKENS = 4_000
+/** Sonnet reasoned about 1 000 tokens, then wrote about 1 800 (real dry run of 2026-11-04): room for both, and more. */
+export const BRIEF_OUTPUT_TOKENS = 6_000
 /** Pages the brief is written from, at most: the four searches give about twenty, the best ranked first. */
 const MAX_SOURCES = 16
 

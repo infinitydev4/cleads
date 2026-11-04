@@ -84,32 +84,34 @@ Un neuvième agent, l'**Enquêteur** (`researcher`, `features/research/`), fait 
 
 ### Les recherches et leur coût
 - **Par la passerelle IA**, sans nouvelle clé (D46) :
-  - `exaSearch` (Exa) sert aux profils, aux comptes sociaux et à l'actualité ;
-  - `perplexitySearch` (Perplexity) sert à la sonde GEO et au brief.
+  - `exaSearch` (Exa) sert aux profils et à l'actualité ;
+  - `perplexitySearch` (Perplexity) sert aux comptes sociaux, à la sonde GEO et au brief.
   - Les options sont fixées par le code (`lib/ai/search.ts`) : France, français, quelques résultats.
 - **Comment une recherche passe** :
-  1. un appel court du modèle rapide lance la recherche écrite par le code ;
+  1. un appel court du modèle rapide lance la recherche écrite par le code, une question par appel (plusieurs questions partent en parallèle) ;
   2. la passerelle l'exécute et rend ses résultats dans la réponse ;
-  3. le code garde ces résultats comme **sources**.
+  3. le code garde ces résultats comme **sources**. Dans l'historique d'exécution, l'adresse d'un profil de personne est masquée.
 - **Facturation** (`lib/ai/pricing.ts`) :
   - chaque recherche est facturée au prix catalogue, en plus des jetons (Exa 7 $, Perplexity 5 $ les 1 000) ;
-  - une requête Perplexity à plusieurs questions compte une recherche par question ;
+  - l'essai réel du 4 novembre l'a vérifié : chaque étape estimée est à moins de 0,0002 $ du coût que donne la passerelle ;
   - le prix est réservé avant l'appel, puis compté sur l'exécution, dans son plafond et dans le budget du mois (D47) ;
   - Réglages › IA les montre à part : « Recherches Exa », « Recherches Perplexity ».
 - **Plafonds par travail** : une exécution réserve ce que son travail peut coûter, jamais plus que le plafond de l'agent (0,40 €).
 
 | Travail | Recherches | Coût habituel | Plafond |
 |---|---|---|---|
-| Décideurs et réseaux, par fiche | 1 à 3 Exa | ≈ 0,02 € | 0,04 € |
+| Décideurs et réseaux, par fiche | 1 à 3 Exa, et 1 Perplexity pour les comptes que le site n'affiche pas | ≈ 0,02 € | 0,04 € |
 | Sonde GEO | 3 questions Perplexity | ≈ 0,02 € | 0,03 € |
-| Brief de rendez-vous | 3 questions Perplexity et 1 Exa, puis une rédaction | ≈ 0,08 € | 0,30 € |
+| Brief de rendez-vous | 3 questions Perplexity et 1 Exa, puis une rédaction | ≈ 0,07 € (mesuré) | 0,30 € |
 
 ### Décideurs et réseaux (D45, D48 ; `features/research/people.ts`)
 - **Qui est cherché** :
   - jusqu'à deux dirigeants du registre (lot 1) qui n'ont pas encore de profil ;
   - à partir de 10 salariés (tranche INSEE 11 et plus), le responsable marketing, communication ou commercial.
   - Une entreprise opposée à la prospection (RNE) n'est cherchée que pour ses comptes sociaux, jamais pour ses personnes.
-- **Les comptes sociaux** : Instagram, Facebook, LinkedIn et TikTok, ceux qui manquent à la fiche.
+- **Les comptes sociaux** : Instagram, Facebook, LinkedIn et TikTok, ceux qui manquent à la fiche :
+  1. d'abord ceux que le site de l'entreprise affiche, lus sur sa page d'accueil si son robots.txt le permet : gratuits et sûrs ;
+  2. puis, pour ceux qui manquent encore, une recherche Perplexity limitée aux quatre réseaux. Exa indexe mal Facebook et Instagram : l'essai réel n'a ramené que des résultats LinkedIn.
 - **Le contrôle** : un modèle rapide compare chaque résultat à l'entreprise et recopie les mots qui le prouvent. Le code ne garde un résultat que si :
   - ces mots sont bien dans le résultat ;
   - pour un dirigeant, son nom de famille y est, en mot entier (« Roche » n'est pas « Rocher ») ;
@@ -122,7 +124,7 @@ Un neuvième agent, l'**Enquêteur** (`researcher`, `features/research/`), fait 
   - les profils sont **proposés** sur la fiche (`ContactCandidate`) ;
   - « Confirmer » complète le contact du même nom, ou crée un contact : rôle, poste, profil, source « Recherche web », base légale, **jamais d'email** ;
   - « Écarter » ne le propose plus.
-- **Les comptes de l'entreprise** : seuls les comptes sûrs (0,8 et plus) entrent dans `data.socials`, avec leur provenance dans `data.socialsFound`. Ce sont des données d'entreprise, pas de personne.
+- **Les comptes de l'entreprise** : les liens du site et les comptes sûrs d'une recherche (0,8 et plus) entrent dans `data.socials`, avec leur provenance dans `data.socialsFound` (« site » ou « Perplexity »). Ce sont des données d'entreprise, pas de personne.
 - **Minimisation** :
   - l'historique d'exécution garde des comptes et des résumés, jamais les noms comparés ;
   - d'un profil, on ne garde que l'adresse, le nom et le poste.
@@ -131,7 +133,7 @@ Un neuvième agent, l'**Enquêteur** (`researcher`, `features/research/`), fait 
   - ou, sur la campagne, pour ses bonnes cibles : un devis d'abord, puis 50 fiches au plus par clic, en exécutions de 10. Les fiches cherchées depuis moins de 30 jours sont sautées.
 
 ### La sonde GEO (D52 ; `features/research/geo.ts`)
-- **Les questions** : trois, écrites par le code à partir du métier et de la ville (« meilleur plombier à Lyon », « plombier Lyon avis », « quel plombier choisir à Lyon »). Elles partent ensemble à la recherche de Perplexity, qui rend les pages sur lesquelles un moteur de réponse s'appuie.
+- **Les questions** : trois, écrites par le code à partir du métier et de la ville (« plombier à Lyon », « plombier Lyon avis », « qui recommander comme plombier à Lyon »), sans adjectif ni article, pour que le genre du métier ne fausse rien (« auto-école »). Chacune est une recherche Perplexity, lancées en parallèle ; Perplexity rend les pages sur lesquelles un moteur de réponse s'appuie.
 - **Le constat**, sans modèle :
   - la fiche est **citée** si son site est parmi ces pages, ou son nom complet en mot entier (s'il est assez distinctif) ;
   - sinon elle est **absente**, et le signal `GEO_ABSENT` est posé, une fois par mois au plus ;
@@ -162,6 +164,17 @@ Un neuvième agent, l'**Enquêteur** (`researcher`, `features/research/`), fait 
   - la veille de chaque rendez-vous : la tâche horaire met en file ceux qui commencent dans 2 à 36 heures, une fois par rendez-vous ;
   - ou à la demande, sur la fiche.
   - Le closer est prévenu quand il est prêt.
+
+### L'essai réel du 4 novembre 2026
+Deux vraies entreprises de Loire-Atlantique, sur une base jetable, pour 0,11 € en tout :
+- **la passerelle** rend bien les résultats des recherches dans sa réponse, et son coût tombe à moins de 0,0002 $ près sur chaque étape estimée ;
+- **le brief** est sourcé et utile : son taux de réussite comparé au marché local, ses concurrents nommés, ses avis contradictoires selon les plateformes, trois angles reliés aux offres. Un fait sans source lue a été retiré ;
+- **la sonde GEO** l'a trouvée citée par son nom dans les annuaires et comparatifs que Perplexity donne ;
+- **quatre défauts, corrigés depuis** :
+  - Haiku réfléchit jusqu'à 2 000 jetons avant de répondre : la comparaison des profils a désormais 6 000 jetons, le brief 6 000, les appels de recherche 1 500 ;
+  - un modèle prié de passer trois questions en liste les a écrites en une seule chaîne : une question passe désormais par appel ;
+  - Exa n'a ramené aucun compte Facebook ou Instagram : ils viennent désormais du site, puis de Perplexity ;
+  - les longues qualités du registre brouillaient la recherche d'un dirigeant : seuls restent son nom, l'entreprise et la ville.
 
 ### Ce que les autres agents en font
 - **Offres (E21) et rédacteur (E22)** : la création récente, la reprise, l'absence des moteurs de réponse et l'actualité du dernier brief s'ajoutent aux preuves de l'audit (identifiants R1, R2…). Trois nouveaux signaux d'offre :

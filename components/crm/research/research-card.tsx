@@ -146,12 +146,16 @@ export function ResearchCard({ leadId, onChanged }: { leadId: string; onChanged?
               {data.socials.map((s) => (
                 <li key={s.network} className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
                   <External href={s.url} label={`${s.label} de l’entreprise`}>{s.label}</External>
-                  {s.found && <span className="ml-1 text-muted-foreground" title={`Trouvé le ${formatDate(s.found.at)}, confiance ${Math.round(s.found.confidence * 100)} %`}>· Enquêteur</span>}
+                  {s.found && (
+                    <span className="ml-1 text-muted-foreground" title={s.found.onSite ? `Lien affiché sur son site, relevé le ${formatDate(s.found.at)}` : `Trouvé par recherche le ${formatDate(s.found.at)}, confiance ${Math.round(s.found.confidence * 100)} %`}>
+                      · {s.found.onSite ? "son site" : "Enquêteur"}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-muted-foreground">Aucun compte connu. La recherche des décideurs cherche aussi Instagram, Facebook, LinkedIn et TikTok.</p>
+            <p className="text-sm text-muted-foreground">Aucun compte connu. La recherche des décideurs relève aussi ceux que le site affiche, puis cherche Instagram, Facebook, LinkedIn et TikTok.</p>
           )}
         </Section>
 

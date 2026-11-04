@@ -1146,7 +1146,7 @@ Quatre sources, chacune pour une question : **quand appeler** (BODACC), **à qui
 >   - `Company.peopleCheckedAt` et `geoCheckedAt` ;
 >   - le signal `GEO_ABSENT` et la source « Recherche web » ;
 > - **agent `researcher`, l'Enquêteur**, trois déroulés codés sur le worker (`features/research/`) :
->   - **décideurs et réseaux** : dirigeants du registre et, à partir de 10 salariés, le responsable marketing ou commercial (Exa) ; comptes Instagram, Facebook, LinkedIn et TikTok. Un modèle rapide compare et cite ; le code ne garde que les citations exactes ;
+>   - **décideurs et réseaux** : dirigeants du registre et, à partir de 10 salariés, le responsable marketing ou commercial (Exa) ; comptes Instagram, Facebook, LinkedIn et TikTok, lus d'abord sur le site, puis cherchés avec Perplexity. Un modèle rapide compare et cite ; le code ne garde que les citations exactes ;
 >   - **sonde GEO** : trois questions « métier + ville » à Perplexity ; le constat (citée ou absente) est fait par le code ; `GEO_ABSENT` une fois par mois ;
 >   - **brief de rendez-vous** : quatre recherches, puis une rédaction (Sonnet) où chaque fait cite sa page ou la fiche ; les faits sans source lue sont retirés ;
 > - **la décision d'une personne** : un profil devient un contact d'un clic (rôle, poste, profil, source, base légale ; jamais d'email) ;
@@ -1163,7 +1163,7 @@ Quatre sources, chacune pour une question : **quand appeler** (BODACC), **à qui
 >
 > **Écarts** :
 > - **pas d'agent libre pour le brief** : les recherches de la passerelle tournent côté serveur, sans plafond par appel. Le code écrit donc les recherches, et leur nombre reste borné ;
-> - **comptage des recherches** : au prix catalogue et à partir de la réponse du modèle, pas encore rapproché du coût réel (`getGenerationInfo`) ;
+> - **comptage des recherches** : au prix catalogue, à partir de la réponse du modèle. L'essai réel du 4 novembre l'a trouvé juste à 0,0002 $ près par étape ; la passerelle, elle, ajoute environ 0,00015 $ par appel, qui n'est pas compté ;
 > - **sondes et briefs automatiques** : ils passent par la tâche horaire des rappels, pas par le worker ;
 > - **copilote** : les profils se confirment sur la fiche, pas par le copilote.
 >

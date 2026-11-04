@@ -88,10 +88,15 @@ suite("the Enquêteur (database)", () => {
       // A search: the Gateway runs it inside the call and gives its results back with the answer.
       const query = text.match(/Requête : \\"([^\\]+)\\"/)?.[1] ?? "requête"
       searches.push(query)
+      const tool = (options.tools ?? [])[0]?.name ?? "exa_search"
+      const result =
+        tool === "perplexity_search"
+          ? { id: "p1", results: [{ title: `Page sur ${query}`, url: `https://pages.example/${encodeURIComponent(query)}`, snippet: "…", last_updated: "2026-10-01" }, { title: "Annuaire", url: "https://annuaire.example/plombiers", snippet: "…" }] }
+          : { requestId: "r1", results: [{ id: "1", title: "Julien Roche - Gérant - Plomberie Roche", url: li("exemple-julien-roche"), highlights: ["Gérant chez Plomberie Roche"] }] }
       return {
         content: [
-          { type: "tool-call", toolCallId: "s1", toolName: "exa_search", input: JSON.stringify({ query }), providerExecuted: true },
-          { type: "tool-result", toolCallId: "s1", toolName: "exa_search", result: { requestId: "r1", results: [{ id: "1", title: "Julien Roche - Gérant - Plomberie Roche", url: li("exemple-julien-roche"), highlights: ["Gérant chez Plomberie Roche"] }] } },
+          { type: "tool-call", toolCallId: "s1", toolName: tool, input: JSON.stringify({ query }), providerExecuted: true },
+          { type: "tool-result", toolCallId: "s1", toolName: tool, result },
           { type: "text", text: "fait" },
         ],
         finishReason: { unified: "stop", raw: undefined },
@@ -105,7 +110,12 @@ suite("the Enquêteur (database)", () => {
     searches.push(`${req.name}:${JSON.stringify(req.query)}`)
     return { sources: (FOUND[req.name] ?? []).map((r) => ({ tool: req.tool, url: r.url, title: r.title, text: `${r.title} … ${r.text}`, date: r.date ?? null })), ran: true, error: null }
   }
-  const deps = () => ({ languageModel: () => model, prices: PRICES, search: frozenSearch, now: () => new Date() })
+  /** The company's site links its Facebook page: the account comes from there, free, before any search. */
+  const frozenSite: import("@/features/prospect-audit/collect").PageFetcher = async (url) => {
+    const body = url.endsWith("/robots.txt") ? null : `<a href="https://www.facebook.com/exemple.plomberie.roche">Facebook</a>`
+    return { url, finalUrl: url, status: body ? 200 : 404, redirects: [], contentType: "text/html", body, bytes: body?.length ?? 0, truncated: false, timeMs: 20 }
+  }
+  const deps = () => ({ languageModel: () => model, prices: PRICES, search: frozenSearch, fetchPage: frozenSite, now: () => new Date() })
 
   const worker = () => new runner.AgentWorker({ id: "w1", version: "test", concurrency: 2, perAgent: {}, pollIdleMs: 50, pollBusyMs: 10, maintenanceMs: 60_000, beatMs: 60_000, heartbeatMs: 40 }, { publish: async () => undefined })
   async function drain() {
@@ -176,7 +186,8 @@ suite("the Enquêteur (database)", () => {
     expect(r.costMicros).toBe(tokens + fee)
     const step = await prisma.agentStep.findFirstOrThrow({ where: { runId: ctx.id } })
     expect(step.costMicros).toBe(tokens + fee)
-    expect(step.output).toMatchObject({ searches: { exa_search: 1 }, sources: [li("exemple-julien-roche")] })
+    // A person's profile is kept without its handle in the run's history.
+    expect(step.output).toMatchObject({ searches: { exa_search: 1 }, sources: ["https://www.linkedin.com/in/…"] })
     const rows = await prisma.aiUsage.findMany({ where: { workspaceId: ws }, orderBy: { model: "asc" } })
     expect(rows.map((x) => [x.model, x.calls, x.costMicros])).toEqual([
       ["anthropic/claude-haiku-5.5", 1, tokens],
@@ -185,15 +196,30 @@ suite("the Enquêteur (database)", () => {
     expect((await prisma.agentRun.findUniqueOrThrow({ where: { id: ctx.id } })).costMicros).toBe(tokens + fee)
   })
 
+  it("asks Perplexity one question per call, at once, and keeps each page once", async () => {
+    const lead = await fiche(u.sdr.id)
+    const ctx = await runs.startRun(u.sdr, { agentId: "researcher", leadId: lead.id, status: "RUNNING", capMicros: 30_000 })
+    const searcher = (await import("@/features/research/search")).gatewaySearcher({ languageModel: () => model, prices: PRICES })
+    const r = await searcher(ctx, { tool: "perplexity_search", make: () => search.perplexityFr(8), query: ["plombier à Villeurbanne", "plombier Villeurbanne avis"], name: "sonde-geo" })
+    expect(searches.sort()).toEqual(["plombier Villeurbanne avis", "plombier à Villeurbanne"])
+    expect(r.ran).toBe(true)
+    // The directory both searches found is kept once; Perplexity's last_updated is the page's date.
+    expect(r.sources.map((s) => s.url).sort()).toEqual(["https://annuaire.example/plombiers", "https://pages.example/plombier%20%C3%A0%20Villeurbanne", "https://pages.example/plombier%20Villeurbanne%20avis"])
+    expect(r.sources.find((s) => s.url.includes("pages.example"))?.date).toBe("2026-10-01")
+    const steps = await prisma.agentStep.findMany({ where: { runId: ctx.id } })
+    expect(steps.map((s) => (s.output as { searches: unknown }).searches)).toEqual([{ perplexity_search: 1 }, { perplexity_search: 1 }])
+    expect((await prisma.aiUsage.findFirstOrThrow({ where: { model: "perplexity/search" } })).calls).toBe(2)
+  })
+
   it("proposes decision makers and files the company's account, without a name in the run's history", async () => {
     const lead = await fiche(u.sdr.id)
     const { runId } = await svc.requestResearch(u.sdr, lead.id, "people")
     await drain()
     const run = await prisma.agentRun.findUniqueOrThrow({ where: { id: runId }, include: { steps: true } })
     expect(run.status).toBe("SUCCEEDED")
-    expect(run.output).toMatchObject({ fiches: 1, searched: 1, people: 2, probable: 1, accounts: 1, skipped: [] })
+    expect(run.output).toMatchObject({ fiches: 1, searched: 1, people: 2, probable: 1, accounts: 2, skipped: [] })
     expect(searches).toEqual([
-      'recherche-personne:"Julien Roche Gérant Plomberie Roche Villeurbanne"',
+      'recherche-personne:"Julien Roche Plomberie Roche Villeurbanne"',
       'recherche-personne:"Responsable marketing, communication ou commercial chez Plomberie Roche Villeurbanne"',
       'recherche-reseaux:"Plomberie Roche Villeurbanne"',
     ])
@@ -205,8 +231,10 @@ suite("the Enquêteur (database)", () => {
     ])
     const c = await prisma.company.findFirstOrThrow({ where: { id: lead.companyId! } })
     expect(c.peopleCheckedAt).not.toBeNull()
-    expect((c.data as { socials: Record<string, string> }).socials).toEqual({ instagram: "https://www.instagram.com/exemple.plomberie.roche" })
-    expect((c.data as { socialsFound: Record<string, { source: string; runId: string }> }).socialsFound.instagram).toMatchObject({ source: "Exa", runId })
+    // Facebook from the company's own site, Instagram from the search.
+    expect((c.data as { socials: Record<string, string> }).socials).toEqual({ facebook: "https://www.facebook.com/exemple.plomberie.roche", instagram: "https://www.instagram.com/exemple.plomberie.roche" })
+    expect((c.data as { socialsFound: Record<string, { source: string; runId: string }> }).socialsFound).toMatchObject({ facebook: { source: "site", confidence: 1, runId }, instagram: { source: "Perplexity", runId } })
+    expect((await svc.researchView(u.sdr, lead.id)).socials.map((s) => [s.network, s.found?.onSite])).toEqual([["facebook", true], ["instagram", false]])
     // The run's history keeps counts and summaries, never the names it compared.
     expect(JSON.stringify(run.steps.map((s) => [s.input, s.output]))).not.toMatch(/Julien|Moreau/)
     expect(run.steps.find((s) => s.name === "concordance")?.input).toEqual({ private: "Comparaison des profils trouvés avec l'entreprise" })
@@ -252,7 +280,7 @@ suite("the Enquêteur (database)", () => {
     await expect(svc.requestResearch(u.sdr, (await fiche(u.sdr.id, { sector: null })).id, "geo")).rejects.toMatchObject({ status: 400 })
     await svc.requestResearch(u.sdr, lead.id, "geo")
     await drain()
-    expect(searches).toEqual(['sonde-geo:["meilleur plombier à Villeurbanne","plombier Villeurbanne avis","quel plombier choisir à Villeurbanne"]'])
+    expect(searches).toEqual(['sonde-geo:["plombier à Villeurbanne","plombier Villeurbanne avis","qui recommander comme plombier à Villeurbanne"]'])
     const c = await prisma.company.findFirstOrThrow({ where: { id: lead.companyId! } })
     expect((c.data as { geo: { present: boolean; cited: { host: string }[] } }).geo).toMatchObject({ present: false, sources: 2 })
     expect((c.data as { geo: { cited: { host: string }[] } }).geo.cited.map((x) => x.host)).toEqual(["annuaire.example", "concurrent.example"])

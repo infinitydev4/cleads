@@ -46,7 +46,7 @@ export interface CandidateView {
 export interface ResearchView {
   candidates: CandidateView[]
   /** The company's accounts: those of the Extractor, and those the Enquêteur found, with their provenance. */
-  socials: { network: string; label: string; url: string; found: { at: string; confidence: number } | null }[]
+  socials: { network: string; label: string; url: string; found: { at: string; confidence: number; onSite: boolean } | null }[]
   peopleCheckedAt: string | null
   geo: GeoFinding | null
   brief: { id: string; createdAt: string; meeting: BriefContent["meeting"]; content: BriefContent; sources: BriefSource[]; dropped: number; costEur: number } | null
@@ -89,7 +89,7 @@ export async function researchView(actor: CurrentUser, leadId: string): Promise<
   const socials = Object.entries(isObj(data.socials) ? data.socials : {}).flatMap(([network, url]) => {
     if (typeof url !== "string" || !/^https?:\/\//.test(url)) return []
     const f = isObj(found[network]) ? (found[network] as Record<string, unknown>) : null
-    return [{ network, label: NETWORK_LABELS[network] ?? network, url, found: f && f.url === url ? { at: String(f.foundAt), confidence: Number(f.confidence) } : null }]
+    return [{ network, label: NETWORK_LABELS[network] ?? network, url, found: f && f.url === url ? { at: String(f.foundAt), confidence: Number(f.confidence), onSite: f.source === "site" } : null }]
   })
   const content = brief ? briefContentSchema.safeParse(brief.content) : null
   const sources = brief ? briefSourceSchema.array().safeParse(brief.sources) : null

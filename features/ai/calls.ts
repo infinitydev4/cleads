@@ -6,7 +6,7 @@ import { DEFAULT_THRESHOLDS, confidenceOf, decisionFallbacks, outcomeOf, validTh
 import { aiConfigured, gatewayOptions } from "@/lib/ai/gateway"
 import { ROLES, modelLabel, resolveRole, type AiRole, type RoleModels } from "@/lib/ai/models"
 import { countSearches, estimateTokens, isSearchTool, maxOutputTokensWithin, priceTable, tokenUsage, worstPrice, worstSearchMicros, type ModelPrice, type SearchCounts, type SearchTool, type TokenUsage } from "@/lib/ai/pricing"
-import { searchErrors, sourcesOf, type WebSource } from "@/lib/ai/search"
+import { searchErrors, sourcesOf, urlForLog, type WebSource } from "@/lib/ai/search"
 import { finishRun, recordModelStep, remainingMicros, type RunContext } from "./runs"
 
 /**
@@ -192,7 +192,7 @@ export async function generateForRun<T = never>(
       output: opts.private
         ? { private: true, sources: sources.length, ...(failedSearches.length ? { searchErrors: failedSearches } : {}) }
         : opts.search
-          ? { text: output ?? result.text, sources: sources.map((s) => s.url), ...(failedSearches.length ? { searchErrors: failedSearches } : {}) }
+          ? { text: output ?? result.text, sources: sources.map((s) => urlForLog(s.url)), ...(failedSearches.length ? { searchErrors: failedSearches } : {}) }
           : (output ?? result.text),
       generationId: generationIdOf(result.providerMetadata),
       prices,

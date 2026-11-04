@@ -3,19 +3,23 @@ import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { normalizeName } from "@/lib/crm/normalize"
 import { UNTRUSTED_RULE } from "@/lib/ai/untrusted"
-import { exaPeople, exaSocials, flat, quotes, type WebSource } from "@/lib/ai/search"
+import { exaPeople, flat, perplexitySocials, quotes, type WebSource } from "@/lib/ai/search"
 import { generateForRun } from "@/features/ai/calls"
 import { recordStep, remainingMicros, type RunContext } from "@/features/ai/runs"
 import { identityOf } from "@/features/enrichment/identity"
-import { networkOf } from "@/features/prospect-audit/html"
+import type { PageFetcher } from "@/features/prospect-audit/collect"
+import { isSocialProfile, networkOf, parsePage } from "@/features/prospect-audit/html"
+import { BOT_TOKEN, hostOf, safeFetch, siteUrl } from "@/features/prospect-audit/net"
+import { EMPTY_ROBOTS, isAllowed, parseRobots } from "@/features/prospect-audit/robots"
 import { legallyBlocked } from "@/features/signals/kinds"
 import { gatewaySearcher, numbered, type ResearchDeps, type WebSearcher } from "./search"
 
 /**
  * Decision makers and social profiles (E30 lot 2, D45, D48). For a fiche, Exa looks for the officers the registry lists
- * and, in a company of ten people or more, its marketing, communication or sales lead; then for the company's own
- * accounts on Instagram, Facebook, LinkedIn and TikTok. A fast model compares each result with the company and copies
- * the words that tie them; the code keeps a result only when those words are really in it.
+ * and, in a company of ten people or more, its marketing, communication or sales lead. The company's own accounts on
+ * Instagram, Facebook, LinkedIn and TikTok come first from the links of its own site, then from Perplexity for those
+ * still missing. A fast model compares each result with the company and copies the words that tie them; the code keeps
+ * a result only when those words are really in it.
  *
  * People are proposed on the fiche until someone confirms them (features/research/service.ts); the company's accounts
  * go into data.socials with their provenance. Of a profile, only its address, the name and the title are kept, and
@@ -25,8 +29,10 @@ import { gatewaySearcher, numbered, type ResearchDeps, type WebSearcher } from "
 export const PEOPLE_REFRESH_DAYS = 30
 /** Fiches of one run: a campaign's search is split into runs of ten, each with its own cap. */
 export const PEOPLE_BATCH = 10
-/** What one fiche may cost: three Exa searches, four short calls of the fast model, with room to spare (≈ 0,03 €). */
+/** What one fiche may cost: three Exa searches and one Perplexity search, five short calls of the fast model (≈ 0,03 € at most). */
 export const PEOPLE_FICHE_CAP_MICROS = 40_000
+/** The comparison: Haiku reasoned up to 2 000 tokens before answering on the real dry run, and was cut there at first. */
+export const JUDGE_OUTPUT_TOKENS = 6_000
 export const PROBABLE_AT = 0.8
 export const CHECK_AT = 0.5
 
@@ -63,7 +69,8 @@ export function peopleTargets(c: CompanyFacts): PeopleTarget[] {
   const targets: PeopleTarget[] = (identity?.officers ?? [])
     .filter((o) => !linked.has(normalizeName(o.name)))
     .slice(0, 2)
-    .map((o) => ({ role: "EXECUTIVE", name: o.name, title: o.role, query: `${o.name} ${o.role ?? "dirigeant"} ${c.name}${where}` }))
+    // The registry's long titles (« personne ayant le pouvoir d'engager… ») only blur the query: name, company, city.
+    .map((o) => ({ role: "EXECUTIVE", name: o.name, title: o.role, query: `${o.name} ${c.name}${where}` }))
   if (c.headcountBand && TEN_OR_MORE.has(c.headcountBand)) targets.push({ role: "DECISION_MAKER", name: null, title: null, query: `Responsable marketing, communication ou commercial chez ${c.name}${where}` })
   return targets
 }
@@ -103,6 +110,9 @@ export function companyProfile(url: string): { network: WantedNetwork; url: stri
     const id = u.searchParams.get("id")
     return id && /^\d+$/.test(id) ? { network, url: `https://www.facebook.com/profile.php?id=${id}` } : null
   }
+  // Facebook's newer page addresses (/p/Name-1000…/) and its old ones (/pages/Name/123…).
+  if (network === "facebook" && first === "p") return parts.length === 2 ? { network, url: `https://www.facebook.com/p/${parts[1]}` } : null
+  if (network === "facebook" && first === "pages") return parts.length === 3 && /^\d+$/.test(parts[2]) ? { network, url: `https://www.facebook.com/pages/${parts[1]}/${parts[2]}` } : null
   return parts.length === 1 ? { network, url: `https://www.${network}.com/${parts[0]}` } : null
 }
 
@@ -166,6 +176,37 @@ export interface KeptAccount {
   url: string
   confidence: number
   evidence: string
+  /** Where it was found: linked from the company's own site, or by a search. */
+  source: "site" | "Perplexity"
+}
+
+/**
+ * The accounts the company's own site links to, from its home page, where its robots.txt lets us in (as the audit
+ * does): free, and certain, since the company shows them itself. Any failure gives none.
+ */
+export async function siteAccounts(website: string | null, fetchPage: PageFetcher = safeFetch): Promise<KeptAccount[]> {
+  const home = siteUrl(website)
+  if (!home || isSocialProfile(home)) return []
+  try {
+    let robots = EMPTY_ROBOTS
+    try {
+      const r = await fetchPage(`${new URL(home).origin}/robots.txt`)
+      if (r.status >= 200 && r.status < 300 && r.body && !/html/i.test(r.contentType ?? "")) robots = parseRobots(r.body)
+    } catch {
+      // No robots.txt: the home page may be read (RFC 9309).
+    }
+    if (!isAllowed(robots, BOT_TOKEN, new URL(home).pathname || "/")) return []
+    const page = await fetchPage(home)
+    if (page.status < 200 || page.status >= 300 || !page.body) return []
+    const found = new Map<WantedNetwork, KeptAccount>()
+    for (const link of parsePage(page.body, page.finalUrl).links) {
+      const p = companyProfile(link.href)
+      if (p && !found.has(p.network)) found.set(p.network, { ...p, confidence: 1, evidence: `Lien affiché sur ${hostOf(page.finalUrl) ?? "son site"}`, source: "site" })
+    }
+    return [...found.values()]
+  } catch {
+    return []
+  }
 }
 
 const words = (text: string) => flat(text).split(" ").filter((w) => w.length > 1)
@@ -205,7 +246,7 @@ export function keepJudgment(j: Judgment, c: { name: string }, targets: readonly
     const confidence = Math.min(Math.max(a.confidence, 0), 1)
     if (!source || !profile || !wanted.includes(profile.network) || a.match !== "yes" || confidence < PROBABLE_AT || !quotes(source, a.evidence)) continue
     const before = best.get(profile.network)
-    if (!before || before.confidence < confidence) best.set(profile.network, { network: profile.network, url: profile.url, confidence, evidence: a.evidence.trim().slice(0, 300) })
+    if (!before || before.confidence < confidence) best.set(profile.network, { network: profile.network, url: profile.url, confidence, evidence: a.evidence.trim().slice(0, 300), source: "Perplexity" })
   }
   return { people: [...kept.values()], accounts: [...best.values()] }
 }
@@ -231,6 +272,7 @@ async function loadFiche(ctx: RunContext, leadId: string) {
           city: true,
           postalCode: true,
           domain: true,
+          website: true,
           sector: true,
           headcountBand: true,
           legalState: true,
@@ -261,7 +303,7 @@ async function save(ctx: RunContext, company: NonNullable<NonNullable<Awaited<Re
     const found = isObj(data.socialsFound) ? { ...data.socialsFound } : {}
     for (const a of kept.accounts) {
       socials[a.network] = a.url
-      found[a.network] = { url: a.url, source: "Exa", foundAt: now.toISOString(), confidence: a.confidence, evidence: a.evidence, runId: ctx.id }
+      found[a.network] = { url: a.url, source: a.source, foundAt: now.toISOString(), confidence: a.confidence, evidence: a.evidence, runId: ctx.id }
     }
     data.socials = socials
     data.socialsFound = found
@@ -299,7 +341,9 @@ export async function runPeople(ctx: RunContext, leadIds: readonly string[], opt
       break
     }
     const targets = peopleTargets(c)
-    const wanted = missingNetworks(c.data)
+    const missing = missingNetworks(c.data)
+    const linked = missing.length ? (await siteAccounts(c.website ?? c.domain, deps.fetchPage)).filter((a) => missing.includes(a.network)) : []
+    const wanted = missing.filter((n) => !linked.some((a) => a.network === n))
     const people: WebSource[] = []
     for (const t of targets) {
       const found = await search(ctx, { tool: "exa_search", make: exaPeople, query: t.query, name: "recherche-personne", private: t.role === "EXECUTIVE" ? "Recherche du profil d'un dirigeant" : "Recherche du responsable marketing ou commercial" }, opts.signal)
@@ -307,7 +351,7 @@ export async function runPeople(ctx: RunContext, leadIds: readonly string[], opt
     }
     let accounts: WebSource[] = []
     if (wanted.length) {
-      const found = await search(ctx, { tool: "exa_search", make: exaSocials, query: [c.name, c.city].filter(Boolean).join(" "), name: "recherche-reseaux" }, opts.signal)
+      const found = await search(ctx, { tool: "perplexity_search", make: perplexitySocials, query: [c.name, c.city].filter(Boolean).join(" "), name: "recherche-reseaux" }, opts.signal)
       accounts = found.sources.filter((s) => {
         const p = companyProfile(s.url)
         return p && wanted.includes(p.network)
@@ -318,11 +362,12 @@ export async function runPeople(ctx: RunContext, leadIds: readonly string[], opt
     if (people.length || accounts.length) {
       const judged = await generateForRun(
         ctx,
-        { role: "fast", name: "concordance", system: JUDGE_SYSTEM, prompt: judgePrompt(c, targets, people.slice(0, 12), accounts.slice(0, 10)), schema: judgeSchema, maxOutputTokens: 2_000, abortSignal: opts.signal, private: "Comparaison des profils trouvés avec l'entreprise" },
+        { role: "fast", name: "concordance", system: JUDGE_SYSTEM, prompt: judgePrompt(c, targets, people.slice(0, 12), accounts.slice(0, 10)), schema: judgeSchema, maxOutputTokens: JUDGE_OUTPUT_TOKENS, abortSignal: opts.signal, private: "Comparaison des profils trouvés avec l'entreprise" },
         deps
       )
       kept = keepJudgment(judged.output ?? { people: [], accounts: [] }, c, targets, people.slice(0, 12), accounts.slice(0, 10), wanted)
     }
+    kept.accounts = [...linked, ...kept.accounts]
     const fresh = await save(ctx, c, kept, now)
     report.people += fresh.length
     report.probable += fresh.filter((p) => p.status === "PROBABLE").length
@@ -330,9 +375,9 @@ export async function runPeople(ctx: RunContext, leadIds: readonly string[], opt
     await recordStep(ctx, {
       type: "TOOL",
       name: "decideurs-reseaux",
-      input: { leadId, targets: targets.map((t) => t.role), networks: wanted },
+      input: { leadId, targets: targets.map((t) => t.role), networks: missing },
       // Counts only: the names stay on the fiche, with their source.
-      output: { profiles: people.length, accounts: accounts.length, kept: fresh.length, probable: fresh.filter((p) => p.status === "PROBABLE").length, networks: kept.accounts.map((a) => a.network) },
+      output: { profiles: people.length, fromSite: linked.map((a) => a.network), accounts: accounts.length, kept: fresh.length, probable: fresh.filter((p) => p.status === "PROBABLE").length, networks: kept.accounts.map((a) => a.network) },
     })
   }
   return report

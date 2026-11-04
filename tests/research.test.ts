@@ -2,13 +2,14 @@
 import { describe, expect, it } from "vitest"
 import { RESEARCH_CASES } from "@/evals/research"
 import { SEARCH_PRICES, countSearches, isSearchTool, searchMicros, worstSearchMicros } from "@/lib/ai/pricing"
-import { flat, quotes, sourcesOf, urlKey, type WebSource } from "@/lib/ai/search"
+import { flat, quotes, sourcesOf, urlForLog, urlKey, type WebSource } from "@/lib/ai/search"
 import { MODEL_LABELS } from "@/lib/ai/models"
 import { OFFER_SIGNALS, isOfferSignal } from "@/features/offers/signals"
 import { OFFERS_V1 } from "@/features/offers/catalog-v1"
 import { AGENTS } from "@/features/ai/agents"
 import { CONTROL_ROOM, postOf } from "@/features/hq/agency"
-import { companyProfile, keepJudgment, missingNetworks, peopleTargets, personProfile, type Judgment, type PeopleTarget } from "@/features/research/people"
+import { companyProfile, keepJudgment, missingNetworks, peopleTargets, personProfile, siteAccounts, type Judgment, type PeopleTarget } from "@/features/research/people"
+import type { FetchResult } from "@/features/prospect-audit/net"
 import { geoFinding, geoQuestions, geoSummary, tradeOf } from "@/features/research/geo"
 import { briefQueries, settleBrief } from "@/features/research/brief"
 import { briefOutputSchema, type BriefOutput } from "@/features/research/brief-schemas"
@@ -47,13 +48,15 @@ describe("web searches: price and count (E30 lot 2)", () => {
 describe("sources of a search", () => {
   it("reads Exa and Perplexity results, skips errors and keeps each page once", () => {
     const content = [
-      { type: "tool-result", toolName: "exa_search", output: { requestId: "r", results: [{ title: "Julien Roche - Gérant", url: "https://www.linkedin.com/in/exemple-julien/", id: "1", highlights: ["Gérant chez Plomberie Roche"], publishedDate: "2026-10-01" }, { title: "sans lien", url: "javascript:alert(1)", id: "2" }] } },
-      { type: "tool-result", toolName: "perplexity_search", output: { id: "p", results: [{ title: "Plombiers à Lyon", url: "https://annuaire.example/plombiers-lyon", snippet: "Les 10 meilleurs plombiers", date: "2026-09-12" }, { title: "Doublon", url: "http://www.linkedin.com/in/exemple-julien", snippet: "x" }] } },
+      { type: "tool-result", toolName: "exa_search", output: { requestId: "r", results: [{ title: "Julien Roche - Gérant", url: "https://www.linkedin.com/in/exemple-julien/", id: "1", highlights: ["Gérant chez Plomberie Roche"], publishedDate: "2026-10-01T06:01:16.000Z" }, { title: "sans lien", url: "javascript:alert(1)", id: "2" }] } },
+      // Perplexity names its date last_updated (real dry run of 2026-11-04).
+      { type: "tool-result", toolName: "perplexity_search", output: { id: "p", results: [{ title: "Plombiers à Lyon", url: "https://annuaire.example/plombiers-lyon", snippet: "Les 10 meilleurs plombiers", last_updated: "2026-09-12" }, { title: "Doublon", url: "http://www.linkedin.com/in/exemple-julien", snippet: "x" }] } },
       { type: "tool-result", toolName: "exa_search", output: { error: "rate_limit", message: "Too many requests" } },
       { type: "tool-result", toolName: "get_lead", output: { results: [{ url: "https://crm.example" }] } },
     ]
     const sources = sourcesOf(content)
     expect(sources.map((s) => s.url)).toEqual(["https://www.linkedin.com/in/exemple-julien/", "https://annuaire.example/plombiers-lyon"])
+    // An ISO instant is kept to its day.
     expect(sources[0]).toMatchObject({ tool: "exa_search", date: "2026-10-01" })
     expect(sources[0].text).toContain("Gérant chez Plomberie Roche")
     expect(sources[1]).toMatchObject({ tool: "perplexity_search", date: "2026-09-12" })
@@ -66,6 +69,10 @@ describe("sources of a search", () => {
     expect(quotes(s, "gérante du Cabinet Durand")).toBe(false)
     expect(flat("Rénovation, Énergie !")).toBe("renovation energie")
     expect(urlKey("https://www.Exemple.example/Page/?utm=1#x")).toBe(urlKey("http://exemple.example/Page"))
+    // The run's history keeps no person's profile address.
+    expect(urlForLog("https://fr.linkedin.com/in/exemple-julien-roche")).toBe("https://www.linkedin.com/in/…")
+    expect(urlForLog("https://www.linkedin.com/company/roche")).toBe("https://www.linkedin.com/company/roche")
+    expect(urlForLog("https://annuaire.example/plombiers")).toBe("https://annuaire.example/plombiers")
   })
 })
 
@@ -82,6 +89,8 @@ describe("decision makers and accounts", () => {
     expect(peopleTargets(company()).map((t) => t.name)).toEqual(["Julien Roche", "Anne Roche"])
     expect(peopleTargets(company({ headcountBand: "11" })).map((t) => t.role)).toEqual(["EXECUTIVE", "EXECUTIVE", "DECISION_MAKER"])
     expect(peopleTargets(company({ headcountBand: "11" }))[2].query).toContain("Plomberie Roche Villeurbanne")
+    // The registry's long titles stay out of the query: name, company, city.
+    expect(peopleTargets(company({ officers: [{ name: "Julien Roche", role: "Personne ayant le pouvoir d'engager à titre habituel la société" }] }))[0].query).toBe("Julien Roche Plomberie Roche Villeurbanne")
     // A company that objected to commercial use of its registry data: nobody is searched for.
     expect(peopleTargets(company({ opposition: true }))).toEqual([])
     // An officer already tied to a profile is not searched again.
@@ -103,11 +112,28 @@ describe("decision makers and accounts", () => {
     expect(companyProfile("https://www.instagram.com/explore/tags/lyon/")).toBeNull()
     expect(companyProfile("https://m.facebook.com/profile.php?id=1000123")).toEqual({ network: "facebook", url: "https://www.facebook.com/profile.php?id=1000123" })
     expect(companyProfile("https://www.facebook.com/groups/lyon")).toBeNull()
+    expect(companyProfile("https://fr-fr.facebook.com/p/Plomberie-Roche-100063511/?locale=fr_FR")).toEqual({ network: "facebook", url: "https://www.facebook.com/p/Plomberie-Roche-100063511" })
+    expect(companyProfile("https://www.facebook.com/pages/Plomberie-Roche/123456789")).toEqual({ network: "facebook", url: "https://www.facebook.com/pages/Plomberie-Roche/123456789" })
+    expect(companyProfile("https://www.facebook.com/roche/posts/123")).toBeNull()
     expect(companyProfile("https://www.linkedin.com/company/roche/about/")).toEqual({ network: "linkedin", url: "https://www.linkedin.com/company/roche" })
     expect(companyProfile("https://www.linkedin.com/in/julien")).toBeNull()
     expect(companyProfile("https://www.tiktok.com/@roche")).toEqual({ network: "tiktok", url: "https://www.tiktok.com/@roche" })
     expect(companyProfile("https://www.tiktok.com/@roche/video/123")).toBeNull()
     expect(companyProfile("https://www.youtube.com/@roche")).toBeNull()
+  })
+
+  it("takes the accounts the company's own site links to, where robots.txt lets it read", async () => {
+    const page = (url: string, status: number, body: string | null, contentType = "text/html"): FetchResult => ({ url, finalUrl: url, status, redirects: [], contentType, body, bytes: body?.length ?? 0, truncated: false, timeMs: 50 })
+    const home = `<html><body><a href="https://www.facebook.com/plomberie.roche">Facebook</a><a href="https://www.instagram.com/p/XYZ/">Un chantier</a><a href="https://www.instagram.com/plomberie.roche/">Instagram</a><a href="https://www.facebook.com/sharer/sharer.php?u=x">Partager</a><a href="/contact">Contact</a></body></html>`
+    const site = (robots: string | null) => async (url: string) => (url.endsWith("/robots.txt") ? (robots ? page(url, 200, robots, "text/plain") : page(url, 404, null)) : page(url, 200, home))
+    expect(await siteAccounts("plomberie-roche.example", site(null))).toEqual([
+      { network: "facebook", url: "https://www.facebook.com/plomberie.roche", confidence: 1, evidence: "Lien affiché sur plomberie-roche.example", source: "site" },
+      { network: "instagram", url: "https://www.instagram.com/plomberie.roche", confidence: 1, evidence: "Lien affiché sur plomberie-roche.example", source: "site" },
+    ])
+    expect(await siteAccounts("plomberie-roche.example", site("User-agent: *\nDisallow: /"))).toEqual([])
+    expect(await siteAccounts("https://www.facebook.com/plomberie.roche", site(null))).toEqual([])
+    expect(await siteAccounts(null, site(null))).toEqual([])
+    expect(await siteAccounts("plomberie-roche.example", async () => { throw new Error("dns") })).toEqual([])
   })
 
   it("keeps a profile only on a real quote, the right surname and enough confidence", () => {
@@ -178,7 +204,7 @@ describe("decision makers and accounts", () => {
       accounts,
       ["instagram", "facebook"]
     )
-    expect(kept.accounts).toEqual([expect.objectContaining({ network: "instagram", url: "https://www.instagram.com/roche.b" })])
+    expect(kept.accounts).toEqual([expect.objectContaining({ network: "instagram", url: "https://www.instagram.com/roche.b", source: "Perplexity" })])
   })
 })
 
@@ -231,10 +257,12 @@ describe("GEO probe", () => {
     expect(tradeOf("Plombier, chauffagiste")).toBe("plombier")
     expect(tradeOf("  Restaurant italien (Pizzeria) ")).toBe("restaurant italien")
     expect(tradeOf("")).toBeNull()
-    expect(base.questions).toEqual(["meilleur plombier à Lyon", "plombier Lyon avis", "quel plombier choisir à Lyon"])
-    expect(geoQuestions("couvreur", "Le Havre")[0]).toBe("meilleur couvreur au Havre")
-    expect(geoQuestions("couvreur", "Les Mureaux")[2]).toBe("quel couvreur choisir aux Mureaux")
-    expect(geoQuestions("couvreur", "La Rochelle")[0]).toBe("meilleur couvreur à La Rochelle")
+    expect(base.questions).toEqual(["plombier à Lyon", "plombier Lyon avis", "qui recommander comme plombier à Lyon"])
+    // No adjective nor article: a feminine trade reads as well as a masculine one.
+    expect(geoQuestions("auto-école", "Saint-Herblain")).toEqual(["auto-école à Saint-Herblain", "auto-école Saint-Herblain avis", "qui recommander comme auto-école à Saint-Herblain"])
+    expect(geoQuestions("couvreur", "Le Havre")[0]).toBe("couvreur au Havre")
+    expect(geoQuestions("couvreur", "Les Mureaux")[2]).toBe("qui recommander comme couvreur aux Mureaux")
+    expect(geoQuestions("couvreur", "La Rochelle")[0]).toBe("couvreur à La Rochelle")
   })
 
   it("finds the prospect by its site, or by a distinctive full name, and lists who is cited", () => {
@@ -253,7 +281,7 @@ describe("GEO probe", () => {
     expect(geoFinding([src("https://x.example", "Plomberie Rocher, Lyon")], { name: "Plomberie Roche", domain: null }, base).present).toBe(false)
     const absent = geoFinding(sources.slice(1, 2), { name: "Plomberie Roche", domain: "plomberie-roche.example" }, base)
     expect(absent.present).toBe(false)
-    expect(geoSummary(absent)).toBe("Absente des 1 sources que Perplexity donne pour « meilleur plombier à Lyon » et 2 autres questions ; y figurent notamment concurrent.example.")
+    expect(geoSummary(absent)).toBe("Absente des 1 sources que Perplexity donne pour « plombier à Lyon » et 2 autres questions ; y figurent notamment concurrent.example.")
   })
 })
 

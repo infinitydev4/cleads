@@ -9,7 +9,7 @@ import { gatewaySearcher, type ResearchDeps } from "./search"
 
 /**
  * The GEO probe (E30 lot 2, D52, which lifts D23's « no external probe » for qualified fiches). Three questions written
- * by the code — « meilleur plombier à Lyon »… — go to Perplexity's search, which returns the pages an answer engine
+ * by the code — « plombier à Lyon », « plombier Lyon avis », « qui recommander comme plombier à Lyon » — go to Perplexity's search, which returns the pages an answer engine
  * draws on; the code then looks for the prospect among them, by its domain first, then by its full name. No model
  * judges: the finding is a dated fact with its sources. Absent, the company gets the signal GEO_ABSENT, which the offers
  * and the writer read as evidence. Once a month per company at most, for the good targets, or on demand.
@@ -53,7 +53,8 @@ export function tradeOf(sector: string | null | undefined): string | null {
 /** « à Lyon », « au Havre », « aux Mureaux ». */
 const inCity = (city: string) => city.replace(/^le\s+(.+)$/i, "au $1").replace(/^les\s+(.+)$/i, "aux $1").replace(/^(?!au |aux )(.+)$/, "à $1")
 
-export const geoQuestions = (trade: string, city: string) => [`meilleur ${trade} ${inCity(city)}`, `${trade} ${city} avis`, `quel ${trade} choisir ${inCity(city)}`]
+/** Worded without an adjective or an article, so the trade's gender never matters (« auto-école » as « plombier »). */
+export const geoQuestions = (trade: string, city: string) => [`${trade} ${inCity(city)}`, `${trade} ${city} avis`, `qui recommander comme ${trade} ${inCity(city)}`]
 
 const hostOf = (url: string) => urlKey(url).split("/")[0]
 

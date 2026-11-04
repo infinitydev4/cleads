@@ -1,9 +1,10 @@
 import type { Tool } from "ai"
 import { UNTRUSTED_RULE, untrusted } from "@/lib/ai/untrusted"
 import type { SearchTool } from "@/lib/ai/pricing"
-import type { WebSource } from "@/lib/ai/search"
+import { urlKey, type WebSource } from "@/lib/ai/search"
 import { generateForRun, type ModelDeps } from "@/features/ai/calls"
 import type { RunContext } from "@/features/ai/runs"
+import type { PageFetcher } from "@/features/prospect-audit/collect"
 
 /**
  * One web search for a coded job of the Enquêteur (E30 lot 2): a short call of the fast model that only runs the search
@@ -34,25 +35,32 @@ export type WebSearcher = (ctx: RunContext, req: SearchRequest, signal?: AbortSi
 export interface ResearchDeps extends ModelDeps {
   /** Tests and evaluations: frozen results instead of the Gateway's searches. */
   search?: WebSearcher
+  /** Tests: a frozen site instead of the network (the company's own links to its accounts). */
+  fetchPage?: PageFetcher
   now?: () => Date
 }
 
 const SEARCH_SYSTEM = `Tu lances une recherche web pour un CRM. Appelle l'outil de recherche une seule fois, avec exactement la requête donnée et sans autre paramètre, puis réponds seulement « fait ». Ne commente pas les résultats.
 ${UNTRUSTED_RULE}`
 
-/** The Gateway's search, run by the fast model. */
+/** Room for the search call: the fast model may reason a few hundred tokens before calling the tool (real dry run). */
+export const SEARCH_OUTPUT_TOKENS = 1_500
+
+/**
+ * The Gateway's search, run by the fast model. Several queries are several calls, at once: a model asked to pass a list
+ * wrote it as one string (real dry run of 2026-11-04), which made one search of three questions.
+ */
 export function gatewaySearcher(deps: ModelDeps = {}): WebSearcher {
-  return async (ctx, req, signal) => {
-    const queries = Array.isArray(req.query) ? req.query : [req.query]
+  const one = async (ctx: RunContext, req: SearchRequest, query: string, signal?: AbortSignal): Promise<SearchOutcome> => {
     const result = await generateForRun(
       ctx,
       {
         role: "fast",
         name: req.name,
         system: SEARCH_SYSTEM,
-        prompt: queries.length > 1 ? `Requêtes, à passer ensemble dans le champ « query », sous forme de liste :\n${JSON.stringify(queries)}` : `Requête : ${JSON.stringify(queries[0])}`,
-        maxOutputTokens: 400,
-        search: { tools: { [req.tool]: req.make() }, max: queries.length },
+        prompt: `Requête : ${JSON.stringify(query)}`,
+        maxOutputTokens: SEARCH_OUTPUT_TOKENS,
+        search: { tools: { [req.tool]: req.make() }, max: 1 },
         abortSignal: signal,
         private: req.private,
       },
@@ -60,6 +68,12 @@ export function gatewaySearcher(deps: ModelDeps = {}): WebSearcher {
     )
     const ran = (result.searches[req.tool] ?? 0) > 0
     return { sources: result.sources, ran, error: result.searchErrors[0] ?? (ran ? null : "la recherche n'a pas été lancée") }
+  }
+  return async (ctx, req, signal) => {
+    const outcomes = await Promise.all((Array.isArray(req.query) ? req.query : [req.query]).map((q) => one(ctx, req, q, signal)))
+    const seen = new Set<string>()
+    const sources = outcomes.flatMap((o) => o.sources).filter((s) => !seen.has(urlKey(s.url)) && !!seen.add(urlKey(s.url)))
+    return { sources, ran: outcomes.some((o) => o.ran), error: sources.length ? null : (outcomes.find((o) => o.error)?.error ?? null) }
   }
 }
 
