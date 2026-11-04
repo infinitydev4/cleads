@@ -146,12 +146,12 @@ describe("decision makers and accounts", () => {
     ]
     const j: Judgment = {
       people: [
-        { result: 1, target: 1, name: "Julien Roche", title: "Gérant", match: "yes", confidence: 0.93, evidence: "Gérant chez Plomberie Roche, Villeurbanne" },
+        { result: 1, url: null, target: 1, name: "Julien Roche", title: "Gérant", match: "yes", confidence: 0.93, evidence: "Gérant chez Plomberie Roche, Villeurbanne" },
         // Surname absent from the result: whatever the model says, not him.
-        { result: 2, target: 1, name: "Julien Rocher", title: "Gérant", match: "yes", confidence: 0.9, evidence: "Gérant chez Rocher Toitures" },
-        { result: 3, target: 2, name: "Claire Moreau", title: "Responsable marketing", match: "yes", confidence: 0.88, evidence: "Responsable marketing chez Plomberie Roche" },
+        { result: 2, url: null, target: 1, name: "Julien Rocher", title: "Gérant", match: "yes", confidence: 0.9, evidence: "Gérant chez Rocher Toitures" },
+        { result: 3, url: null, target: 2, name: "Claire Moreau", title: "Responsable marketing", match: "yes", confidence: 0.88, evidence: "Responsable marketing chez Plomberie Roche" },
         // A sales lead of another company: the name of ours is not in the result, so at best to check.
-        { result: 4, target: 2, name: "Kévin Blanc", title: "Responsable commercial", match: "yes", confidence: 0.85, evidence: "Responsable commercial chez Habitat Services" },
+        { result: 4, url: null, target: 2, name: "Kévin Blanc", title: "Responsable commercial", match: "yes", confidence: 0.85, evidence: "Responsable commercial chez Habitat Services" },
       ],
       accounts: [],
     }
@@ -165,9 +165,9 @@ describe("decision makers and accounts", () => {
     const shaky = keepJudgment(
       {
         people: [
-          { result: 1, target: 1, name: "Julien Roche", title: null, match: "yes", confidence: 0.95, evidence: "Gérant fondateur de Plomberie Roche depuis 1990" },
-          { result: 1, target: 1, name: "Julien Roche", title: null, match: "unsure", confidence: 0.9, evidence: "Julien Roche. Gérant chez Plomberie Roche" },
-          { result: 9, target: 1, name: "Personne", title: null, match: "yes", confidence: 0.99, evidence: "Julien Roche. Gérant" },
+          { result: 1, url: null, target: 1, name: "Julien Roche", title: null, match: "yes", confidence: 0.95, evidence: "Gérant fondateur de Plomberie Roche depuis 1990" },
+          { result: 1, url: null, target: 1, name: "Julien Roche", title: null, match: "unsure", confidence: 0.9, evidence: "Julien Roche. Gérant chez Plomberie Roche" },
+          { result: 9, url: null, target: 1, name: "Personne", title: null, match: "yes", confidence: 0.99, evidence: "Julien Roche. Gérant" },
         ],
         accounts: [],
       },
@@ -181,6 +181,51 @@ describe("decision makers and accounts", () => {
     expect(keepJudgment({ people: [{ ...j.people[0], confidence: 0.4 }], accounts: [] }, { name: "Plomberie Roche" }, targets, people, [], []).people).toEqual([])
   })
 
+  it("finds a result by the address the model copied, and keeps one profile per officer", () => {
+    const targets: PeopleTarget[] = [
+      { role: "EXECUTIVE", name: "Claire Pichon", title: "Personne ayant le pouvoir d'engager", query: "q" },
+      { role: "EXECUTIVE", name: "Nicolas Priou", title: "Gérant", query: "q" },
+      { role: "DECISION_MAKER", name: null, title: null, query: "q" },
+    ]
+    const people = [
+      src("https://www.linkedin.com/in/nicolas-priou-1", "Nicolas Priou. Gérant principal chez L'Esprit Conduite, Saint-Herblain."),
+      src("https://www.linkedin.com/in/claire-pichon-1", "Claire Pichon. Associée chez L'Esprit Conduite, Saint-Herblain."),
+      src("https://www.linkedin.com/in/nicolas-priou-2", "Nicolas Priou. Expérience : L'Esprit Conduite · 44800."),
+      src("https://www.linkedin.com/in/lea-a", "Léa A. Responsable commerciale chez L'Esprit Conduite."),
+      src("https://www.linkedin.com/in/hugo-b", "Hugo B. Chargé de communication chez L'Esprit Conduite."),
+      src("https://www.linkedin.com/in/ines-c", "Inès C. Responsable marketing chez L'Esprit Conduite."),
+    ]
+    const kept = keepJudgment(
+      {
+        people: [
+          // Numbered one too low, as on the real dry run; its copied address is right.
+          { result: 1, url: "https://linkedin.com/in/claire-pichon-1/", target: 1, name: "Claire Pichon", title: "Associée", match: "yes", confidence: 0.9, evidence: "Associée chez L'Esprit Conduite" },
+          // Two profiles of the gérant: the best one only.
+          { result: 1, url: null, target: 2, name: "Nicolas Priou", title: "Gérant principal", match: "yes", confidence: 0.92, evidence: "Gérant principal chez L'Esprit Conduite" },
+          { result: 3, url: null, target: 2, name: "Nicolas Priou", title: null, match: "yes", confidence: 0.9, evidence: "Expérience : L'Esprit Conduite" },
+          // Three leads: the two best.
+          { result: 4, url: null, target: 3, name: "Léa A.", title: "Responsable commerciale", match: "yes", confidence: 0.85, evidence: "Responsable commerciale chez L'Esprit Conduite" },
+          { result: 5, url: null, target: 3, name: "Hugo B.", title: "Chargé de communication", match: "unsure", confidence: 0.6, evidence: "Chargé de communication chez L'Esprit Conduite" },
+          { result: 6, url: null, target: 3, name: "Inès C.", title: "Responsable marketing", match: "yes", confidence: 0.9, evidence: "Responsable marketing chez L'Esprit Conduite" },
+          // An address that is not among the results falls back to the number, and its quote must still be there.
+          { result: 2, url: "https://www.linkedin.com/in/invente", target: 1, name: "Claire Pichon", title: null, match: "yes", confidence: 0.99, evidence: "Claire Pichon. Associée" },
+        ],
+        accounts: [],
+      },
+      { name: "L'Esprit Conduite" },
+      targets,
+      people,
+      [],
+      []
+    )
+    expect(kept.people.map((p) => [p.name, p.status, p.url])).toEqual([
+      ["Claire Pichon", "PROBABLE", "https://www.linkedin.com/in/claire-pichon-1"],
+      ["Nicolas Priou", "PROBABLE", "https://www.linkedin.com/in/nicolas-priou-1"],
+      ["Inès C.", "PROBABLE", "https://www.linkedin.com/in/ines-c"],
+      ["Léa A.", "PROBABLE", "https://www.linkedin.com/in/lea-a"],
+    ])
+  })
+
   it("keeps an account only when sure, quoted, of a wanted network, the best one per network", () => {
     const accounts = [
       src("https://www.instagram.com/roche.a", "Plomberie Roche, plombier à Villeurbanne"),
@@ -192,10 +237,10 @@ describe("decision makers and accounts", () => {
       {
         people: [],
         accounts: [
-          { result: 1, match: "yes", confidence: 0.82, evidence: "Plomberie Roche, plombier à Villeurbanne" },
-          { result: 2, match: "yes", confidence: 0.95, evidence: "Plomberie Roche officiel" },
-          { result: 3, match: "unsure", confidence: 0.9, evidence: "Plomberie Roche, page officielle" },
-          { result: 4, match: "yes", confidence: 0.95, evidence: "Plomberie Roche sur LinkedIn" },
+          { result: 1, url: null, match: "yes", confidence: 0.82, evidence: "Plomberie Roche, plombier à Villeurbanne" },
+          { result: 2, url: null, match: "yes", confidence: 0.95, evidence: "Plomberie Roche officiel" },
+          { result: 3, url: null, match: "unsure", confidence: 0.9, evidence: "Plomberie Roche, page officielle" },
+          { result: 4, url: null, match: "yes", confidence: 0.95, evidence: "Plomberie Roche sur LinkedIn" },
         ],
       },
       { name: "Plomberie Roche" },
@@ -222,12 +267,12 @@ describe("the Enquêteur's reference set (E27)", () => {
           const url = personProfile(s.url)!
           const target = Math.max(0, inputs.targets.findIndex((t) => (t.name ? flat(s.text).includes(flat(t.name).split(" ").at(-1)!) : true)))
           const right = expected.has(url)
-          return { result: i + 1, target: target + 1, name: s.title.split(" - ")[0], title: s.title.split(" - ")[1] ?? null, match: right ? "yes" : "no", confidence: right ? 0.95 : 0.1, evidence: s.text.split(" … ")[1].slice(0, 60) }
+          return { result: i + 1, url: null, target: target + 1, name: s.title.split(" - ")[0], title: s.title.split(" - ")[1] ?? null, match: right ? "yes" : "no", confidence: right ? 0.95 : 0.1, evidence: s.text.split(" … ")[1].slice(0, 60) }
         }),
         accounts: inputs.accounts.map((s, i) => {
           const p = companyProfile(s.url)!
           const right = urlKey(c.expect.accounts[p.network] ?? "none") === urlKey(p.url)
-          return { result: i + 1, match: right ? "yes" : "no", confidence: right ? 0.95 : 0.1, evidence: s.text.split(" … ")[1].slice(0, 40) }
+          return { result: i + 1, url: null, match: right ? "yes" : "no", confidence: right ? 0.95 : 0.1, evidence: s.text.split(" … ")[1].slice(0, 40) }
         }),
       }
       const graded = gradeResearch(c, perfect)
@@ -240,8 +285,8 @@ describe("the Enquêteur's reference set (E27)", () => {
     for (const c of RESEARCH_CASES) {
       const inputs = caseInputs(c)
       const naive: Judgment = {
-        people: inputs.people.map((s, i) => ({ result: i + 1, target: 1, name: "x", title: s.title.split(" - ")[1] ?? null, match: "yes", confidence: 0.99, evidence: s.text.split(" … ")[1].slice(0, 50) })),
-        accounts: inputs.accounts.map((s, i) => ({ result: i + 1, match: "yes", confidence: 0.99, evidence: s.text.split(" … ")[1].slice(0, 30) })),
+        people: inputs.people.map((s, i) => ({ result: i + 1, url: null, target: 1, name: "x", title: s.title.split(" - ")[1] ?? null, match: "yes", confidence: 0.99, evidence: s.text.split(" … ")[1].slice(0, 50) })),
+        accounts: inputs.accounts.map((s, i) => ({ result: i + 1, url: null, match: "yes", confidence: 0.99, evidence: s.text.split(" … ")[1].slice(0, 30) })),
       }
       if (!gradeResearch(c, naive).ok) caught++
     }

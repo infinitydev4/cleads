@@ -3,7 +3,7 @@ import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { normalizeName } from "@/lib/crm/normalize"
 import { UNTRUSTED_RULE } from "@/lib/ai/untrusted"
-import { exaPeople, flat, perplexitySocials, quotes, type WebSource } from "@/lib/ai/search"
+import { exaPeople, flat, perplexitySocials, quotes, urlKey, type WebSource } from "@/lib/ai/search"
 import { generateForRun } from "@/features/ai/calls"
 import { recordStep, remainingMicros, type RunContext } from "@/features/ai/runs"
 import { identityOf } from "@/features/enrichment/identity"
@@ -121,6 +121,7 @@ export const judgeSchema = z.object({
     .array(
       z.object({
         result: z.number().int().describe("Numéro du résultat de personne (pour R2, donne 2)"),
+        url: z.string().nullable().describe("L'adresse de ce résultat, recopiée telle qu'elle est écrite"),
         target: z.number().int().describe("Numéro de la personne recherchée (pour P1, donne 1)"),
         name: z.string().describe("Le nom de la personne, tel que le résultat l'écrit"),
         title: z.string().nullable().describe("Son poste, tel que le résultat l'écrit, ou null"),
@@ -134,6 +135,7 @@ export const judgeSchema = z.object({
     .array(
       z.object({
         result: z.number().int().describe("Numéro du compte (pour S3, donne 3)"),
+        url: z.string().nullable().describe("L'adresse de ce compte, recopiée telle qu'elle est écrite"),
         match: z.enum(["yes", "unsure", "no"]).describe("yes : le compte de cette entreprise ; unsure : peut-être ; no : un autre compte, un homonyme, une page de fan"),
         confidence: z.number().describe("Ta confiance, de 0 à 1"),
         evidence: z.string().describe("Les mots du résultat qui montrent que c'est le compte de l'entreprise, copiés exactement"),
@@ -219,11 +221,24 @@ const companyWords = (name: string) => words(normalizeName(name)).filter((w) => 
  * What the code keeps of the model's judgment: a known result of the right kind, words really copied from it, the
  * officer's surname or the company's name in it, and a confidence over the threshold. The best profile per person.
  */
+/**
+ * The result a judgment is about: by the address the model copied when it is one of the results, else by its number.
+ * On the real dry run of 2026-11-04 the model shifted five numbers by one; the quote check caught it, but the right
+ * result was lost with it.
+ */
+function resultOf(list: readonly WebSource[], index: number, url: string | null | undefined): WebSource | undefined {
+  const key = url ? urlKey(url) : null
+  return (key ? list.find((s) => urlKey(s.url) === key) : undefined) ?? list[index - 1]
+}
+
+/** Profiles kept per person looked for: the officer's best one (a second profile of the same name is a duplicate or a namesake), two leads at most. */
+const PER_TARGET = { named: 1, lead: 2 } as const
+
 export function keepJudgment(j: Judgment, c: { name: string }, targets: readonly PeopleTarget[], people: readonly WebSource[], accounts: readonly WebSource[], wanted: readonly WantedNetwork[]): { people: KeptPerson[]; accounts: KeptAccount[] } {
-  const kept = new Map<string, KeptPerson>()
+  const kept = new Map<string, KeptPerson & { target: number }>()
   const firm = companyWords(c.name)
   for (const p of j.people) {
-    const source = people[p.result - 1]
+    const source = resultOf(people, p.result, p.url)
     const target = targets[p.target - 1]
     const url = source && personProfile(source.url)
     if (!source || !target || !url || p.match === "no" || !quotes(source, p.evidence)) continue
@@ -237,18 +252,30 @@ export function keepJudgment(j: Judgment, c: { name: string }, targets: readonly
     const status = p.match === "yes" && confidence >= PROBABLE_AT && (target.name ? true : namesFirm) ? "PROBABLE" : "TO_CHECK"
     const person: KeptPerson = { role: target.role, name: p.name.trim().slice(0, 120) || target.name || "Inconnu", title: p.title?.trim().slice(0, 160) || null, url, confidence, evidence: p.evidence.trim().slice(0, 400), status }
     const before = kept.get(url)
-    if (!before || before.confidence < confidence) kept.set(url, person)
+    if (!before || before.confidence < confidence) kept.set(url, { ...person, target: p.target })
   }
+  // The best profiles first (probable before to check, then by confidence), within each person's quota.
+  const rank = (p: KeptPerson) => (p.status === "PROBABLE" ? 1 : 0) + p.confidence / 10
+  const taken = new Map<number, number>()
+  const chosen = [...kept.values()]
+    .sort((a, b) => rank(b) - rank(a))
+    .filter((p) => {
+      const n = taken.get(p.target) ?? 0
+      if (n >= (targets[p.target - 1]?.name ? PER_TARGET.named : PER_TARGET.lead)) return false
+      taken.set(p.target, n + 1)
+      return true
+    })
+    .map(({ target: _target, ...p }) => p)
   const best = new Map<WantedNetwork, KeptAccount>()
   for (const a of j.accounts) {
-    const source = accounts[a.result - 1]
+    const source = resultOf(accounts, a.result, a.url)
     const profile = source && companyProfile(source.url)
     const confidence = Math.min(Math.max(a.confidence, 0), 1)
     if (!source || !profile || !wanted.includes(profile.network) || a.match !== "yes" || confidence < PROBABLE_AT || !quotes(source, a.evidence)) continue
     const before = best.get(profile.network)
     if (!before || before.confidence < confidence) best.set(profile.network, { network: profile.network, url: profile.url, confidence, evidence: a.evidence.trim().slice(0, 300), source: "Perplexity" })
   }
-  return { people: [...kept.values()], accounts: [...best.values()] }
+  return { people: chosen, accounts: [...best.values()] }
 }
 
 export interface PeopleReport {

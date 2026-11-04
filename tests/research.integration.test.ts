@@ -63,11 +63,11 @@ suite("the Enquêteur (database)", () => {
         // R1 Julien Roche, R2 Julien Rocher (a homonym the model wrongly believes), R3 Claire Moreau; S1 the account.
         const answer = {
           people: [
-            { result: 1, target: 1, name: "Julien Roche", title: "Gérant", match: "yes", confidence: 0.93, evidence: "Gérant chez Plomberie Roche, Villeurbanne" },
-            { result: 2, target: 1, name: "Julien Rocher", title: "Gérant", match: "yes", confidence: 0.9, evidence: "Gérant chez Rocher Toitures" },
-            { result: 3, target: 2, name: "Claire Moreau", title: "Responsable marketing", match: "unsure", confidence: 0.7, evidence: "Responsable marketing chez Plomberie Roche" },
+            { result: 1, url: null, target: 1, name: "Julien Roche", title: "Gérant", match: "yes", confidence: 0.93, evidence: "Gérant chez Plomberie Roche, Villeurbanne" },
+            { result: 2, url: null, target: 1, name: "Julien Rocher", title: "Gérant", match: "yes", confidence: 0.9, evidence: "Gérant chez Rocher Toitures" },
+            { result: 3, url: null, target: 2, name: "Claire Moreau", title: "Responsable marketing", match: "unsure", confidence: 0.7, evidence: "Responsable marketing chez Plomberie Roche" },
           ],
-          accounts: [{ result: 1, match: "yes", confidence: 0.92, evidence: "Plombier à Villeurbanne" }],
+          accounts: [{ result: 1, url: null, match: "yes", confidence: 0.92, evidence: "Plombier à Villeurbanne" }],
         }
         return { content: [{ type: "text", text: JSON.stringify(answer) }], finishReason: { unified: "stop", raw: undefined }, usage: usage(2_500, 400), warnings: [] }
       }
