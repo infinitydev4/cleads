@@ -3,8 +3,9 @@
 // applied (never your development database):
 //   TEST_DATABASE_URL=postgresql://… npx vitest run tests/research.integration.test.ts
 // The models and the searches are fakes: nothing leaves the machine and nothing is spent.
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { MockLanguageModelV4 } from "ai/test"
+import { Prisma } from "@prisma/client"
 import { resetDatabase } from "./helpers/reset-db"
 
 const url = process.env.TEST_DATABASE_URL
@@ -196,6 +197,31 @@ suite("the Enquêteur (database)", () => {
     expect((await prisma.agentRun.findUniqueOrThrow({ where: { id: ctx.id } })).costMicros).toBe(tokens + fee)
   })
 
+  it("books a billed call when no connection is free in time, and never at 0 € when none ever is", async () => {
+    const lead = await fiche(u.sdr.id)
+    const ctx = await runs.startRun(u.sdr, { agentId: "researcher", leadId: lead.id, status: "RUNNING", capMicros: 40_000 })
+    const call = () => calls.generateForRun(ctx, { role: "fast", name: "recherche", prompt: 'Requête : "Julien Roche"', maxOutputTokens: 300, search: { tools: { exa_search: search.exaPeople() }, max: 1 } }, { languageModel: () => model, prices: PRICES })
+    const busy = () => new Prisma.PrismaClientKnownRequestError("Transaction API error: Unable to start a transaction in the given time.", { code: "P2028", clientVersion: "test" })
+    // The pool is busy once, as on the worker on 2026-11-05: the write waits its turn and is tried again.
+    const once = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(busy())
+    const r = await call()
+    once.mockRestore()
+    expect(r.costMicros).toBeGreaterThan(0)
+    expect((await prisma.agentStep.findFirstOrThrow({ where: { runId: ctx.id } })).costMicros).toBe(r.costMicros)
+    expect((await prisma.agentRun.findUniqueOrThrow({ where: { id: ctx.id } })).costMicros).toBe(r.costMicros)
+    // Busy at every try: the call fails as the database's, tried again later, and is not booked at 0 € as a failed call.
+    const logged: unknown[] = []
+    const quiet = vi.spyOn(console, "error").mockImplementation((tag: unknown) => void logged.push(tag))
+    const always = vi.spyOn(prisma, "$transaction").mockRejectedValue(busy())
+    const error = await call().catch((e: unknown) => e)
+    always.mockRestore()
+    quiet.mockRestore()
+    expect(error).toMatchObject({ code: "P2028" })
+    expect(runner.isRetryable(error)).toBe(true)
+    expect(logged).toEqual(["[AI_COST_UNRECORDED]"])
+    expect(await prisma.agentStep.count({ where: { runId: ctx.id } })).toBe(1)
+  })
+
   it("asks Perplexity one question per call, at once, and keeps each page once", async () => {
     const lead = await fiche(u.sdr.id)
     const ctx = await runs.startRun(u.sdr, { agentId: "researcher", leadId: lead.id, status: "RUNNING", capMicros: 30_000 })
@@ -296,6 +322,29 @@ suite("the Enquêteur (database)", () => {
     expect(extra.evidence[0]).toMatchObject({ id: "R1", kind: "source" })
   })
 
+  it("retries a probe or a fiche's search after a spend, as long as one more of it fits", async () => {
+    const lead = await fiche(u.sdr.id)
+    // A first try spent two searches, then failed (production, 2026-11-05): the retry runs.
+    const geo = await svc.requestResearch(u.sdr, lead.id, "geo")
+    await prisma.agentRun.update({ where: { id: geo.runId }, data: { costMicros: 12_000 } })
+    await drain()
+    expect(await prisma.agentRun.findUniqueOrThrow({ where: { id: geo.runId } })).toMatchObject({ status: "SUCCEEDED", capMicros: 60_000 })
+    // Less than a whole probe left: refused before any search.
+    const late = await svc.requestResearch(u.sdr, lead.id, "geo")
+    await prisma.agentRun.update({ where: { id: late.runId }, data: { costMicros: 30_001 } })
+    searches = []
+    await drain()
+    expect(await prisma.agentRun.findUniqueOrThrow({ where: { id: late.runId } })).toMatchObject({ status: "FAILED", error: "Le plafond de l'exécution ne suffit plus pour une sonde GEO." })
+    expect(searches).toEqual([])
+    // A fiche's decision makers: the run holds two fiches' worth, and the retry searches the fiche.
+    const people = await svc.requestResearch(u.sdr, lead.id, "people")
+    await prisma.agentRun.update({ where: { id: people.runId }, data: { costMicros: 30_000 } })
+    await drain()
+    const run = await prisma.agentRun.findUniqueOrThrow({ where: { id: people.runId } })
+    expect(run).toMatchObject({ status: "SUCCEEDED", capMicros: 80_000 })
+    expect(run.output).toMatchObject({ searched: 1, skipped: [] })
+  })
+
   it("writes a sourced brief for tomorrow's meeting, keeps only what cites a page read, and tells the closer", async () => {
     const lead = await fiche(u.closer.id)
     const startsAt = new Date(Date.now() + 24 * 3600_000)
@@ -354,8 +403,28 @@ suite("the Enquêteur (database)", () => {
     expect(await schedule.queueGeoProbes(now)).toBe(1)
     expect(await schedule.queueGeoProbes(now)).toBe(0)
     const geo = await prisma.agentRun.findFirstOrThrow({ where: { agentId: "researcher", input: { path: ["job"], equals: "geo" } } })
-    expect(geo).toMatchObject({ leadId: good.id, requestedById: null, capMicros: 30_000, priority: -1 })
-    expect((await prisma.company.findUniqueOrThrow({ where: { id: good.companyId! } })).geoCheckedAt).not.toBeNull()
+    expect(geo).toMatchObject({ leadId: good.id, requestedById: null, capMicros: 60_000, priority: -1 })
+    // Claimed for three days, not for the month.
+    const lease = (await prisma.company.findUniqueOrThrow({ where: { id: good.companyId! } })).geoCheckedAt!
+    expect(now.getTime() - lease.getTime()).toBe(27 * 86_400_000)
+  })
+
+  it("frees a company three days after a GEO probe that failed, and a month after one that ran", async () => {
+    const day = 86_400_000
+    const now = new Date()
+    const campaign = await prisma.campaign.create({ data: { workspaceId: ws, name: "Plombiers", ownerId: u.sdr.id, status: "ACTIVE" } })
+    const good = await fiche(u.sdr.id)
+    await prisma.leadRelevance.create({ data: { workspaceId: ws, leadId: good.id, campaignId: campaign.id, verdict: "RELEVANT", confidence: 0.9, outcome: "AUTO", model: "jev" } })
+    expect(await schedule.queueGeoProbes(now)).toBe(1)
+    // The probe fails for good, as one did in production on 2026-11-05.
+    await prisma.agentRun.updateMany({ where: { agentId: "researcher" }, data: { status: "FAILED", reservedMicros: 0 } })
+    expect(await schedule.queueGeoProbes(new Date(now.getTime() + 2 * day))).toBe(0)
+    expect(await schedule.queueGeoProbes(new Date(now.getTime() + 3 * day + 3600_000))).toBe(1)
+    // This one runs to its end: the next one waits a month.
+    await drain()
+    expect(await prisma.agentRun.count({ where: { agentId: "researcher", status: "SUCCEEDED" } })).toBe(1)
+    expect(await schedule.queueGeoProbes(new Date(now.getTime() + 10 * day))).toBe(0)
+    expect(await schedule.queueGeoProbes(new Date(now.getTime() + 31 * day))).toBe(1)
   })
 
   it("quotes a campaign's search, then queues it in runs of ten for the person who asked", async () => {

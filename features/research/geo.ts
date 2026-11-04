@@ -15,8 +15,16 @@ import { gatewaySearcher, type ResearchDeps } from "./search"
  * and the writer read as evidence. Once a month per company at most, for the good targets, or on demand.
  */
 export const GEO_REFRESH_DAYS = 30
-/** Three Perplexity searches and one short call of the fast model, with room to spare (≈ 0,02 €). */
-export const GEO_CAP_MICROS = 30_000
+/**
+ * What one probe may cost at worst: three short calls of the fast model, each with its Perplexity search, with the
+ * dearest model the role allows (≈ 0,02 € in practice). A probe starts only with this much left in its run.
+ */
+export const GEO_PROBE_MICROS = 30_000
+/**
+ * A run's cap: a probe and one retry, which runs the three searches again. A cap of one probe refused every retry after
+ * a spend (production, 2026-11-05).
+ */
+export const GEO_CAP_MICROS = 2 * GEO_PROBE_MICROS
 export const GEO_SOURCE = "Perplexity (sonde GEO)"
 
 export interface GeoCited {
@@ -94,7 +102,7 @@ export async function runGeo(ctx: RunContext, opts: { signal: AbortSignal }, dep
   if (legallyBlocked(c)) throw new LeadError("conflict", "Entreprise en procédure collective ou fermée : pas de sonde.", 409)
   const trade = tradeOf(c.sector)
   if (!trade || !c.city) throw new LeadError("invalid", "La sonde GEO a besoin du métier et de la ville de l'entreprise.", 400)
-  if ((await remainingMicros(ctx.id)) < GEO_CAP_MICROS) throw new LeadError("budget_exceeded", "Le plafond de l'exécution ne suffit pas pour une sonde GEO.", 429, { scope: "run" })
+  if ((await remainingMicros(ctx.id)) < GEO_PROBE_MICROS) throw new LeadError("budget_exceeded", "Le plafond de l'exécution ne suffit plus pour une sonde GEO.", 429, { scope: "run" })
 
   const questions = geoQuestions(trade, c.city)
   const search = deps.search ?? gatewaySearcher(deps)

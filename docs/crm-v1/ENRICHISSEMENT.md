@@ -100,9 +100,15 @@ Un neuvième agent, l'**Enquêteur** (`researcher`, `features/research/`), fait 
 
 | Travail | Recherches | Coût habituel | Plafond |
 |---|---|---|---|
-| Décideurs et réseaux, par fiche | 1 à 3 Exa, et 1 Perplexity pour les comptes que le site n'affiche pas | ≈ 0,02 € | 0,04 € |
-| Sonde GEO | 3 questions Perplexity | ≈ 0,02 € | 0,03 € |
+| Décideurs et réseaux, par fiche | 1 à 3 Exa, et 1 Perplexity pour les comptes que le site n'affiche pas | ≈ 0,02 € | 0,04 € par fiche ; 0,08 € pour une fiche seule |
+| Sonde GEO | 3 questions Perplexity | ≈ 0,02 € | 0,06 € |
 | Brief de rendez-vous | 3 questions Perplexity et 1 Exa, puis une rédaction | ≈ 0,07 € (mesuré) | 0,30 € |
+
+- **Reprises** : une exécution reprise après une panne passagère refait tout son travail. Chaque plafond en garde donc la place :
+  - avant de commencer, une sonde vérifie qu'il reste de quoi payer une sonde au pire, soit 0,03 € avec le modèle « Traiter en volume » le plus cher ;
+  - une fiche vérifie de même qu'il reste 0,04 € ;
+  - le plafond d'une sonde ou d'une fiche seule couvre donc deux passages.
+  - Les exécutions d'une campagne, à 0,04 € par fiche pour environ 0,02 € dépensés, ont cette marge d'elles-mêmes.
 
 ### Décideurs et réseaux (D45, D48 ; `features/research/people.ts`)
 - **Qui est cherché** :
@@ -142,6 +148,7 @@ Un neuvième agent, l'**Enquêteur** (`researcher`, `features/research/`), fait 
   - chaque heure, la tâche des rappels met en file les sondes dues ;
   - elles visent les bonnes cibles de Jev qui ont un site, un métier et une ville ;
   - une fois par mois et par entreprise, dix par jour et par espace au plus ;
+  - une sonde mise en file réserve l'entreprise trois jours. Si elle échoue ou expire, l'entreprise revient d'elle-même dans la file ; si elle aboutit, la suivante attend un mois ;
   - ou à la demande, sur la fiche.
 - **Ce n'est pas une promesse** : les réponses des moteurs varient, la sonde dit ce qu'elle a lu à une date.
 
@@ -175,6 +182,19 @@ Deux vraies entreprises de Loire-Atlantique, sur une base jetable, pour 0,11 €
   - un modèle prié de passer trois questions en liste les a écrites en une seule chaîne : une question passe désormais par appel ;
   - Exa n'a ramené aucun compte Facebook ou Instagram : ils viennent désormais du site, puis de Perplexity ;
   - les longues qualités du registre brouillaient la recherche d'un dirigeant : seuls restent son nom, l'entreprise et la ville.
+
+### Le correctif du 5 novembre 2026
+Le premier soir en production, le worker a pris les dix sondes du jour. Neuf n'ont montré aucun échec ; la dixième a échoué, et ses journaux ont montré trois défauts.
+- **Un coût perdu** :
+  - deux sondes tournaient à la fois, de trois recherches parallèles chacune ;
+  - leurs écritures ont attendu les mêmes lignes et le petit pool du worker, et l'une a dépassé les 2 secondes que Prisma accorde par défaut ;
+  - la passerelle avait facturé l'appel, mais il a été compté à 0 €, et présenté comme une panne de l'IA.
+  - Désormais, l'écriture d'une étape attend jusqu'à 15 secondes et réessaie ; un appel facturé n'est plus jamais compté à 0 €.
+- **Une reprise impossible** :
+  - la sonde exigeait tout son plafond avant de commencer, si bien que toute reprise après une dépense était refusée ;
+  - la recherche des décideurs d'une fiche seule avait le même défaut.
+  - Les plafonds gardent désormais la place d'une reprise (ci-dessus).
+- **Un mois perdu** : l'entreprise restait réservée un mois malgré l'échec. La réservation dure désormais trois jours.
 
 ### Ce que les autres agents en font
 - **Offres (E21) et rédacteur (E22)** : la création récente, la reprise, l'absence des moteurs de réponse et l'actualité du dernier brief s'ajoutent aux preuves de l'audit (identifiants R1, R2…). Trois nouveaux signaux d'offre :

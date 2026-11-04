@@ -210,6 +210,28 @@ const NO_TOKENS: TokenUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens
 
 const json = (value: unknown) => (value === undefined ? undefined : forLog(value))
 
+/** Prisma's transaction errors that pass: no connection free in time (P2028), a write conflict or a deadlock (P2034). */
+const PASSING_TX_CODES = new Set(["P2028", "P2034"])
+const STEP_WRITE_TRIES = 3
+
+/**
+ * The write of a step. Parallel calls end together and all write to the run's row and the day's usage rows: on
+ * 2026-11-05 the Enquêteur's searches did, and on the worker's small pool one write waited past Prisma's 2 s default
+ * and failed, although the Gateway had billed its call. A step's write waits up to 15 s for a connection and is tried
+ * again on such an error: it is one transaction, so a failed try wrote nothing.
+ */
+async function writeStep<T>(write: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+  for (let tries = 1; ; tries++) {
+    try {
+      return await prisma.$transaction(write, { maxWait: 15_000, timeout: 20_000 })
+    } catch (error) {
+      const code = (error as { code?: unknown } | null)?.code
+      if (tries >= STEP_WRITE_TRIES || typeof code !== "string" || !PASSING_TX_CODES.has(code)) throw error
+      await new Promise((ok) => setTimeout(ok, 200 * tries))
+    }
+  }
+}
+
 /** Bills a model call to its run: its cost goes to the run and to the day's usage in one transaction. */
 export async function recordModelStep(ctx: RunContext, step: ModelStepInput): Promise<{ index: number; costMicros: number }> {
   const [settings, prices] = await Promise.all([getAiSettings(ctx.workspaceId), step.prices ?? priceTable()])
@@ -218,7 +240,7 @@ export async function recordModelStep(ctx: RunContext, step: ModelStepInput): Pr
   const fees = searches.map(([tool, n]) => ({ tool, n, micros: searchMicros({ [tool]: n }, settings.eurPerUsd) }))
   const micros = tokens + fees.reduce((sum, f) => sum + f.micros, 0)
   const agentId = ctx.evaluation ? EVALUATIONS_USAGE : ctx.agentId
-  const index = await prisma.$transaction(async (tx) => {
+  const index = await writeStep(async (tx) => {
     const charged = await chargeRun(tx, ctx.id, micros)
     await tx.agentStep.create({
       data: {
@@ -247,7 +269,7 @@ export async function recordModelStep(ctx: RunContext, step: ModelStepInput): Pr
 
 /** Records a step that costs nothing: a tool call or an approval request. */
 export async function recordStep(ctx: RunContext, step: { type: "TOOL" | "APPROVAL"; name: string; input?: unknown; output?: unknown; durationMs?: number }): Promise<number> {
-  return prisma.$transaction(async (tx) => {
+  return writeStep(async (tx) => {
     const charged = await chargeRun(tx, ctx.id, 0)
     await tx.agentStep.create({
       data: { runId: ctx.id, index: charged.index, type: step.type, name: step.name, input: json(step.input), output: json(step.output), durationMs: Math.max(Math.round(step.durationMs ?? 0), 0) },
