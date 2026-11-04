@@ -60,7 +60,7 @@ async function previewHostIssue(): Promise<string | null> {
   if (!host || /localhost|127\.0\.0\.1/.test(host)) return null
   if (hostCheck?.host === host && Date.now() - hostCheck.at < 10 * 60_000) return hostCheck.issue
   const resolved = await Promise.race([dns.promises.resolve(host).then(() => true, () => false), new Promise<boolean>((r) => setTimeout(() => r(true), 2_000))])
-  const issue = resolved ? null : `Le domaine ${host} ne répond pas encore : ajoutez-le aux domaines du site Netlify (Domain management › Add a domain alias) pour que les liens s’ouvrent.`
+  const issue = resolved ? null : `Le domaine ${host} ne répond pas encore : ajoutez-le aux domaines du projet (Vercel : Settings › Domains ; Netlify : Domain management) pour que les liens s’ouvrent.`
   hostCheck = { host, at: Date.now(), issue }
   return issue
 }
