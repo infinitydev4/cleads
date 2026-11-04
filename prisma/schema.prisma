@@ -624,6 +624,8 @@ model Workspace {
   companySignals         CompanySignal[]
   campaignWatches        CampaignWatch[]
   signalSweep            SignalSweep?
+  contactCandidates      ContactCandidate[]
+  leadBriefs             LeadBrief[]
 }
 
 enum LeadSource {
@@ -634,6 +636,8 @@ enum LeadSource {
   LEGACY
   /// E30: found by a campaign's watch of the BODACC.
   REGISTRY
+  /// E30 lot 2: found on the web by the Enquêteur (Exa), then confirmed by a person.
+  RESEARCH
 }
 
 enum EmailKind {
@@ -752,13 +756,18 @@ model Company {
   legalOverrideById String?
   /// Last registry lookup, found or not; null while still to do.
   identityCheckedAt DateTime?
+  /// E30 lot 2: last search for its decision makers and social profiles (Exa); data.socials keeps their provenance.
+  peopleCheckedAt   DateTime?
+  /// E30 lot 2: last GEO probe (Perplexity), whose result is in data.geo; at most one a month (D52).
+  geoCheckedAt      DateTime?
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
 
-  contacts Contact[]
-  leads    Lead[]
-  audits   ProspectAudit[]
-  signals  CompanySignal[]
+  contacts   Contact[]
+  leads      Lead[]
+  audits     ProspectAudit[]
+  signals    CompanySignal[]
+  candidates ContactCandidate[]
 
   @@unique([workspaceId, externalId])
   @@index([workspaceId, domain])
@@ -783,6 +792,8 @@ model Contact {
   emailKind          EmailKind   @default(UNKNOWN)
   /// E30: an officer from the registry, or a decision maker found later.
   role               ContactRole @default(OTHER)
+  /// E30: public professional profile, confirmed by a person (only its address is kept, D48).
+  linkedinUrl        String?
   phone              String?
   doNotContact       Boolean     @default(false)
   doNotContactReason String?
@@ -869,6 +880,7 @@ model Lead {
   emailDrafts         EmailDraft[]
   generatedSites      GeneratedSite[]
   relevances          LeadRelevance[]
+  briefs              LeadBrief[]
 
   @@unique([workspaceId, companyId])
   @@index([workspaceId, status])
@@ -990,6 +1002,7 @@ model Meeting {
   hostReminderSentAt  DateTime?
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt
+  briefs              LeadBrief[]
 
   @@index([hostId, startsAt])
   @@index([workspaceId, startsAt])
@@ -1606,6 +1619,7 @@ model AgentRun {
   strategy    StrategyProposal?
   relevances  LeadRelevance[]
   evaluation  AiEvaluation?
+  brief       LeadBrief?
 
   @@index([workspaceId, createdAt])
   @@index([workspaceId, status])
@@ -2764,6 +2778,8 @@ enum SignalKind {
   NEW_SITE
   INSOLVENCY
   CLOSED
+  /// E30 lot 2: absent from the sources an answer engine gives for its trade and city (GEO probe, D52).
+  GEO_ABSENT
 }
 
 /// A dated event about a company: a BODACC notice. Written by code from the source, never by a model.
@@ -2843,4 +2859,73 @@ model SignalSweep {
   cursorDay   DateTime? @db.Date
   lastRunAt   DateTime?
   lastReport  Json?
+}
+
+enum CandidateStatus {
+  /// The model found the profile and its excerpt ties it to the company, above the confidence threshold.
+  PROBABLE
+  /// Below the threshold, or a homonym is possible: a person checks the profile first.
+  TO_CHECK
+  /// A person confirmed it: it became (or completed) a contact.
+  CONFIRMED
+  DISMISSED
+}
+
+/// E30 lot 2 (D45, D48): a person found on the web for a company (Exa's index of professional profiles), proposed on
+/// the fiche until someone confirms or dismisses it. Only the public profile's address, the name and the title are
+/// kept; never an email.
+model ContactCandidate {
+  id          String          @id @default(cuid())
+  workspaceId String
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  companyId   String
+  company     Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  role        ContactRole
+  name        String
+  title       String?
+  /// The public profile (linkedin.com/in/…).
+  url         String
+  /// 0-1, from the model that compared the profile with the company.
+  confidence  Float
+  /// The words of the search result that tie the profile to the company, checked to be in it.
+  evidence    String
+  status      CandidateStatus @default(TO_CHECK)
+  /// The contact it became or completed.
+  contactId   String?
+  decidedById String?
+  decidedAt   DateTime?
+  runId       String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([companyId, url])
+  @@index([workspaceId, status])
+}
+
+/// E30 lot 2 (D51): what the Enquêteur found before a meeting, or on demand: sourced claims, angles tied to the active
+/// offers, questions to ask. Every claim cites a source its searches returned or a fact of the CRM.
+model LeadBrief {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  leadId      String
+  lead        Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  /// The meeting it prepares, when the morning job or the person asked for one.
+  meetingId   String?
+  meeting     Meeting?  @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  runId       String?   @unique
+  run         AgentRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+  /// features/research/brief-schemas.ts, briefContentSchema.
+  content     Json
+  /// The pages cited, with their title and date.
+  sources     Json
+  /// Claims left out because they cited nothing it read.
+  dropped     Int       @default(0)
+  model       String?
+  costMicros  Int       @default(0)
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  @@index([leadId, createdAt])
+  @@index([meetingId])
 }

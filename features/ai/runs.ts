@@ -7,7 +7,7 @@ import { acting } from "@/lib/ai/acting"
 import { can, canAccessRecord } from "@/lib/rbac"
 import { LeadError } from "@/features/leads/errors"
 import { ACTIVE_RUN_STATUSES, SYSTEM_USER, addUsage, chargeRun, checkBudgetAlerts, getAiSettings, microsToEur, reserveBudget } from "@/lib/ai/budget"
-import { costMicros, priceTable, type ModelPrice, type TokenUsage } from "@/lib/ai/pricing"
+import { SEARCH_PRICES, costMicros, priceTable, searchMicros, type ModelPrice, type SearchCounts, type SearchTool, type TokenUsage } from "@/lib/ai/pricing"
 import { forLog } from "@/lib/ai/untrusted"
 import type { AiRole } from "@/lib/ai/models"
 import type { SkillOffer } from "@/features/offers/skill"
@@ -17,6 +17,7 @@ import { FAMILY_INFO } from "./actions/families"
 import { cutFamilies } from "./actions/policy"
 import { wakeMissions } from "@/features/missions/wake"
 import { MCP_AGENT, MCP_LABEL, clientOfInput } from "@/features/mcp/names"
+import { JOB_LABELS, type ResearchJob } from "@/features/research/labels"
 
 /**
  * AI runs (docs/crm-v1/AGENTS-IA.md §10): one execution of an agent, who it acts for, what it did and what it cost.
@@ -70,6 +71,8 @@ export interface StartRunInput {
   missionId?: string | null
   /** Work that calls no model (a mission's action waiting for a click) holds none of the agent's cap. */
   noModel?: boolean
+  /** E30: a coded job that costs less than the agent's cap holds only this much; never more than the cap. */
+  capMicros?: number
   /**
    * E29: an MCP client's action waiting for a person (D37). It is not the copilot's work, only its catalogue: the copilot
    * switched off does not stop it, MCP's own switch does (features/mcp/).
@@ -100,7 +103,7 @@ async function createRun(workspaceId: string, requester: CurrentUser | null, inp
   // E28: a specialist's workflow needs every family of actions it declares; an agent that picks its tools only loses some.
   const cut = agent.def.picksTools || input.evaluation || isTaskInput(input.input) ? [] : cutFamilies(agent.def, agent.policy)
   if (cut.length) throw new LeadError("conflict", `L'agent « ${agent.def.label} » n'a plus le droit « ${FAMILY_INFO[cut[0]].label} » : le propriétaire peut le lui rendre dans Agents IA › Agents › Droits.`, 409)
-  const cap = input.noModel ? 0 : (input.evaluation?.capMicros ?? agent.capMicros)
+  const cap = input.noModel ? 0 : (input.evaluation?.capMicros ?? Math.min(input.capMicros ?? agent.capMicros, agent.capMicros))
   const status = input.status ?? "QUEUED"
   const userKey = requester?.id ?? SYSTEM_USER
   const missionId = input.missionId === undefined ? (acting()?.missionId ?? null) : input.missionId
@@ -199,14 +202,22 @@ export interface ModelStepInput {
   prices?: Record<string, ModelPrice>
   /** E28: a cost already known (dictation is billed by the minute, not by the token). */
   micros?: number
+  /** E30: web searches the Gateway ran for this call, billed per search on top of its tokens. */
+  searches?: SearchCounts
 }
+
+const NO_TOKENS: TokenUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
 
 const json = (value: unknown) => (value === undefined ? undefined : forLog(value))
 
 /** Bills a model call to its run: its cost goes to the run and to the day's usage in one transaction. */
 export async function recordModelStep(ctx: RunContext, step: ModelStepInput): Promise<{ index: number; costMicros: number }> {
   const [settings, prices] = await Promise.all([getAiSettings(ctx.workspaceId), step.prices ?? priceTable()])
-  const micros = step.micros ?? costMicros(prices[step.model], step.usage, settings.eurPerUsd).micros
+  const tokens = step.micros ?? costMicros(prices[step.model], step.usage, settings.eurPerUsd).micros
+  const searches = Object.entries(step.searches ?? {}).filter(([, n]) => (n ?? 0) > 0) as [SearchTool, number][]
+  const fees = searches.map(([tool, n]) => ({ tool, n, micros: searchMicros({ [tool]: n }, settings.eurPerUsd) }))
+  const micros = tokens + fees.reduce((sum, f) => sum + f.micros, 0)
+  const agentId = ctx.evaluation ? EVALUATIONS_USAGE : ctx.agentId
   const index = await prisma.$transaction(async (tx) => {
     const charged = await chargeRun(tx, ctx.id, micros)
     await tx.agentStep.create({
@@ -217,7 +228,7 @@ export async function recordModelStep(ctx: RunContext, step: ModelStepInput): Pr
         name: step.name,
         model: step.model,
         input: json(step.input),
-        output: json(step.output),
+        output: json(searches.length ? { ...(step.output && typeof step.output === "object" && !Array.isArray(step.output) ? step.output : { result: step.output }), searches: Object.fromEntries(searches) } : step.output),
         inputTokens: step.usage.inputTokens,
         outputTokens: step.usage.outputTokens,
         cachedInputTokens: step.usage.cacheReadTokens,
@@ -226,7 +237,8 @@ export async function recordModelStep(ctx: RunContext, step: ModelStepInput): Pr
         generationId: step.generationId ?? null,
       },
     })
-    await addUsage(tx, { workspaceId: ctx.workspaceId, userKey: ctx.userKey, agentId: ctx.evaluation ? EVALUATIONS_USAGE : ctx.agentId, model: step.model, usage: step.usage, micros })
+    await addUsage(tx, { workspaceId: ctx.workspaceId, userKey: ctx.userKey, agentId, model: step.model, usage: step.usage, micros: tokens })
+    for (const f of fees) await addUsage(tx, { workspaceId: ctx.workspaceId, userKey: ctx.userKey, agentId, model: SEARCH_PRICES[f.tool].usage, usage: NO_TOKENS, micros: f.micros, calls: f.n })
     return charged.index
   })
   if (micros > 0) await checkBudgetAlerts(ctx.workspaceId)
@@ -296,8 +308,10 @@ const leadName = (l: { company: { name: string } | null; contact: { name: string
 
 const TASK_LABELS: Record<string, string> = { evaluation: "Évaluation", skill_test: "Test de skill", transcription: "Dictée", mission_action: "Mission" }
 const taskOf = (input: unknown) => {
-  const kind = input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>).kind : null
-  return typeof kind === "string" ? (TASK_LABELS[kind] ?? null) : null
+  const fields = input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : {}
+  if (typeof fields.kind === "string") return TASK_LABELS[fields.kind] ?? null
+  // E30: the Enquêteur's jobs.
+  return typeof fields.job === "string" ? (JOB_LABELS[fields.job as ResearchJob] ?? null) : null
 }
 
 /**

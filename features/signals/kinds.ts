@@ -13,6 +13,7 @@ export const SIGNAL_LABELS: Record<SignalKind, string> = {
   NEW_SITE: "Nouvel établissement",
   INSOLVENCY: "Procédure collective",
   CLOSED: "Radiation ou dissolution",
+  GEO_ABSENT: "Absente des moteurs de réponse",
 }
 
 /** A signal counts as recent for 90 days after its publication, and is purged after a year. */

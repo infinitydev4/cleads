@@ -11,6 +11,7 @@ import { runAudit } from "@/features/prospect-audit/handler"
 import { runDesigner } from "@/features/studio/handler"
 import { runStrategist } from "@/features/strategy/handler"
 import { runQualifier } from "@/features/relevance/handler"
+import { runResearcher } from "@/features/research/handler"
 import { EVALUATION, runEvaluation } from "@/features/quality/run"
 import { MISSION_ACTION, registerMissionTools, runMissionAction } from "@/features/missions/task"
 import { browserRenderer } from "./browser"
@@ -26,6 +27,8 @@ const renderer = browserRenderer()
 registerAgentHandler("designer", (job) => runDesigner(job, { renderer }))
 registerAgentHandler("strategist", (job) => runStrategist(job))
 registerAgentHandler("qualifier", (job) => runQualifier(job))
+// E30 lot 2: decision makers, meeting briefs and GEO probes, through the Gateway's web searches.
+registerAgentHandler("researcher", (job) => runResearcher(job))
 registerTaskHandler(SKILL_TEST, (job) => runSkillTest(job))
 // E27: evaluations measure any agent, its pages rendered in the same browser as the Studio's.
 registerTaskHandler(EVALUATION, (job) => runEvaluation(job, { renderer }))

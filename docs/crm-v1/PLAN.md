@@ -1134,7 +1134,38 @@ Quatre sources, chacune pour une question : **quand appeler** (BODACC), **à qui
 > - le panneau 3D ne montre pas encore les signaux ;
 > - la veille se règle sur la page de la campagne, pas encore par le copilote.
 >
-> **Lot 2 — Exa et Perplexity** : décideurs (profils LinkedIn par recherche), adresses des réseaux, brief avant chaque rendez-vous, sonde GEO. À faire d'abord : compter le coût des recherches de la passerelle dans le budget IA.
+> **Lot 2 — Exa et Perplexity : l'Enquêteur (branche `feat/e30-recherche`)** — fait :
+> - **coût des recherches** :
+>   - chaque recherche de la passerelle est facturée à l'exécution, en plus des jetons (Exa 7 $, Perplexity 5 $ les 1 000) ;
+>   - son prix est réservé avant l'appel ;
+>   - elle apparaît à part dans Réglages › IA (`lib/ai/pricing.ts`, `lib/ai/search.ts`) ;
+>   - un travail ne réserve que ce qu'il peut coûter (`capMicros`, jamais plus que le plafond de l'agent) ;
+> - **migration additive** `20261117090000_enrichment_research` :
+>   - `ContactCandidate` (profils proposés) et `LeadBrief` ;
+>   - `Contact.linkedinUrl` ;
+>   - `Company.peopleCheckedAt` et `geoCheckedAt` ;
+>   - le signal `GEO_ABSENT` et la source « Recherche web » ;
+> - **agent `researcher`, l'Enquêteur**, trois déroulés codés sur le worker (`features/research/`) :
+>   - **décideurs et réseaux** : dirigeants du registre et, à partir de 10 salariés, le responsable marketing ou commercial (Exa) ; comptes Instagram, Facebook, LinkedIn et TikTok, lus d'abord sur le site, puis cherchés avec Perplexity. Un modèle rapide compare et cite ; le code ne garde que les citations exactes ;
+>   - **sonde GEO** : trois questions « métier + ville » à Perplexity ; le constat (citée ou absente) est fait par le code ; `GEO_ABSENT` une fois par mois ;
+>   - **brief de rendez-vous** : quatre recherches, puis une rédaction (Sonnet) où chaque fait cite sa page ou la fiche ; les faits sans source lue sont retirés ;
+> - **la décision d'une personne** : un profil devient un contact d'un clic (rôle, poste, profil, source, base légale ; jamais d'email) ;
+> - **planification**, par la tâche horaire des rappels :
+>   - le brief de chaque rendez-vous qui commence dans 2 à 36 heures ;
+>   - la sonde GEO des bonnes cibles, une fois par mois, dix par jour au plus ;
+> - **campagne** : « Décideurs des bonnes cibles », avec un devis, puis 50 fiches au plus par clic ;
+> - **offres et rédacteur** : création récente, reprise, absence des moteurs de réponse et actualité du brief deviennent des preuves ; signaux d'offre `new_business`, `takeover` et `geo_absent` (catalogue version 3) ;
+> - **interface** :
+>   - les cartes « Enquêteur » et « Brief de rendez-vous » de la fiche ;
+>   - un poste de plus dans la salle de contrôle 3D ;
+> - **copilote et MCP** : `get_lead_research` et `start_research` ;
+> - **qualité** : la suite « Enquêteur » (10 cas fictifs aux résultats figés) et la part des profils confirmés.
+>
+> **Écarts** :
+> - **pas d'agent libre pour le brief** : les recherches de la passerelle tournent côté serveur, sans plafond par appel. Le code écrit donc les recherches, et leur nombre reste borné ;
+> - **comptage des recherches** : au prix catalogue, à partir de la réponse du modèle. L'essai réel du 4 novembre l'a trouvé juste à 0,0002 $ près par étape ; la passerelle, elle, ajoute environ 0,00015 $ par appel, qui n'est pas compté ;
+> - **sondes et briefs automatiques** : ils passent par la tâche horaire des rappels, pas par le worker ;
+> - **copilote** : les profils se confirment sur la fiche, pas par le copilote.
 >
 > **Lot 3 — Meta** : publicités en cours (bibliothèque publicitaire). Le propriétaire doit d'abord créer l'application Meta et faire vérifier son identité.
 

@@ -172,6 +172,7 @@ describe("the copilot's tools", () => {
       "get_lead_audit",
       "get_lead_registry",
       "list_signals",
+      "get_lead_research",
       "get_today",
       "list_meetings",
       "get_pipeline",

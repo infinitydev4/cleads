@@ -15,6 +15,8 @@ export const SUITE_ROLES: Record<SuiteId, (agentRole: AiRole) => AiRole[]> = {
   qualifier: () => ["decision"],
   designer: (agentRole) => [agentRole],
   copilot: (agentRole) => [agentRole],
+  // E30: the suite measures the comparison of profiles with the company, made by the fast model whatever its own role.
+  researcher: () => ["fast"],
 }
 
 /** The role the code gives the suite's agent, before any change in Agents IA. */

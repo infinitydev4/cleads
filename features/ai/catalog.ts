@@ -8,10 +8,26 @@ import { SKILLS_V1 } from "./skills/catalog-v1"
 
 /**
  * What the catalogue gained since V1 (E28), by version: installed once in the workspaces that already had the catalogue,
- * like V1 itself. A skill of the same name the team already has is left as it is.
+ * like V1 itself. A skill of the same name the team already has is left as it is. E30 adds offer signals too: each one
+ * is added to the offer of that identifier if the workspace still has it, and never removes anything.
  */
-export const CATALOG_VERSION = 2
-const ADDITIONS: Record<number, { skills: readonly string[] }> = { 2: { skills: ["missions-cleads"] } }
+export const CATALOG_VERSION = 3
+const ADDITIONS: Record<number, { skills: readonly string[]; offerSignals?: Readonly<Record<string, readonly string[]>> }> = {
+  2: { skills: ["missions-cleads"] },
+  3: { skills: ["brief-rendez-vous"], offerSignals: { "site-vitrine": ["new_business"], "refonte-site": ["takeover"], geo: ["geo_absent"] } },
+}
+
+/** Adds signals to the offers of these identifiers that do not have them yet. */
+async function addOfferSignals(tx: Prisma.TransactionClient, workspaceId: string, additions: Readonly<Record<string, readonly string[]>>): Promise<number> {
+  let changed = 0
+  for (const offer of await tx.offer.findMany({ where: { workspaceId, slug: { in: Object.keys(additions) } }, select: { id: true, slug: true, signals: true } })) {
+    const missing = (additions[offer.slug] ?? []).filter((s) => !offer.signals.includes(s))
+    if (!missing.length) continue
+    await tx.offer.update({ where: { id: offer.id }, data: { signals: [...offer.signals, ...missing] } })
+    changed++
+  }
+  return changed
+}
 
 /** Creates skills of the catalogue with their first version, and gives them to the agents that list them. */
 async function installSkills(tx: Prisma.TransactionClient, workspaceId: string, names: readonly string[] | null): Promise<number> {
@@ -40,10 +56,10 @@ async function installAdditions(workspaceId: string, from: number): Promise<void
   const installed = await prisma.$transaction(async (tx) => {
     const claimed = await tx.aiSetting.updateMany({ where: { workspaceId, catalogVersion: from }, data: { catalogVersion: CATALOG_VERSION } })
     if (claimed.count !== 1) return null
-    const names = Object.entries(ADDITIONS)
-      .filter(([version]) => Number(version) > from)
-      .flatMap(([, a]) => a.skills)
-    return { from, to: CATALOG_VERSION, skills: await installSkills(tx, workspaceId, names) }
+    const additions = Object.entries(ADDITIONS).filter(([version]) => Number(version) > from)
+    const names = additions.flatMap(([, a]) => a.skills)
+    const signals = Object.assign({}, ...additions.map(([, a]) => a.offerSignals ?? {})) as Record<string, readonly string[]>
+    return { from, to: CATALOG_VERSION, skills: await installSkills(tx, workspaceId, names), offers: await addOfferSignals(tx, workspaceId, signals) }
   })
   if (installed) await audit({ action: "ai.catalog_updated", workspaceId, entityType: "AiSetting", metadata: installed })
 }

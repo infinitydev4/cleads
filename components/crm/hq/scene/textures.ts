@@ -283,7 +283,7 @@ export async function logoTexture(src = "/logo-black.svg") {
 
 /**
  * Pictograms of the agents as 24 × 24 SVG paths, in the stroke style of the CRM's icons (the HUD shows the same ones
- * with lucide: Target, Filter, Search, Tag, Mail, MessageSquare, PanelsTopLeft, Sparkles).
+ * with lucide: Target, Filter, Binoculars, Search, Tag, Mail, MessageSquare, PanelsTopLeft, Sparkles).
  */
 export const AGENT_GLYPHS: Record<AgentId, string[]> = {
   strategist: ["M2 12a10 10 0 1 0 20 0a10 10 0 1 0 -20 0", "M6 12a6 6 0 1 0 12 0a6 6 0 1 0 -12 0", "M10 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"],
@@ -294,6 +294,15 @@ export const AGENT_GLYPHS: Record<AgentId, string[]> = {
   replies: ["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"],
   designer: ["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M3 9h18", "M9 21V9"],
   copilot: ["M12 3l1.9 5.8L19.5 11l-5.6 2.2L12 19l-1.9-5.8L4.5 11l5.6-2.2z", "M20 3v4", "M22 5h-4"],
+  // E30: binoculars, as lucide draws them.
+  researcher: [
+    "M10 10h4",
+    "M19 7V4a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1v3",
+    "M20 21a2 2 0 0 0 2-2v-3.851c0-1.39-2-2.962-2-4.829V8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v11a2 2 0 0 0 2 2z",
+    "M22 16L2 16",
+    "M4 21a2 2 0 0 1-2-2v-3.851c0-1.39 2-2.962 2-4.829V8a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v11a2 2 0 0 1-2 2z",
+    "M9 7V4a1 1 0 0 0-1-1H6a1 1 0 0 0-1 1v3",
+  ],
 }
 
 const AMBER = "#f0b44a"

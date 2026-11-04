@@ -401,6 +401,12 @@ const SIMS: Record<string, Sim> = {
   list_signals: {
     run: () => ({ signals: [] }),
   },
+  get_lead_research: {
+    run: (w, i) => {
+      w.lead(str(i.leadId))
+      return { decisionMakers: [], socials: [], geo: null, brief: null, running: [], note: "L'Enquêteur n'a encore rien cherché pour cette fiche : start_research le lance." }
+    },
+  },
   get_lead_offers: {
     run: (w, i) => {
       const p = w.lead(str(i.leadId)).pitch
@@ -811,6 +817,14 @@ const SIMS: Record<string, Sim> = {
       const l = w.writable(str(i.leadId))
       if (!i.force && l.audit && daysBetween(l.audit.date, TODAY) <= AUDIT_DAYS) throw new LeadError("conflict", `Un audit du ${l.audit.date} couvre déjà cette fiche : lis-le avec get_lead_audit, ou demande à la personne s'il faut le refaire (force).`, 409)
       return `${i.force ? "Refaire" : "Lancer"} l'audit IA de ${l.name} (une à trois minutes, ${eur(eurToMicros(AGENTS.auditor.limits.maxCostEur))} au plus).`
+    },
+  },
+  start_research: {
+    card: (w, i) => {
+      const name = w.writable(str(i.leadId)).name
+      const job = str(i.job)
+      const what = job === "brief" ? `préparer le brief de ${name}` : job === "geo" ? `sonder la présence de ${name} dans les moteurs de réponse` : `chercher les décideurs et les réseaux sociaux de ${name}`
+      return `Demander à l'Enquêteur de ${what}.`
     },
   },
   suggest_offers: { card: (w, i) => `Demander au Conseiller les offres à proposer à ${w.writable(str(i.leadId)).name} (${eur(eurToMicros(AGENTS.offers.limits.maxCostEur))} au plus).` },

@@ -131,18 +131,19 @@ export async function chargeRun(db: Db, runId: string, micros: number): Promise<
   return { index: row.stepCount, costMicros: row.costMicros, capMicros: row.capMicros }
 }
 
-/** Adds one call to the day's usage row, in one statement. */
+/** Adds a call (or `calls` searches, E30) to the day's usage row, in one statement. */
 export async function addUsage(
   db: Db,
-  input: { workspaceId: string; userKey: string; agentId: string; model: string; usage: TokenUsage; micros: number; now?: Date }
+  input: { workspaceId: string; userKey: string; agentId: string; model: string; usage: TokenUsage; micros: number; calls?: number; now?: Date }
 ): Promise<void> {
   const day = dayStart(input.now ?? new Date())
   const u = input.usage
+  const calls = input.calls ?? 1
   await db.$executeRaw`
     INSERT INTO "AiUsage" ("id", "workspaceId", "day", "userKey", "agentId", "model", "calls", "inputTokens", "outputTokens", "cachedInputTokens", "costMicros")
-    VALUES (${randomUUID()}, ${input.workspaceId}, ${utc(day)}::date, ${input.userKey}, ${input.agentId}, ${input.model}, 1, ${u.inputTokens}, ${u.outputTokens}, ${u.cacheReadTokens}, ${input.micros})
+    VALUES (${randomUUID()}, ${input.workspaceId}, ${utc(day)}::date, ${input.userKey}, ${input.agentId}, ${input.model}, ${calls}, ${u.inputTokens}, ${u.outputTokens}, ${u.cacheReadTokens}, ${input.micros})
     ON CONFLICT ("workspaceId", "day", "userKey", "agentId", "model") DO UPDATE SET
-      "calls" = "AiUsage"."calls" + 1,
+      "calls" = "AiUsage"."calls" + EXCLUDED."calls",
       "inputTokens" = "AiUsage"."inputTokens" + EXCLUDED."inputTokens",
       "outputTokens" = "AiUsage"."outputTokens" + EXCLUDED."outputTokens",
       "cachedInputTokens" = "AiUsage"."cachedInputTokens" + EXCLUDED."cachedInputTokens",

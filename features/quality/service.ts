@@ -12,6 +12,7 @@ import { scenarioById } from "@/evals/copilot"
 import { AUDITS } from "@/evals/audits"
 import { CAMPAIGNS, FICHES } from "@/evals/fiches"
 import { REPLIES } from "@/evals/replies"
+import { researchCaseById } from "@/evals/research"
 import { SITES } from "@/evals/sites"
 import { effectiveAgent } from "@/features/ai/definitions"
 import { isManager, startRun } from "@/features/ai/runs"
@@ -71,6 +72,10 @@ export function caseTitle(suite: SuiteId, caseId: string): string {
     case "copilot": {
       const s = scenarioById(caseId)
       return s ? `${s.about} — « ${s.ask} »` : caseId
+    }
+    case "researcher": {
+      const r = researchCaseById(caseId)
+      return r ? `${r.company.name} — ${r.about}` : caseId
     }
   }
 }

@@ -9,6 +9,7 @@ import { activeOffers } from "@/features/offers/service"
 import { latestFor } from "@/features/prospect-audit/latest"
 import { AREAS, auditReportSchema, type Scores } from "@/features/prospect-audit/schemas"
 import { playbookFor } from "@/features/prospect-audit/sectors"
+import { researchEvidence, withResearch } from "@/features/research/evidence"
 import { buildPitch, composePitch, settleRoles } from "./advisor"
 import { NO_ACTIVE_OFFER, NO_AUDIT, NO_CANDIDATE, candidatesFor, type Candidate } from "./rules"
 
@@ -47,7 +48,7 @@ export async function runOfferPitch(job: HandlerContext, deps: ModelDeps = {}): 
 
   const lead = await prisma.lead.findFirst({
     where: { id: ctx.leadId ?? "", workspaceId: ctx.workspaceId },
-    select: { id: true, company: { select: { name: true, sector: true, city: true, domain: true, website: true } } },
+    select: { id: true, companyId: true, company: { select: { name: true, sector: true, city: true, domain: true, website: true } } },
   })
   if (!lead?.company) throw new LeadError("not_found", "Fiche introuvable", 404)
   // The audit the person saw when asking; the fiche's latest one if it has gone since.
@@ -56,7 +57,8 @@ export async function runOfferPitch(job: HandlerContext, deps: ModelDeps = {}): 
   if (!row) throw new LeadError("conflict", NO_AUDIT, 409)
   const parsed = auditReportSchema.safeParse(row.report)
   if (!parsed.success) throw new LeadError("conflict", "Le rapport de l’audit est illisible : relancez l’audit, puis le pitch.", 409)
-  const report = parsed.data
+  // E30: a recent creation or takeover, or an absence from the answer engines, call for offers too.
+  const report = withResearch(parsed.data, await researchEvidence(lead.companyId))
   await recordStep(ctx, { type: "TOOL", name: "get_audit", input: { auditId: row.id }, output: { score: row.score, findings: report.findings.length, evidence: report.evidence.length, signals: report.signals.map((s) => s.key) } })
 
   const offers = await activeOffers(ctx.workspaceId)

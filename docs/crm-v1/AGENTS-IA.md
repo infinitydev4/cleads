@@ -130,7 +130,7 @@ Les seuils partent prudents (0,85 et 0,60), puis sont calibrés sur le jeu d'év
   - brief du Studio : 8 000 jetons ; page du Studio : 24 000 jetons, écrite en flux continu (une page entière prend plusieurs minutes) ; critique d'une page : 4 000 jetons.
 
   Une réponse coupée à cette limite arrête l'exécution sans nouvel essai, car elle serait coupée de la même façon, et le message le dit.
-- **Coût réel** : il est calculé à partir de l'usage renvoyé par chaque appel, y compris une réponse coupée ou illisible (la passerelle la facture aussi), et des prix lus sur la passerelle (liste publique relue toutes les 12 heures, instantané intégré en secours). Il est converti en micro-euros au taux réglé dans `AiSetting` au moment de l'appel. Chaque étape garde l'identifiant de génération de la passerelle, pour rapprocher plus tard ce coût estimé du coût facturé.
+- **Coût réel** : il est calculé à partir de l'usage renvoyé par chaque appel, y compris une réponse coupée ou illisible (la passerelle la facture aussi), et des prix lus sur la passerelle (liste publique relue toutes les 12 heures, instantané intégré en secours). Les recherches web de la passerelle (E30) s'y ajoutent au prix catalogue, une par recherche lancée : leur prix est réservé avant l'appel et elles sont montrées à part dans la consommation (`lib/ai/pricing.ts`). Il est converti en micro-euros au taux réglé dans `AiSetting` au moment de l'appel. Chaque étape garde l'identifiant de génération de la passerelle, pour rapprocher plus tard ce coût estimé du coût facturé.
 - **Économies** :
   - audit réutilisé 30 jours par domaine ;
   - cache des prompts ;
@@ -160,6 +160,7 @@ Exemple de mois (ordre de grandeur, à mesurer en E20 et E23) :
 | Copilote | Chef d'agence : répond sur les données que la personne voit, délègue aux spécialistes | `writer` (`decision` pour l'aiguillage) | outils de lecture, `start_audit`, `start_studio`, `draft_email`, `create_task` | réponses, actions proposées | toute action externe |
 | Stratège marché | Stratège growth : secteurs, douleurs par métier, offre phare, angle | `writer` | `list_offers`, `campaign_metrics`, MCP `list_sectors` et `search_prospect_base`, `read_skill` | cibles argumentées, campagne et recherche proposées | chaque campagne et chaque recherche, d'un clic |
 | Analyste qualification | — | `decision` | décision `score_import` par fiche | pertinence, probabilité | sous le seuil |
+| Enquêteur (E30) | Chargé d'études : ne retient que ce qu'une source dit, se méfie des homonymes, jamais de vie privée | `writer` pour le brief (`fast` pour les recherches et la comparaison des profils) | recherches `exa_search` et `perplexity_search` de la passerelle, `save_brief` | profils proposés (`ContactCandidate`), comptes sociaux, sonde GEO, `LeadBrief` | chaque profil, d'un clic, avant de devenir un contact |
 
 **Définition dans le code** (`features/ai/agents.ts`), versionnée et testée. Depuis E19, chaque agent y a son rôle d'expert (`persona`), les rôles de modèle permis, ses outils, ses skills V1, ce qu'il produit, ce qu'une personne valide et ses limites. Son epic métier y branchera son comportement :
 ```ts
@@ -480,6 +481,8 @@ Peut valider l'action d'un agent : la personne qui a lancé l'exécution, ou un 
 ## 13. Audit et enrichissement (E20)
 
 > **E30 (4 novembre 2026)** : l'enrichissement continue hors de l'audit. Chaque fiche reçoit l'identité du registre (annuaire des entreprises), et les signaux du BODACC arrivent chaque matin : créations, reprises, nouveaux dirigeants, procédures. Une campagne peut avoir sa veille, et une entreprise en procédure collective ou radiée n'est plus prospectée. Le copilote et MCP lisent tout cela par `get_lead_registry` et `list_signals`. Le client de l'annuaire est maintenant dans `features/enrichment/sources/annuaire.ts`. Détails : [ENRICHISSEMENT.md](ENRICHISSEMENT.md).
+>
+> **E30 lot 2** : l'**Enquêteur** cherche sur le web, par la passerelle (Exa, Perplexity), les décideurs et les comptes sociaux d'une fiche, sonde sa présence dans les moteurs de réponse et prépare le brief de chaque rendez-vous. Ses trouvailles s'ajoutent aux preuves de l'audit pour les offres et le rédacteur (identifiants R1, R2…), avec trois signaux d'offre : `new_business`, `takeover` et `geo_absent`. L'audit juge toujours le site seul : la sonde GEO est faite à part (D52).
 
 | Volet | Contrôles | Source |
 |---|---|---|

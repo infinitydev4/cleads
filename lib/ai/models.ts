@@ -69,6 +69,9 @@ export const MODEL_LABELS: Record<string, string> = {
   "google/gemini-4-argon": "Gemini 4 Argon",
   "anthropic/claude-opus-5.5": "Claude Opus 5.5",
   "openai/gpt-6-astra": "GPT-6 Astra",
+  // E30: web searches the Gateway runs for a model, billed per search (lib/ai/pricing.ts).
+  "exa/search": "Recherches Exa",
+  "perplexity/search": "Recherches Perplexity",
 }
 
 export const modelLabel = (id: string) => MODEL_LABELS[id] ?? id

@@ -1,11 +1,12 @@
-import { experimental_decide, Experimental_DecisionRefusalError, generateText, InvalidResponseDataError, NoObjectGeneratedError, Output, streamText, type Experimental_DecisionModel, type Experimental_DecisionQuestion, type Experimental_DecisionState, type LanguageModel } from "ai"
+import { experimental_decide, Experimental_DecisionRefusalError, generateText, InvalidResponseDataError, NoObjectGeneratedError, Output, streamText, type Experimental_DecisionModel, type Experimental_DecisionQuestion, type Experimental_DecisionState, type LanguageModel, type Tool } from "ai"
 import type { z } from "zod"
 import { LeadError } from "@/features/leads/errors"
 import { getAiSettings } from "@/lib/ai/budget"
 import { DEFAULT_THRESHOLDS, confidenceOf, decisionFallbacks, outcomeOf, validThresholds, valueOf, type DecisionAnswer, type DecisionOutcome, type Thresholds } from "@/lib/ai/decide"
 import { aiConfigured, gatewayOptions } from "@/lib/ai/gateway"
 import { ROLES, modelLabel, resolveRole, type AiRole, type RoleModels } from "@/lib/ai/models"
-import { estimateTokens, maxOutputTokensWithin, priceTable, tokenUsage, worstPrice, type ModelPrice, type TokenUsage } from "@/lib/ai/pricing"
+import { countSearches, estimateTokens, isSearchTool, maxOutputTokensWithin, priceTable, tokenUsage, worstPrice, worstSearchMicros, type ModelPrice, type SearchCounts, type SearchTool, type TokenUsage } from "@/lib/ai/pricing"
+import { searchErrors, sourcesOf, urlForLog, type WebSource } from "@/lib/ai/search"
 import { finishRun, recordModelStep, remainingMicros, type RunContext } from "./runs"
 
 /**
@@ -22,6 +23,8 @@ export interface ModelDeps {
 
 /** Below this, a written answer would be cut off: the run stops instead. */
 export const MIN_OUTPUT_TOKENS = 256
+/** E30: what one search's results weigh when the Gateway gives them back to the model, at most (six excerpts). */
+export const SEARCH_RESULT_TOKENS = 3_000
 /** What one screenshot weighs in the prompt, at most, for the budget check (a 1350 × 940 capture is about 1 700 tokens). */
 export const IMAGE_TOKENS = 1_800
 const NO_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
@@ -117,6 +120,17 @@ export interface GenerateOptions<T> {
    * HTTP client's timeouts. Text answers only.
    */
   stream?: boolean
+  /**
+   * E30: the Gateway's web search tools the model may call (lib/ai/search.ts), under their pricing keys, and how many
+   * searches the call is budgeted for: their price is set aside before the answer's room is computed. A model that
+   * searches more than asked is billed for every search it ran.
+   */
+  search?: { tools: Partial<Record<SearchTool, Tool>>; max: number }
+  /**
+   * E30: the call reads or writes personal data (a person's profile): the run's history keeps this summary instead of
+   * the prompt and the answer, with the number of sources only.
+   */
+  private?: string
 }
 
 /** A streamed call read to its end: the same fields generateText gives, or the error that stopped the stream. */
@@ -133,14 +147,17 @@ export async function generateForRun<T = never>(
   ctx: RunContext,
   opts: GenerateOptions<T>,
   deps: ModelDeps = {}
-): Promise<{ text: string; output: T | undefined; model: string; costMicros: number; finishReason: string }> {
+): Promise<{ text: string; output: T | undefined; model: string; costMicros: number; finishReason: string; sources: WebSource[]; searches: SearchCounts; searchErrors: string[] }> {
   if (!deps.languageModel && !aiConfigured()) throw notConfigured()
   const [settings, prices, remaining] = await Promise.all([getAiSettings(ctx.workspaceId), deps.prices ?? priceTable(), remainingMicros(ctx.id)])
   const { model, fallbacks } = modelFor(ctx, opts.role, settings.roleModels)
   const candidates = [model, ...fallbacks]
   const images = opts.images ?? []
-  const inputTokens = estimateTokens(`${opts.system ?? ""}${opts.prompt}`) + images.length * IMAGE_TOKENS
-  const room = maxOutputTokensWithin(worstPrice(candidates, prices), remaining, inputTokens, settings.eurPerUsd)
+  const searchTools = Object.keys(opts.search?.tools ?? {}).filter(isSearchTool)
+  // The search results are read by the model too (the Gateway gives them back to it): about 3 000 tokens a search.
+  const inputTokens = estimateTokens(`${opts.system ?? ""}${opts.prompt}`) + images.length * IMAGE_TOKENS + (opts.search ? opts.search.max * SEARCH_RESULT_TOKENS : 0)
+  const setAside = opts.search ? worstSearchMicros(searchTools, opts.search.max, settings.eurPerUsd) : 0
+  const room = maxOutputTokensWithin(worstPrice(candidates, prices), remaining - setAside, inputTokens, settings.eurPerUsd)
   if (room < MIN_OUTPUT_TOKENS) return overBudget(ctx)
 
   const content = images.length
@@ -153,24 +170,35 @@ export async function generateForRun<T = never>(
     maxOutputTokens: Math.min(opts.maxOutputTokens ?? 4096, room),
     providerOptions: gatewayOptions({ models: fallbacks, userKey: ctx.userKey, agentId: ctx.agentId }),
     abortSignal: opts.abortSignal,
+    ...(opts.search ? { tools: opts.search.tools as Record<string, Tool> } : {}),
   }
   const started = Date.now()
   try {
     const result = opts.schema ? await generateText({ ...call, output: Output.object({ schema: opts.schema }) }) : opts.stream ? await streamed(call) : await generateText(call)
     const served = servedModel(result.response?.modelId, candidates)
     const output = opts.schema ? ((result as { output?: unknown }).output as T) : undefined
+    // The Gateway runs the searches inside the call: they are in its answer, with their results.
+    const content = "steps" in result ? result.steps.flatMap((s) => s.content) : []
+    const searches = countSearches(content)
+    const sources = sourcesOf(content)
+    const failedSearches = searchErrors(content)
     const step = await recordModelStep(ctx, {
       type: "MODEL",
       name: opts.name,
       model: served,
       usage: tokenUsage(result.totalUsage),
       durationMs: Date.now() - started,
-      input: { system: opts.system, prompt: opts.prompt, ...(images.length ? { images: images.map((i) => `${i.mediaType}, ${i.data.length} octets`) } : {}) },
-      output: output ?? result.text,
+      input: opts.private ? { private: opts.private } : { system: opts.system, prompt: opts.prompt, ...(images.length ? { images: images.map((i) => `${i.mediaType}, ${i.data.length} octets`) } : {}) },
+      output: opts.private
+        ? { private: true, sources: sources.length, ...(failedSearches.length ? { searchErrors: failedSearches } : {}) }
+        : opts.search
+          ? { text: output ?? result.text, sources: sources.map((s) => urlForLog(s.url)), ...(failedSearches.length ? { searchErrors: failedSearches } : {}) }
+          : (output ?? result.text),
       generationId: generationIdOf(result.providerMetadata),
       prices,
+      searches,
     })
-    return { text: result.text, output, model: served, costMicros: step.costMicros, finishReason: result.finishReason }
+    return { text: result.text, output, model: served, costMicros: step.costMicros, finishReason: result.finishReason, sources, searches, searchErrors: failedSearches }
   } catch (error) {
     const answered = NoObjectGeneratedError.isInstance(error) ? error : null
     await recordModelStep(ctx, {
@@ -180,7 +208,7 @@ export async function generateForRun<T = never>(
       usage: usageOf(error),
       durationMs: Date.now() - started,
       // What the model answered, when it did not fit the expected shape: the only way to see why afterwards.
-      output: { error: error instanceof Error ? error.message : String(error), ...(answered?.finishReason ? { finishReason: answered.finishReason } : {}), ...(answered?.text ? { text: answered.text } : {}) },
+      output: { error: error instanceof Error ? error.message : String(error), ...(answered?.finishReason ? { finishReason: answered.finishReason } : {}), ...(answered?.text && !opts.private ? { text: answered.text } : {}) },
       prices,
     })
     console.error("[AI_GENERATE]", ctx.agentId, error)

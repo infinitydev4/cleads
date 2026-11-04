@@ -34,6 +34,7 @@ import { CALL_OUTCOMES } from "@/features/activity/rules"
 import { CampaignField } from "./campaign-field"
 import { LeadAiCard } from "@/components/crm/ai/lead-ai-card"
 import { RegistryCard } from "@/components/crm/registry/registry-card"
+import { ResearchCard } from "@/components/crm/research/research-card"
 
 interface Props {
   lead: LeadDetail
@@ -208,6 +209,8 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
       </div>
 
       {lead.company && <RegistryCard leadId={lead.id} onChanged={reload} />}
+
+      {lead.company && <ResearchCard leadId={lead.id} onChanged={reload} />}
 
       <Card className="space-y-3 p-4">
         <div className="flex items-center justify-between">

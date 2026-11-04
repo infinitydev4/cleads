@@ -163,7 +163,7 @@ suite("3D view figures (database)", () => {
       await prisma.agentApproval.create({ data: { workspaceId: ws, runId: waiting.id, tool: "send_email", payload: {}, summary: "Envoyer l’email", requestedById: u.sdr.id, expiresAt: new Date(Date.now() + DAY) } })
       const z = await hq.getZone(u.manager, "agents", 30, now)
       if (z.zone !== "agents" || "locked" in z) throw new Error("expected the control room")
-      expect(z.agents).toHaveLength(8)
+      expect(z.agents).toHaveLength(9)
       expect(z.agents.every((a) => a.model.length > 0 && a.mission.length > 20)).toBe(true)
       expect(z.approvals.map((a) => a.summary)).toEqual(["Envoyer l’email"])
       expect(z.approvals[0].canDecide).toBe(true)

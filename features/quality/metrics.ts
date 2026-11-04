@@ -145,6 +145,14 @@ function measuresOf(suite: SuiteId, rows: readonly Detail[]): { measures: Partia
         ],
       }
     }
+    case "researcher": {
+      const homonyms = ratio(rows, "homonyms")
+      const wrong = rows.reduce((s, r) => s + list(r.wrongAccounts).length, 0)
+      return {
+        measures: { profiles: ratio(rows, "profiles"), homonyms, accounts: ratio(rows, "accounts"), evidence: ratio(rows, "evidence") },
+        hard: [...(homonyms != null && homonyms < 1 ? ["Un homonyme a été proposé comme décideur probable"] : []), ...(wrong ? ["Un compte qui n'est pas celui de l'entreprise a été retenu"] : [])],
+      }
+    }
     case "designer": {
       const cut = rows.filter((r) => r.cut === true).length
       return {

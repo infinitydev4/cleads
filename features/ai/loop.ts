@@ -1,7 +1,7 @@
 import type { ModelMessage, StepResult, StopCondition, ToolSet } from "ai"
 import { getAiSettings } from "@/lib/ai/budget"
 import type { AiRole } from "@/lib/ai/models"
-import { estimateTokens, maxOutputTokensWithin, priceTable, tokenUsage, worstPrice, type ModelPrice } from "@/lib/ai/pricing"
+import { countSearches, estimateTokens, maxOutputTokensWithin, priceTable, tokenUsage, worstPrice, type ModelPrice } from "@/lib/ai/pricing"
 import { MIN_OUTPUT_TOKENS, modelFor, type ModelDeps } from "./calls"
 import { recordModelStep, remainingMicros, type RunContext } from "./runs"
 
@@ -23,7 +23,7 @@ export interface LoopBudget {
   stoppedByBudget: () => boolean
   /** Whether the run can pay for a short answer to these messages, before the first call. */
   fits: (messages: readonly ModelMessage[]) => Promise<boolean>
-  /** Bills a finished step (its usage and the model that answered); returns its cost in micro-euros. */
+  /** Bills a finished step (its usage, the model that answered, and any search the Gateway ran, E30); returns its cost in micro-euros. */
   bill: (step: StepResult<ToolSet>) => Promise<number>
 }
 
@@ -81,6 +81,8 @@ export async function loopBudget(run: RunContext, opts: LoopOptions, deps: Model
         output: { text: step.text.slice(0, 1_500), tools: step.toolCalls.map((c) => c.toolName), finishReason: step.finishReason },
         generationId: typeof gateway?.generationId === "string" ? gateway.generationId : null,
         prices,
+        // A search tool of the Gateway, if an agent ever gets one, is billed with the step that ran it.
+        searches: countSearches(step.content),
       })
       return costMicros
     },
