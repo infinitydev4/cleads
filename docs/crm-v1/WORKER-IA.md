@@ -117,7 +117,7 @@ Ses recherches passent par la passerelle IA (clé `AI_GATEWAY_API_KEY`, aucune a
 - **Déploiement** : compte `deploy` (Docker seulement, pas de sudo) et empreinte du serveur épinglée.
 - **Base** :
   - TLS vers Railway (`sslmode=require`) ;
-  - pool limité (`connection_limit=5`) ;
+  - pool limité (`connection_limit=5`). Les écritures d'étapes y attendent jusqu'à 15 s une connexion libre, puis réessaient : des appels parallèles ne perdent plus leur coût (5 novembre 2026) ;
   - recommandé : le rôle dédié de [`worker/db-role.sql`](../../worker/db-role.sql), qui lit et écrit les lignes mais ne peut pas modifier le schéma (les migrations restent au build Netlify).
 - **Heures en SQL** : elles viennent toujours de l'application (`lib/ai/sql.ts`), jamais de `NOW()`. Prisma enregistre l'heure UTC dans des colonnes sans fuseau, alors que `NOW()` suit le fuseau de la session. Bug trouvé et corrigé pendant E18, sur une base réglée en heure de Paris.
 - **Charge** :

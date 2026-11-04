@@ -16,6 +16,11 @@ export const BRIEF_AHEAD_MS = 36 * 3600_000
 /** Too close to start: the worker might not finish in time, and the closer can ask for it on the fiche. */
 export const BRIEF_MIN_AHEAD_MS = 2 * 3600_000
 export const GEO_DAILY_MAX = 10
+/**
+ * A queued probe holds its company this long. One that fails or expires lets it go by itself: before 2026-11-05 the
+ * claim lasted the month, so a failed probe made its company wait for the next one.
+ */
+export const GEO_LEASE_DAYS = 3
 const DAY = 86_400_000
 
 const isConflict = (error: unknown) => (error as { code?: string } | null)?.code === "conflict"
@@ -72,8 +77,10 @@ export async function queueGeoProbes(now = new Date()): Promise<number> {
     for (const c of companies) {
       const leadId = c.leads[0]?.id
       if (!leadId || room <= 0) continue
-      // Claimed before it runs: the next hour does not queue it again; the probe dates its own finding.
-      const claimed = await prisma.company.updateMany({ where: { id: c.id, OR: [{ geoCheckedAt: null }, { geoCheckedAt: { lt: stale } }] }, data: { geoCheckedAt: now } })
+      // Claimed before it runs, for GEO_LEASE_DAYS: the next hours do not queue it again. A probe that runs to its end
+      // dates its own finding (geo.ts), and the company then waits a month.
+      const lease = new Date(stale.getTime() + GEO_LEASE_DAYS * DAY)
+      const claimed = await prisma.company.updateMany({ where: { id: c.id, OR: [{ geoCheckedAt: null }, { geoCheckedAt: { lt: stale } }] }, data: { geoCheckedAt: lease } })
       if (!claimed.count) continue
       try {
         await startSystemRun(w.id, { agentId: "researcher", leadId, status: "QUEUED", priority: -1, input: { job: "geo" }, capMicros: GEO_CAP_MICROS })

@@ -1,16 +1,18 @@
 // E30 lot 2: the Enquêteur's pure parts — search prices, sources, profile matching, GEO probe, brief, reference set.
 import { describe, expect, it } from "vitest"
 import { RESEARCH_CASES } from "@/evals/research"
-import { SEARCH_PRICES, countSearches, isSearchTool, searchMicros, worstSearchMicros } from "@/lib/ai/pricing"
+import { DEFAULT_PRICES, SEARCH_PRICES, countSearches, isSearchTool, searchMicros, worstPrice, worstSearchMicros } from "@/lib/ai/pricing"
 import { flat, quotes, sourcesOf, urlForLog, urlKey, type WebSource } from "@/lib/ai/search"
-import { MODEL_LABELS } from "@/lib/ai/models"
+import { MODEL_LABELS, ROLES } from "@/lib/ai/models"
+import { SEARCH_RESULT_TOKENS } from "@/features/ai/calls"
+import { SEARCH_OUTPUT_TOKENS } from "@/features/research/search"
 import { OFFER_SIGNALS, isOfferSignal } from "@/features/offers/signals"
 import { OFFERS_V1 } from "@/features/offers/catalog-v1"
 import { AGENTS } from "@/features/ai/agents"
 import { CONTROL_ROOM, postOf } from "@/features/hq/agency"
 import { companyProfile, keepJudgment, missingNetworks, peopleTargets, personProfile, siteAccounts, type Judgment, type PeopleTarget } from "@/features/research/people"
 import type { FetchResult } from "@/features/prospect-audit/net"
-import { geoFinding, geoQuestions, geoSummary, tradeOf } from "@/features/research/geo"
+import { GEO_CAP_MICROS, GEO_PROBE_MICROS, geoFinding, geoQuestions, geoSummary, tradeOf } from "@/features/research/geo"
 import { briefQueries, settleBrief } from "@/features/research/brief"
 import { briefOutputSchema, type BriefOutput } from "@/features/research/brief-schemas"
 import { withResearch } from "@/features/research/evidence"
@@ -327,6 +329,22 @@ describe("GEO probe", () => {
     const absent = geoFinding(sources.slice(1, 2), { name: "Plomberie Roche", domain: "plomberie-roche.example" }, base)
     expect(absent.present).toBe(false)
     expect(geoSummary(absent)).toBe("Absente des 1 sources que Perplexity donne pour « plombier à Lyon » et 2 autres questions ; y figurent notamment concurrent.example.")
+  })
+
+  it("starts a probe only with its worst case left, the dearest fast model included, and holds a retry", () => {
+    // What generateForRun sets aside for each search call: its search, its input and all its output room. The system
+    // prompt and the query weigh about 200 tokens; 1 000 leaves a wide margin. At 1 € for 1 $, dearer than 0,92 €.
+    const fast = ROLES.fast
+    const worst = Math.max(
+      ...fast.choices.map((model) => {
+        const price = worstPrice([model, ...fast.fallbacks], DEFAULT_PRICES)
+        const call = ((1_000 + SEARCH_RESULT_TOKENS) * price.input + SEARCH_OUTPUT_TOKENS * price.output) * 1e6 + worstSearchMicros(["perplexity_search"], 1, 1)
+        return base.questions.length * call
+      })
+    )
+    expect(worst).toBeLessThanOrEqual(GEO_PROBE_MICROS)
+    // A retry runs the three searches again (production, 2026-11-05).
+    expect(GEO_CAP_MICROS).toBe(2 * GEO_PROBE_MICROS)
   })
 })
 

@@ -322,6 +322,8 @@ suite("AI worker (database)", () => {
     expect(runner.isRetryable(new LeadError("unavailable", "x", 503))).toBe(true)
     expect(runner.isRetryable(new LeadError("budget_exceeded", "x", 429))).toBe(false)
     expect(runner.isRetryable(Object.assign(new Error("db"), { code: "P1001" }))).toBe(true)
+    // No connection free in time for a step's write, even after its own tries (E30, 2026-11-05).
+    expect(runner.isRetryable(Object.assign(new Error("tx"), { code: "P2028" }))).toBe(true)
     expect(runner.isRetryable(new Error("bug"))).toBe(false)
     expect(queue.retryDelayMs(1)).toBe(30_000)
     expect(queue.retryDelayMs(3)).toBe(120_000)

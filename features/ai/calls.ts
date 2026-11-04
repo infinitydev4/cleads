@@ -173,33 +173,12 @@ export async function generateForRun<T = never>(
     ...(opts.search ? { tools: opts.search.tools as Record<string, Tool> } : {}),
   }
   const started = Date.now()
+  const answer = async () => (opts.schema ? await generateText({ ...call, output: Output.object({ schema: opts.schema }) }) : opts.stream ? await streamed(call) : await generateText(call))
+  let result: Awaited<ReturnType<typeof answer>>
   try {
-    const result = opts.schema ? await generateText({ ...call, output: Output.object({ schema: opts.schema }) }) : opts.stream ? await streamed(call) : await generateText(call)
-    const served = servedModel(result.response?.modelId, candidates)
-    const output = opts.schema ? ((result as { output?: unknown }).output as T) : undefined
-    // The Gateway runs the searches inside the call: they are in its answer, with their results.
-    const content = "steps" in result ? result.steps.flatMap((s) => s.content) : []
-    const searches = countSearches(content)
-    const sources = sourcesOf(content)
-    const failedSearches = searchErrors(content)
-    const step = await recordModelStep(ctx, {
-      type: "MODEL",
-      name: opts.name,
-      model: served,
-      usage: tokenUsage(result.totalUsage),
-      durationMs: Date.now() - started,
-      input: opts.private ? { private: opts.private } : { system: opts.system, prompt: opts.prompt, ...(images.length ? { images: images.map((i) => `${i.mediaType}, ${i.data.length} octets`) } : {}) },
-      output: opts.private
-        ? { private: true, sources: sources.length, ...(failedSearches.length ? { searchErrors: failedSearches } : {}) }
-        : opts.search
-          ? { text: output ?? result.text, sources: sources.map((s) => urlForLog(s.url)), ...(failedSearches.length ? { searchErrors: failedSearches } : {}) }
-          : (output ?? result.text),
-      generationId: generationIdOf(result.providerMetadata),
-      prices,
-      searches,
-    })
-    return { text: result.text, output, model: served, costMicros: step.costMicros, finishReason: result.finishReason, sources, searches, searchErrors: failedSearches }
+    result = await answer()
   } catch (error) {
+    console.error("[AI_GENERATE]", ctx.agentId, error)
     const answered = NoObjectGeneratedError.isInstance(error) ? error : null
     await recordModelStep(ctx, {
       type: "MODEL",
@@ -210,10 +189,40 @@ export async function generateForRun<T = never>(
       // What the model answered, when it did not fit the expected shape: the only way to see why afterwards.
       output: { error: error instanceof Error ? error.message : String(error), ...(answered?.finishReason ? { finishReason: answered.finishReason } : {}), ...(answered?.text && !opts.private ? { text: answered.text } : {}) },
       prices,
-    })
-    console.error("[AI_GENERATE]", ctx.agentId, error)
+    }).catch((failure: unknown) => console.error("[AI_COST_UNRECORDED]", ctx.agentId, ctx.id, { model, usage: usageOf(error) }, failure))
     throw modelCallError(error, model, opts.role)
   }
+  const served = servedModel(result.response?.modelId, candidates)
+  const output = opts.schema ? ((result as { output?: unknown }).output as T) : undefined
+  // The Gateway runs the searches inside the call: they are in its answer, with their results.
+  const parts = "steps" in result ? result.steps.flatMap((s) => s.content) : []
+  const searches = countSearches(parts)
+  const sources = sourcesOf(parts)
+  const failedSearches = searchErrors(parts)
+  const usage = tokenUsage(result.totalUsage)
+  const generationId = generationIdOf(result.providerMetadata)
+  // The call is billed from here on. A write that still fails is the database's failure, not the model's: the run is
+  // tried again later, and the log keeps what the Gateway billed. Before 2026-11-05 such a call was booked at 0 €.
+  const step = await recordModelStep(ctx, {
+    type: "MODEL",
+    name: opts.name,
+    model: served,
+    usage,
+    durationMs: Date.now() - started,
+    input: opts.private ? { private: opts.private } : { system: opts.system, prompt: opts.prompt, ...(images.length ? { images: images.map((i) => `${i.mediaType}, ${i.data.length} octets`) } : {}) },
+    output: opts.private
+      ? { private: true, sources: sources.length, ...(failedSearches.length ? { searchErrors: failedSearches } : {}) }
+      : opts.search
+        ? { text: output ?? result.text, sources: sources.map((s) => urlForLog(s.url)), ...(failedSearches.length ? { searchErrors: failedSearches } : {}) }
+        : (output ?? result.text),
+    generationId,
+    prices,
+    searches,
+  }).catch((failure: unknown) => {
+    console.error("[AI_COST_UNRECORDED]", ctx.agentId, ctx.id, { model: served, generationId, usage, searches }, failure)
+    throw failure
+  })
+  return { text: result.text, output, model: served, costMicros: step.costMicros, finishReason: result.finishReason, sources, searches, searchErrors: failedSearches }
 }
 
 export interface DecisionView {
@@ -248,36 +257,47 @@ export async function decideForRun<Q extends Record<string, Experimental_Decisio
   if (maxOutputTokensWithin(worstPrice(candidates, prices), remaining, inputTokens, settings.eurPerUsd) < 1) return overBudget(ctx)
 
   const started = Date.now()
-  try {
-    const result = await experimental_decide({
+  const decide = () =>
+    experimental_decide({
       model: deps.decisionModel ? deps.decisionModel(model) : model,
       state: opts.state,
       questions: opts.questions,
       providerOptions: gatewayOptions({ models: decisionFallbacks(fallbacks, thresholds), userKey: ctx.userKey, agentId: ctx.agentId }),
       abortSignal: opts.abortSignal,
     })
-    const answers = {} as Record<keyof Q & string, DecisionView>
+  let result: Awaited<ReturnType<typeof decide>>
+  const answers = {} as Record<keyof Q & string, DecisionView>
+  try {
+    result = await decide()
     for (const id of Object.keys(opts.questions) as (keyof Q & string)[]) {
       const answer = (result.answers as Record<string, DecisionAnswer>)[id]
       const confidence = confidenceOf(answer)
       answers[id] = { type: answer.type, value: valueOf(answer), confidence, outcome: outcomeOf(confidence, thresholds) }
     }
-    const served = servedModel(result.response?.modelId, candidates)
-    const step = await recordModelStep(ctx, {
-      type: "DECISION",
-      name: opts.name,
-      model: served,
-      usage: tokenUsage({ inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens }),
-      durationMs: Date.now() - started,
-      input: { questions: Object.keys(opts.questions), state: opts.stateForLog ?? opts.state },
-      output: answers,
-      generationId: generationIdOf(result.providerMetadata as Record<string, Record<string, unknown>> | undefined),
-      prices,
-    })
-    return { answers, model: served, costMicros: step.costMicros }
   } catch (error) {
-    await recordModelStep(ctx, { type: "DECISION", name: opts.name, model, usage: NO_USAGE, durationMs: Date.now() - started, output: { error: error instanceof Error ? error.message : String(error) }, prices })
     console.error("[AI_DECIDE]", ctx.agentId, error)
+    await recordModelStep(ctx, { type: "DECISION", name: opts.name, model, usage: NO_USAGE, durationMs: Date.now() - started, output: { error: error instanceof Error ? error.message : String(error) }, prices }).catch(
+      (failure: unknown) => console.error("[AI_COST_UNRECORDED]", ctx.agentId, ctx.id, { model }, failure)
+    )
     throw modelCallError(error, model, "decision")
   }
+  const served = servedModel(result.response?.modelId, candidates)
+  const usage = tokenUsage({ inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens })
+  const generationId = generationIdOf(result.providerMetadata as Record<string, Record<string, unknown>> | undefined)
+  // Billed from here on, as in generateForRun: a write that still fails is the database's failure, never booked at 0 €.
+  const step = await recordModelStep(ctx, {
+    type: "DECISION",
+    name: opts.name,
+    model: served,
+    usage,
+    durationMs: Date.now() - started,
+    input: { questions: Object.keys(opts.questions), state: opts.stateForLog ?? opts.state },
+    output: answers,
+    generationId,
+    prices,
+  }).catch((failure: unknown) => {
+    console.error("[AI_COST_UNRECORDED]", ctx.agentId, ctx.id, { model: served, generationId, usage }, failure)
+    throw failure
+  })
+  return { answers, model: served, costMicros: step.costMicros }
 }

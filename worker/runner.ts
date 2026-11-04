@@ -52,7 +52,8 @@ interface Running {
   done: Promise<void>
 }
 
-const PRISMA_CONNECTION_CODES = new Set(["P1001", "P1002", "P1008", "P1017", "P2024"])
+// P2028: no connection free in time for a transaction, after a step's write tried three times (features/ai/runs.ts).
+const PRISMA_CONNECTION_CODES = new Set(["P1001", "P1002", "P1008", "P1017", "P2024", "P2028"])
 
 /** Passing failures: the run is tried again later. Anything else ends it. */
 export function isRetryable(error: unknown): boolean {

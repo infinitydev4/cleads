@@ -125,7 +125,8 @@ export async function requestResearch(actor: CurrentUser, leadId: string, job: R
     meetingId = meeting.id
   }
   const input = job === "people" ? { job, leadIds: [leadId], force: true } : job === "brief" ? { job, ...(meetingId ? { meetingId } : {}) } : { job }
-  const capMicros = job === "people" ? PEOPLE_FICHE_CAP_MICROS : job === "geo" ? GEO_CAP_MICROS : BRIEF_CAP_MICROS
+  // A fiche's search starts only with one fiche's cap left (people.ts): its run holds two, for a retry after a spend.
+  const capMicros = job === "people" ? 2 * PEOPLE_FICHE_CAP_MICROS : job === "geo" ? GEO_CAP_MICROS : BRIEF_CAP_MICROS
   const run = await startRun(actor, { agentId: "researcher", leadId, status: "QUEUED", priority: job === "brief" ? 2 : 1, input, capMicros })
   return { runId: run.id }
 }

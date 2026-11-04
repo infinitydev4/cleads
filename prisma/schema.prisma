@@ -758,7 +758,8 @@ model Company {
   identityCheckedAt DateTime?
   /// E30 lot 2: last search for its decision makers and social profiles (Exa); data.socials keeps their provenance.
   peopleCheckedAt   DateTime?
-  /// E30 lot 2: last GEO probe (Perplexity), whose result is in data.geo; at most one a month (D52).
+  /// E30 lot 2: last GEO probe (Perplexity), whose result is in data.geo; at most one a month (D52). A queued probe
+  /// sets it a month minus three days back, so a probe that fails or expires frees the company after three days.
   geoCheckedAt      DateTime?
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt

@@ -131,6 +131,11 @@ Les seuils partent prudents (0,85 et 0,60), puis sont calibrés sur le jeu d'év
 
   Une réponse coupée à cette limite arrête l'exécution sans nouvel essai, car elle serait coupée de la même façon, et le message le dit.
 - **Coût réel** : il est calculé à partir de l'usage renvoyé par chaque appel, y compris une réponse coupée ou illisible (la passerelle la facture aussi), et des prix lus sur la passerelle (liste publique relue toutes les 12 heures, instantané intégré en secours). Les recherches web de la passerelle (E30) s'y ajoutent au prix catalogue, une par recherche lancée : leur prix est réservé avant l'appel et elles sont montrées à part dans la consommation (`lib/ai/pricing.ts`). Il est converti en micro-euros au taux réglé dans `AiSetting` au moment de l'appel. Chaque étape garde l'identifiant de génération de la passerelle, pour rapprocher plus tard ce coût estimé du coût facturé.
+- **Enregistrement d'une étape** (`features/ai/runs.ts`) :
+  - son écriture attend jusqu'à 15 s une connexion libre, et réessaie deux fois ;
+  - un appel déjà facturé n'est jamais compté à 0 €, ni présenté comme une panne de l'IA ;
+  - si l'écriture échoue malgré tout, l'exécution est reprise plus tard. Le journal du worker garde ce que la passerelle a facturé, avec l'identifiant de génération (`[AI_COST_UNRECORDED]`).
+  - Corrigé le 5 novembre 2026 : des recherches parallèles de l'Enquêteur avaient épuisé le petit pool de connexions du worker (E30).
 - **Économies** :
   - audit réutilisé 30 jours par domaine ;
   - cache des prompts ;
