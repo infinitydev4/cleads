@@ -25,6 +25,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Switch } from "@/components/ui/switch"
+import { cn } from "@/lib/utils"
 import { TOKEN_DAYS } from "@/features/mcp/names"
 import type { McpCallView, McpTokenView } from "@/features/mcp/tokens"
 import { api } from "../../leads/api"
@@ -220,6 +221,7 @@ export function McpAccessView({ enabled: initialEnabled, canManage, endpoint, mi
   const router = useRouter()
   const [enabled, setEnabled] = useState(initialEnabled)
   const [switching, setSwitching] = useState(false)
+  const [confirming, setConfirming] = useState(false)
   const [mine, setMine] = useState(initialMine)
   const [team, setTeam] = useState(initialTeam)
   const [creating, setCreating] = useState(false)
@@ -284,28 +286,30 @@ export function McpAccessView({ enabled: initialEnabled, canManage, endpoint, mi
                 Les membres qui ont l’IA (propriétaire, manager, SDR, closer) pourront brancher Claude Code, Cursor ou Claude Desktop sur le CRM, avec leurs droits et rien de plus. Les fiches que ces outils lisent partent vers l’IA de chacun, hors des contrats de traitement de Cleads : n’activez qu’avec des outils que l’agence accepte.
               </p>
             </div>
-            {enabled ? (
-              <Switch checked aria-labelledby="mcp-switch" disabled={switching} onCheckedChange={(v) => void toggle(v)} />
-            ) : (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Switch checked={false} aria-labelledby="mcp-switch" disabled={switching} />
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Activer l’accès MCP ?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Chaque membre pourra créer ses jetons. Ce qu’un client MCP lit du CRM part vers l’IA qu’il utilise. Les changements attendront la validation dans Cleads, et ce qui contacte un prospect, toujours son propre clic. Vous pourrez tout couper ici.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Annuler</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => void toggle(true)}>Activer</AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            )}
+            {/*
+              The switch is never a dialog's trigger: a trigger sets its own data-state ("closed") over the switch's
+              ("unchecked"), and the switch loses its track. Switching on asks first; switching off does not.
+            */}
+            <label className="flex shrink-0 cursor-pointer items-center gap-2.5">
+              <span className={cn("text-sm font-semibold", enabled ? "text-success" : "text-muted-foreground")}>{enabled ? "Activé" : "Coupé"}</span>
+              <Switch checked={enabled} aria-labelledby="mcp-switch" disabled={switching} onCheckedChange={(v) => (v ? setConfirming(true) : void toggle(false))} />
+            </label>
           </div>
+          {!enabled && <p className="text-sm font-medium">L’accès est coupé : aucun jeton ne peut être créé ni utilisé. Activez-le avec l’interrupteur pour que l’équipe puisse brancher ses outils.</p>}
+          <AlertDialog open={confirming} onOpenChange={setConfirming}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Activer l’accès MCP ?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Chaque membre pourra créer ses jetons. Ce qu’un client MCP lit du CRM part vers l’IA qu’il utilise. Les changements attendront la validation dans Cleads, et ce qui contacte un prospect, toujours son propre clic. Vous pourrez tout couper ici.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Annuler</AlertDialogCancel>
+                <AlertDialogAction onClick={() => void toggle(true)}>Activer</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <p className="text-sm">
             <ShieldCheck className="mr-1.5 inline h-4 w-4 align-[-3px] text-muted-foreground" aria-hidden="true" />
             Ce que les clients MCP peuvent faire, famille par famille, se règle dans{" "}
@@ -332,10 +336,18 @@ export function McpAccessView({ enabled: initialEnabled, canManage, endpoint, mi
             </h2>
             <p className="text-sm text-muted-foreground">Un jeton par outil : vous pourrez le révoquer seul. Il agit avec vos droits, et un jeton en lecture seule ne change rien.</p>
           </div>
-          <Button type="button" onClick={() => setCreating(true)} disabled={!enabled}>
-            <KeyRound className="mr-2 h-4 w-4" aria-hidden="true" />
-            Créer un jeton
-          </Button>
+          <div className="flex flex-col items-start gap-1.5 sm:items-end">
+            <Button type="button" onClick={() => setCreating(true)} disabled={!enabled} aria-describedby={enabled ? undefined : "mcp-create-why"}>
+              <KeyRound className="mr-2 h-4 w-4" aria-hidden="true" />
+              Créer un jeton
+            </Button>
+            {/* A greyed button says why. */}
+            {!enabled && (
+              <p id="mcp-create-why" className="text-xs text-muted-foreground">
+                {canManage ? "Activez d’abord l’accès MCP, en haut de la page." : "Le propriétaire doit d’abord activer l’accès MCP."}
+              </p>
+            )}
+          </div>
         </div>
         <Card className="p-5">
           <TokenList
