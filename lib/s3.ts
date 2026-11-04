@@ -1,14 +1,16 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 
-// Server-only: these variables must never carry the NEXT_PUBLIC_ prefix.
-const bucket = () => process.env.AWS_BUCKET_NAME!
+// Server-only: these variables must never carry the NEXT_PUBLIC_ prefix. Hosts reserve the AWS_* names for their own
+// runtime (Vercel refuses AWS_ACCESS_KEY_ID), so the S3_* names come first; AWS_* still serve a local .env.
+const env = (name: "ACCESS_KEY_ID" | "SECRET_ACCESS_KEY" | "REGION" | "BUCKET_NAME") => process.env[`S3_${name}`] || process.env[`AWS_${name}`]
+const bucket = () => env("BUCKET_NAME")!
 
 const s3Client = new S3Client({
-  region: process.env.AWS_REGION,
+  region: env("REGION"),
   credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+    accessKeyId: env("ACCESS_KEY_ID")!,
+    secretAccessKey: env("SECRET_ACCESS_KEY")!,
   },
 })
 
