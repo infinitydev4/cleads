@@ -168,11 +168,16 @@ export const CONTROL_ROOM_RADIUS = 2.85
 export const CONSOLE = { inner: 1.75, outer: 2.5, height: 0.74 }
 
 /**
- * The six posts, in the order of the acquisition journey and clockwise on screen from the top left; no post stands
- * between the camera and the core. Each agent faces the core, its holographic panel between them.
+ * The posts, in the order of the acquisition journey and clockwise on screen from the top left, evenly spaced round
+ * the core; the camera (from +x +z) looks through the middle of a gap, so no post stands between it and the core. Each
+ * agent faces the core, its holographic panel between them.
  */
+const CAMERA_ANGLE = Math.PI / 4
+const POST_STEP = (2 * Math.PI) / CONTROL_ROOM.length
+/** The first post is the one nearest the top left of the screen (7π/12 from the camera, where it stood with six). */
+const FIRST_POST = Math.round(((13 * Math.PI) / 12 - CAMERA_ANGLE - POST_STEP / 2) / POST_STEP)
 export const CONTROL_ROOM_SEATS: (Seat & { angle: number })[] = CONTROL_ROOM.map((_, k) => {
-  const angle = (13 * Math.PI) / 12 + (k * Math.PI) / 3
+  const angle = CAMERA_ANGLE + POST_STEP / 2 + (FIRST_POST + k) * POST_STEP
   const [x, z] = [Math.cos(angle) * CONTROL_ROOM_RADIUS, Math.sin(angle) * CONTROL_ROOM_RADIUS]
   return { x, z, rot: Math.atan2(-x, -z), pose: "sit" as const, angle }
 })

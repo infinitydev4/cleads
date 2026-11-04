@@ -50,7 +50,7 @@ Cherche un JSON-LD LocalBusiness (ou un sous-type : Plumber, Restaurant, Dentist
     description: "À utiliser pour évaluer ce qu'un moteur de réponse IA comprend d'une entreprise à partir de son site : entité claire, FAQ, données structurées, llms.txt et accès des robots IA.",
     content: `# Audit GEO du site
 
-Objectif : un assistant IA (ChatGPT, Gemini, Perplexity, les réponses IA de Google) doit pouvoir dire sans hésiter qui est l'entreprise, ce qu'elle fait, où et pour qui, à partir de ce que le site expose. On n'interroge pas les assistants : on juge le site.
+Objectif : un assistant IA (ChatGPT, Gemini, Perplexity, les réponses IA de Google) doit pouvoir dire sans hésiter qui est l'entreprise, ce qu'elle fait, où et pour qui, à partir de ce que le site expose. Ici, on juge le site. Ce que les moteurs de réponse citent vraiment pour le métier et la ville est mesuré à part, par la sonde GEO de l'Enquêteur : quand la fiche en a une, elle est datée et sourcée, et tu peux la citer.
 
 ## 1. Entité claire
 - Le nom, le métier, la zone et le type de clients sont-ils écrits en texte (pas seulement dans une image) sur l'accueil et la page de présentation ?
@@ -346,6 +346,30 @@ De petites agences (1 à 15 personnes), très attachées à l'image et à la qua
 
 ## Vocabulaire
 « projet », « programme », « maîtrise d'œuvre », « permis de construire », « réalisations », « références » ; éviter « produit », « client cible ».`,
+  },
+  {
+    name: "brief-rendez-vous",
+    description: "À utiliser pour écrire le brief d'un rendez-vous : ses rubriques (qui ils sont, actualité, marché local, angles, questions) et la façon de citer chaque fait.",
+    content: `# Brief de rendez-vous
+
+Le brief se lit en deux minutes, juste avant l'échange. Il dit au commercial ce qu'il doit savoir de l'entreprise, et ce qu'il peut en faire.
+
+## Rubriques
+1. **Qui ils sont** : activité, clientèle, zone, ancienneté, taille, positionnement (haut de gamme, urgence, sur devis…). Deux à cinq faits.
+2. **Actualité** : ce qui a changé dans l'année (ouverture, reprise, déménagement, recrutement, prix, chantier notable, article de presse), du plus récent au plus ancien, chaque fait daté. Rien de daté : la rubrique reste vide.
+3. **Marché local** : qui ressort quand on cherche leur métier dans leur ville (concurrents, annuaires, plateformes), et ce que cela dit de leur visibilité.
+4. **Angles** : trois façons d'ouvrir la discussion, chacune reliée à une offre active et à un fait ci-dessus (un signal du registre, une faiblesse de l'audit, une absence des moteurs de réponse).
+5. **Questions** : cinq questions ouvertes, tirées de ce qui a été appris, pour faire parler le prospect de ses objectifs, de ses canaux actuels et de son budget.
+
+## Citer
+- Chaque fait cite sa référence : la page qui le dit, ou la fiche du CRM.
+- Une page peut parler d'un homonyme : même nom et même ville, ou même site, sinon on n'en retient rien.
+- Un avis client se résume en une tonalité, sans nommer son auteur.
+
+## À éviter
+- Les généralités sur le secteur que tout le monde connaît.
+- Les chiffres sans source, les suppositions présentées comme des faits.
+- La vie privée des dirigeants : seul leur rôle professionnel compte.`,
   },
   {
     name: "missions-cleads",

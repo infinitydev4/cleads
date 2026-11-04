@@ -8,6 +8,8 @@ import { REASON_LABELS, REJECTION_REASONS } from "@/features/offer-pitch/labels"
 import { requestFirstDraft, requestReplyDraft } from "@/features/email-draft/service"
 import { requestBuild, requestRevision, shareLink, startStudio } from "@/features/studio/service"
 import { actOnTarget, requestStrategy } from "@/features/strategy/service"
+import { requestResearch } from "@/features/research/service"
+import { JOB_LABELS, RESEARCH_JOBS, TYPICAL_COST } from "@/features/research/labels"
 import { MAX_SEARCH_RESULTS } from "@/features/search/schemas"
 import { defineTool } from "@/features/ai/tools"
 import { capOf, clip, idOf, iso, leadId, personOf, plural, runCard, visibleName } from "./shared"
@@ -38,6 +40,27 @@ export const startAuditTool = defineTool({
   execute: async (ctx, input) => {
     const result = await requestAudit(personOf(ctx), input.leadId, { force: input.force })
     return result.reused ? { started: false, reused: true, leadId: input.leadId, note: "Un audit récent existait déjà : lis-le avec get_lead_audit." } : runCard("auditor", result.runId, { leadId: input.leadId })
+  },
+})
+
+/** E30 lot 2: the Enquêteur's work on one fiche. */
+export const startResearchTool = defineTool({
+  name: "start_research",
+  description:
+    "Confie une recherche web à l'Enquêteur (une à deux minutes, dans le worker) : « people » cherche les décideurs (dirigeants du registre, responsable marketing ou commercial) et les comptes de réseaux sociaux ; « brief » prépare le brief d'un rendez-vous (meetingId) ou d'un premier échange ; « geo » sonde la présence de l'entreprise dans les sources des moteurs de réponse pour son métier et sa ville. Lis d'abord get_lead_research.",
+  permission: "ai:use",
+  approval: "user",
+  costClass: "metered",
+  family: "ai_work",
+  input: z.object({ leadId, job: z.enum(RESEARCH_JOBS).describe("people, brief ou geo"), meetingId: idOf("du rendez-vous que le brief prépare, s'il y en a un (list_meetings)").optional() }),
+  summarize: async (input, ctx) => {
+    const name = await visibleName(personOf(ctx), input.leadId)
+    const what = { people: `chercher les décideurs et les réseaux sociaux de ${name}`, brief: `préparer le brief${input.meetingId ? " du rendez-vous" : ""} de ${name}`, geo: `sonder la présence de ${name} dans les moteurs de réponse` }[input.job]
+    return `Demander à l'Enquêteur de ${what} (${TYPICAL_COST[input.job]}, recherches web comprises).`
+  },
+  execute: async (ctx, input) => {
+    const { runId } = await requestResearch(personOf(ctx), input.leadId, input.job, { meetingId: input.meetingId })
+    return runCard("researcher", runId, { leadId: input.leadId, job: JOB_LABELS[input.job] })
   },
 })
 
@@ -237,4 +260,4 @@ export const actOnTargetTool = defineTool({
   },
 })
 
-export const AI_ACTIONS = [startAuditTool, suggestOffersTool, decideOfferTool, draftEmailTool, draftReplyTool, startStudioTool, studioBuildTool, studioReviseTool, shareStudioLinkTool, proposeTargetsTool, actOnTargetTool] as const
+export const AI_ACTIONS = [startAuditTool, startResearchTool, suggestOffersTool, decideOfferTool, draftEmailTool, draftReplyTool, startStudioTool, studioBuildTool, studioReviseTool, shareStudioLinkTool, proposeTargetsTool, actOnTargetTool] as const

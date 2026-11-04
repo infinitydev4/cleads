@@ -4,6 +4,7 @@ import { BRIEFS } from "@/evals/briefs"
 import { COPILOT_SET } from "@/evals/copilot"
 import { FICHES } from "@/evals/fiches"
 import { REPLIES } from "@/evals/replies"
+import { RESEARCH_CASES } from "@/evals/research"
 import { SITES } from "@/evals/sites"
 import { ROLES, type AiRole } from "@/lib/ai/models"
 import { AGENTS } from "@/features/ai/agents"
@@ -14,6 +15,7 @@ import { FICHES_CASES, REPLIES_CASES, isDecisionModel, qualifierCase, repliesCas
 import { DESIGNER_CASES, designerCase } from "./cases/designer"
 import type { CaseRunner } from "./cases/env"
 import { OFFERS_CASES, offersCase } from "./cases/offers"
+import { RESEARCHER_CASES, researcherCase } from "./cases/researcher"
 import { WRITER_CASES, writerCase } from "./cases/writer"
 import { SUITE_ROLES } from "./roles"
 
@@ -131,6 +133,17 @@ export const SUITES: Record<SuiteId, SuiteDef> = {
     profile: () => ({ own: [{ input: 5_000, output: 400 }, { input: 7_500, output: 400 }, { input: 10_000, output: 700 }], others: [{ role: "judge", call: { input: 6_000, output: 700 } }] }),
     run: copilotCase,
     // Its cost is measured step by step, not on the run: a few requests at once.
+    parallel: 3,
+  },
+  researcher: {
+    info: SUITES_INFO.researcher,
+    cases: RESEARCHER_CASES,
+    quick: sample(RESEARCH_CASES, 6),
+    version: hash(RESEARCH_CASES),
+    roles: SUITE_ROLES.researcher,
+    // One comparison of the profiles and accounts found with the company, by the fast model.
+    profile: () => ({ own: own(3_500, 1_000), others: [] }),
+    run: researcherCase,
     parallel: 3,
   },
 }

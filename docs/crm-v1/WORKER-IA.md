@@ -63,6 +63,13 @@ La file est la **table `AgentRun`** elle-même :
 - **Erreurs** : un BODACC qui ne répond pas fait réessayer la veille ou le balayage une heure plus tard, sans perdre de jour.
 - **Journal** : `registry work` (type et chiffres) ou `registry work failed`.
 
+**Enquêteur** (E30 lot 2, `features/research/`, [ENRICHISSEMENT.md](ENRICHISSEMENT.md)). Un agent comme les autres, dans la file `AgentRun`, deux exécutions à la fois au plus. Son travail est choisi par le champ `job` de l'entrée :
+- `people` : décideurs et comptes sociaux, d'une fiche ou de dix fiches d'une campagne ;
+- `geo` : la sonde GEO d'une fiche ;
+- `brief` : le brief d'un rendez-vous (`meetingId`) ou d'une fiche.
+
+Ses recherches passent par la passerelle IA (clé `AI_GATEWAY_API_KEY`, aucune autre). Les sondes du jour et les briefs du lendemain sont mis en file par la tâche horaire des rappels de Vercel, en exécutions planifiées (sans quota personnel) : un worker arrêté les trouve en file à son retour.
+
 **Maintenance** (toutes les 30 s ; un verrou consultatif la réserve à un seul worker s'il y en a plusieurs) :
 - reprises et abandons ;
 - exécutions interrompues pendant une requête du CRM ;

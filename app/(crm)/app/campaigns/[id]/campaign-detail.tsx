@@ -19,6 +19,7 @@ import type { RelevanceView } from "@/features/relevance/service"
 import { CampaignDialog, type Person } from "../campaign-dialog"
 import { RelevanceCard } from "./relevance-card"
 import { WatchCard } from "./watch-card"
+import { PeopleCard } from "./people-card"
 import { Goal } from "../campaigns-view"
 
 /** Eight weeks of fiches created and meetings booked, as plain bars (values are also in the accessible table). */
@@ -135,6 +136,8 @@ export function CampaignDetailView({
       {relevance && <RelevanceCard view={relevance} campaignId={c.id} userId={currentUserId} />}
 
       <WatchCard campaignId={c.id} archived={c.archived} />
+
+      <PeopleCard campaignId={c.id} archived={c.archived} />
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
         <Card className="space-y-4 p-5">

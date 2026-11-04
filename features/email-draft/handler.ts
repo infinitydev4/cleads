@@ -13,6 +13,7 @@ import { keepEvidenced } from "@/features/prospect-audit/analysis"
 import { latestFor } from "@/features/prospect-audit/latest"
 import { auditReportSchema, type Evidence } from "@/features/prospect-audit/schemas"
 import { playbookFor } from "@/features/prospect-audit/sectors"
+import { researchEvidence, withResearch } from "@/features/research/evidence"
 import { answerSubject, hasBracketPlaceholder, withBookingLine } from "./edits"
 import { firstEmailPrompt, replyPrompt, stepPrompt } from "./prompts"
 import { firstEmailSchema, replyDraftSchema, stepDraftRequestSchema, stepDraftSchema } from "./schemas"
@@ -84,7 +85,7 @@ async function firstEmail(job: HandlerContext, deps: ModelDeps): Promise<string>
   const ctx = job.run
   const lead = await prisma.lead.findFirst({
     where: { id: ctx.leadId ?? "", workspaceId: ctx.workspaceId },
-    select: { id: true, company: { select: { name: true, sector: true, city: true, domain: true, website: true } }, contact: { select: { name: true } } },
+    select: { id: true, companyId: true, company: { select: { name: true, sector: true, city: true, domain: true, website: true } }, contact: { select: { name: true } } },
   })
   if (!lead?.company) throw new LeadError("not_found", "Fiche introuvable", 404)
   const wanted = idOf(job.input, "auditId")
@@ -92,7 +93,8 @@ async function firstEmail(job: HandlerContext, deps: ModelDeps): Promise<string>
   if (!audit) throw new LeadError("conflict", "La fiche n’a plus d’audit : relancez l’audit avant le brouillon.", 409)
   const parsed = auditReportSchema.safeParse(audit.report)
   if (!parsed.success) throw new LeadError("conflict", "Le rapport de l’audit est illisible : relancez l’audit.", 409)
-  const report = parsed.data
+  // E30: the registry's signals and the Enquêteur's news are evidence the email may cite too.
+  const report = withResearch(parsed.data, await researchEvidence(lead.companyId))
   const pitch = await prisma.offerPitch.findFirst({
     where: { leadId: lead.id, auditId: audit.id },
     orderBy: { createdAt: "desc" },

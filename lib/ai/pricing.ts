@@ -135,6 +135,44 @@ export function transcriptionMicros(model: string, seconds: number, eurPerUsd: n
   return Math.ceil((Math.max(seconds, 1) / 60) * perMinute * eurPerUsd * 1e6)
 }
 
+/**
+ * E30: web searches the Gateway runs for a model (its exaSearch and perplexitySearch tools, lib/ai/search.ts), billed
+ * per search on top of the model's tokens. List prices of 2026-11-04 (USD). The price list of the Gateway gives token
+ * prices only, so these are counted here: a search is billed when the model asks for it, failed or not, and a
+ * Perplexity call with several queries is billed one search per query, so an estimate never understates a cost. Each
+ * tool has its own usage key, shown apart in Réglages › IA.
+ */
+export const SEARCH_PRICES = {
+  exa_search: { usage: "exa/search", usdPerSearch: 0.007 },
+  perplexity_search: { usage: "perplexity/search", usdPerSearch: 0.005 },
+} as const
+export type SearchTool = keyof typeof SEARCH_PRICES
+export type SearchCounts = Partial<Record<SearchTool, number>>
+export const isSearchTool = (name: unknown): name is SearchTool => typeof name === "string" && Object.hasOwn(SEARCH_PRICES, name)
+
+/** The searches the Gateway ran in a model's answer: its provider-executed calls of a search tool. */
+export function countSearches(content: readonly unknown[]): SearchCounts {
+  const out: SearchCounts = {}
+  for (const part of content as { type?: unknown; toolName?: unknown; providerExecuted?: unknown; input?: unknown }[]) {
+    if (part?.type !== "tool-call" || !part.providerExecuted || !isSearchTool(part.toolName)) continue
+    const query = (part.input as { query?: unknown } | null)?.query
+    out[part.toolName] = (out[part.toolName] ?? 0) + (Array.isArray(query) ? Math.max(query.length, 1) : 1)
+  }
+  return out
+}
+
+export const searchCount = (counts: SearchCounts) => Object.values(counts).reduce((n, c) => n + (c ?? 0), 0)
+
+/** What searches cost, in micro-euros rounded up. */
+export function searchMicros(counts: SearchCounts, eurPerUsd: number): number {
+  const usd = Object.entries(counts).reduce((sum, [tool, n]) => sum + (n ?? 0) * SEARCH_PRICES[tool as SearchTool].usdPerSearch, 0)
+  return Math.ceil(Math.round(usd * eurPerUsd * 1e9) / 1000)
+}
+
+/** The most `count` searches can cost with any of these tools: what a call sets aside before it starts. */
+export const worstSearchMicros = (tools: readonly SearchTool[], count: number, eurPerUsd: number) =>
+  tools.length ? Math.max(...tools.map((t) => searchMicros({ [t]: count }, eurPerUsd))) : 0
+
 /** Rough size of a prompt: 1 token ≈ 3 characters of French, a little pessimistic on purpose. */
 export const estimateTokens = (text: string) => Math.ceil(text.length / 3)
 

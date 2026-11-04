@@ -40,7 +40,7 @@ export interface WorkerConfig {
 }
 
 /** The Studio and audits are heavy (browser, long generations): fewer at once. */
-export const DEFAULT_PER_AGENT: Partial<Record<AgentId, number>> = { designer: 1, auditor: 2, strategist: 1, qualifier: 1 }
+export const DEFAULT_PER_AGENT: Partial<Record<AgentId, number>> = { designer: 1, auditor: 2, strategist: 1, qualifier: 1, researcher: 2 }
 
 export interface WorkerDeps {
   publish?: (update: RunUpdate) => Promise<void>

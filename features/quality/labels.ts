@@ -4,7 +4,7 @@ import type { AgentId } from "@/features/ai/agents"
  * AI quality (E27, docs/crm-v1/AGENTS-IA.md §20): what each evaluation suite measures, in words for people. Safe to
  * import from the browser; the sets themselves stay on the server (features/quality/suites.ts).
  */
-export const SUITE_IDS = ["auditor", "offers", "writer", "replies", "qualifier", "designer", "copilot"] as const satisfies readonly AgentId[]
+export const SUITE_IDS = ["auditor", "offers", "writer", "replies", "qualifier", "designer", "copilot", "researcher"] as const satisfies readonly AgentId[]
 export type SuiteId = (typeof SUITE_IDS)[number]
 export const isSuiteId = (v: unknown): v is SuiteId => typeof v === "string" && (SUITE_IDS as readonly string[]).includes(v)
 
@@ -106,6 +106,15 @@ export const SUITES_INFO: Record<SuiteId, SuiteInfo> = {
     decision: false,
     team: false,
   },
+  researcher: {
+    id: "researcher",
+    label: "Enquêteur",
+    set: "10 entreprises fictives et leurs résultats de recherche figés",
+    score: "Bons profils et comptes retenus, sans homonyme ni compte d'un autre",
+    measures: ["profiles", "homonyms", "accounts", "evidence", "cost", "duration"],
+    decision: false,
+    team: false,
+  },
 }
 
 export type MeasureKey =
@@ -135,6 +144,9 @@ export type MeasureKey =
   | "grounded"
   | "answer"
   | "steps"
+  | "profiles"
+  | "homonyms"
+  | "accounts"
   | "cost"
   | "duration"
 
@@ -156,6 +168,9 @@ export const MEASURES: Record<MeasureKey, { label: string; hint: string; unit: "
   calibration: { label: "Écart de calibration", hint: "Écart moyen entre la confiance annoncée et l'exactitude réelle", unit: "share", higherIsBetter: false },
   urgency: { label: "Urgence juste", hint: "Urgence attendue retrouvée", unit: "share", higherIsBetter: true },
   action: { label: "Action juste", hint: "Besoin d'agir bien détecté", unit: "share", higherIsBetter: true },
+  profiles: { label: "Bons profils retenus", hint: "Part des décideurs attendus que l'Enquêteur propose", unit: "share", higherIsBetter: true },
+  homonyms: { label: "Homonymes écartés", hint: "Part des homonymes et des autres entreprises jamais proposés comme probables (objectif : 100 %)", unit: "share", higherIsBetter: true },
+  accounts: { label: "Comptes justes", hint: "Part des comptes de l'entreprise retrouvés, sans publication ni compte d'un autre", unit: "share", higherIsBetter: true },
   critique: { label: "Critique visuelle", hint: "Hiérarchie, lisibilité, contraste, mobile, marque, conversion (sur 5)", unit: "grade", higherIsBetter: true },
   axe: { label: "Défauts d'accessibilité", hint: "Violations graves ou critiques relevées par axe-core, par page", unit: "count", higherIsBetter: false },
   scripts: { label: "Scripts retirés", hint: "Pages où le modèle a écrit un script que le nettoyage a retiré : la page publiée n'en a jamais", unit: "share", higherIsBetter: false },

@@ -7,7 +7,7 @@ import { allowedModes, isFamily, type ActionFamily, type FamilyMode } from "./ac
  * model role, tools, V1 skills and limits, versioned and tested with the code. A workspace adds to them without
  * replacing anything (features/ai/definitions.ts): team instructions, skills, a cheaper role, lower limits.
  */
-export const AGENT_IDS = ["auditor", "offers", "writer", "replies", "designer", "copilot", "strategist", "qualifier"] as const
+export const AGENT_IDS = ["auditor", "offers", "writer", "replies", "designer", "copilot", "strategist", "qualifier", "researcher"] as const
 export type AgentId = (typeof AGENT_IDS)[number]
 
 export type SkillModeKey = "always" | "on_demand"
@@ -197,6 +197,7 @@ export const AGENTS: Record<AgentId, Readonly<AgentDef>> = {
       "get_lead_audit",
       "get_lead_registry",
       "list_signals",
+      "get_lead_research",
       "get_lead_offers",
       "get_today",
       "list_meetings",
@@ -240,6 +241,7 @@ export const AGENTS: Record<AgentId, Readonly<AgentDef>> = {
       "import_search",
       "sort_campaign",
       "start_audit",
+      "start_research",
       "suggest_offers",
       "decide_offer",
       "draft_email",
@@ -305,6 +307,27 @@ export const AGENTS: Record<AgentId, Readonly<AgentDef>> = {
     approval: "Sous le seuil de confiance, une personne tranche",
     // One decision per fiche, a batch of 40 per run: a few hundredths of a cent each.
     limits: { maxSteps: 40, maxCostEur: 0.05 },
+  }),
+  researcher: defineAgent({
+    id: "researcher",
+    label: "Enquêteur",
+    mission: "Cherche sur le web les décideurs, les réseaux sociaux et l'actualité d'un prospect, sonde sa visibilité dans les moteurs de réponse et prépare le brief de chaque rendez-vous, chaque fait avec sa source.",
+    persona: `Tu es chargé d'études dans une agence d'acquisition B2B. Avant qu'un commercial appelle ou rencontre une entreprise, tu cherches ce qu'il doit savoir : qui décide, ce qui a changé récemment, comment l'entreprise se présente et ce que disent d'elle ses clients et son marché.
+- Tu ne retiens que ce qu'une source dit vraiment, avec sa référence et sa date ; ce que tu ne trouves pas, tu ne l'inventes pas.
+- Tu te méfies des homonymes : un profil ou une page n'est le bon que si l'entreprise, sa ville ou son site le confirment.
+- Tu ne cherches que des informations professionnelles : jamais d'email deviné, jamais de vie privée.
+- Tu écris pour un commercial pressé : des faits courts, datés, utiles pour l'échange.`,
+    modelRole: "writer",
+    modelRoles: ["writer", "fast", "designer"],
+    epic: "E30",
+    available: true,
+    tools: ["perplexity_search", "exa_search", "save_brief"],
+    families: { read_crm: "auto", read_web: "auto" },
+    skills: [{ name: "brief-rendez-vous", mode: "always" }],
+    output: "Décideurs et comptes sociaux proposés, brief de rendez-vous sourcé, sonde GEO datée",
+    approval: "Chaque décideur trouvé attend un clic avant de devenir un contact ; rien n'est envoyé",
+    // A brief: four searches, then one written answer (≈ 0,08 €). A campaign's decision makers: ten fiches per run.
+    limits: { maxSteps: 50, maxCostEur: 0.4 },
   }),
 }
 

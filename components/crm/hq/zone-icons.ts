@@ -1,4 +1,4 @@
-import { BarChart3, Bot, CalendarDays, CircleCheck, Database, Filter, Handshake, Mail, Megaphone, MessageSquare, PanelsTopLeft, Search, Send, Sparkles, Tag, Target, UsersRound, type LucideIcon } from "lucide-react"
+import { BarChart3, Binoculars, Bot, CalendarDays, CircleCheck, Database, Filter, Handshake, Mail, Megaphone, MessageSquare, PanelsTopLeft, Search, Send, Sparkles, Tag, Target, UsersRound, type LucideIcon } from "lucide-react"
 import type { AgentId } from "@/features/ai/agents"
 import type { ZoneId } from "@/features/hq/zones"
 
@@ -26,4 +26,5 @@ export const AGENT_ICONS: Record<AgentId, LucideIcon> = {
   replies: MessageSquare,
   designer: PanelsTopLeft,
   copilot: Sparkles,
+  researcher: Binoculars,
 }

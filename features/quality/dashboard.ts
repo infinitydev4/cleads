@@ -11,12 +11,13 @@ import { REASON_LABELS } from "@/features/offer-pitch/labels"
 import { TEAM_TARGET } from "./labels"
 import { median } from "./metrics"
 import { teamReplyIds } from "./team"
+import { confirmationRate } from "@/features/research/service"
 
 /**
  * The quality dashboard of Agents IA (E27, docs/crm-v1/AGENTS-IA.md §20), from what the agents did for the team over a
  * period: runs, success, cost and time per agent, and the agent's own measure of usefulness — offers kept, drafts sent
  * nearly as written, filings and verdicts confirmed by a person, targets turned into campaigns, mock-ups that pass their
- * checks. No model is called. Skill tests and evaluations are counted apart.
+ * checks, decision makers confirmed (E30). No model is called. Skill tests and evaluations are counted apart.
  */
 export const PERIODS = [7, 30, 90] as const
 export type Period = (typeof PERIODS)[number]
@@ -132,6 +133,7 @@ export async function qualityDashboard(actor: CurrentUser, days: Period = 30, no
   const complete = auditCount("COMPLETE")
   const allAudits = audits.reduce((s, a) => s + a._count, 0)
 
+  const people = await confirmationRate(ws, since)
   const usefulness: Partial<Record<AgentId, Usefulness>> = {
     auditor: { label: "Audits complets", value: pct(complete, allAudits), detail: `${words(complete, "complet", "complets")} sur ${words(allAudits, "audit", "audits")} ; les autres sont partiels (site illisible, PageSpeed indisponible)`, samples: allAudits },
     offers: { label: "Offres retenues", value: pct(accepted, accepted + rejected), detail: `${words(accepted, "offre retenue", "offres retenues")}, ${words(rejected, "écartée", "écartées")} par les closers`, samples: accepted + rejected },
@@ -145,6 +147,7 @@ export async function qualityDashboard(actor: CurrentUser, days: Period = 30, no
     qualifier: { label: "Jugements confirmés", value: pct(agreedRel.length, decidedRel.length), detail: `${words(agreedRel.length, "fiche jugée", "fiches jugées")} comme Jev, sur ${words(decidedRel.length, "tranchée", "tranchées")} par une personne`, samples: decidedRel.length },
     strategist: { label: "Cibles retenues", value: pct(adopted, adopted + dismissed), detail: `${words(adopted, "cible devenue campagne", "cibles devenues campagnes")}, ${words(dismissed, "écartée", "écartées")}`, samples: adopted + dismissed },
     designer: { label: "Maquettes conformes", value: pct(passed, versions.length), detail: `${words(passed, "version passe", "versions passent")} les contrôles (critique, axe-core, balisage) sur ${versions.length}`, samples: versions.length },
+    researcher: { label: "Décideurs confirmés", value: people.rate, detail: `${words(people.confirmed, "profil confirmé", "profils confirmés")} d'un clic, ${words(people.dismissed, "écarté", "écartés")}`, samples: people.confirmed + people.dismissed },
   }
 
   // ── Runs, per agent ──

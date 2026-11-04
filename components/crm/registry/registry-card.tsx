@@ -21,6 +21,7 @@ const TONE: Record<SignalKind, "success" | "info" | "neutral" | "destructive"> =
   NEW_SITE: "neutral",
   INSOLVENCY: "destructive",
   CLOSED: "destructive",
+  GEO_ABSENT: "neutral",
 }
 
 /** Months since a calendar day, for « créée il y a 3 mois ». */

@@ -3,13 +3,16 @@ import { formatCount } from "@/features/metrics/definitions"
 import type { AgencyPulse, ZoneSummary } from "./types"
 
 /**
- * The AI agency in the 3D view (E26): where each agent works and what it is doing. The six specialists sit round the
- * core of the control room ("Agents IA"), the core is the copilot, and the designer works in the Studio Web. Pure and
- * safe to import from the browser, so the scene, the HUD and the tests agree.
+ * The AI agency in the 3D view (E26): where each agent works and what it is doing. The specialists sit round the core
+ * of the control room ("Agents IA"), the core is the copilot, and the designer works in the Studio Web. Pure and safe
+ * to import from the browser, so the scene, the HUD and the tests agree.
  */
 
-/** The control room's posts, in the order of the acquisition journey: targets, sorting, audit, offers, email, replies. */
-export const CONTROL_ROOM = ["strategist", "qualifier", "auditor", "offers", "writer", "replies"] as const satisfies readonly AgentId[]
+/**
+ * The control room's posts, in the order of the acquisition journey: targets, sorting, research (E30), audit, offers,
+ * email, replies.
+ */
+export const CONTROL_ROOM = ["strategist", "qualifier", "researcher", "auditor", "offers", "writer", "replies"] as const satisfies readonly AgentId[]
 
 /** The agents as the HUD lists them: the copilot (the agency's head), the control room in journey order, the designer. */
 export const AGENCY_ORDER: readonly AgentId[] = ["copilot", ...CONTROL_ROOM, "designer"]

@@ -26,6 +26,8 @@ import { listReplies } from "@/features/outreach/replies"
 import { periodsOf, periodCounts, topSectors } from "@/features/metrics/service"
 import { listMembers } from "@/features/team/service"
 import { recentSignals, registryView } from "@/features/signals/service"
+import { researchView } from "@/features/research/service"
+import { CANDIDATE_ROLE_LABELS, CANDIDATE_STATUS_LABELS } from "@/features/research/labels"
 import { ROLE_LABELS } from "@/lib/crm/roles"
 import { can } from "@/lib/rbac"
 import { defineTool } from "@/features/ai/tools"
@@ -238,6 +240,32 @@ export const listSignalsTool = defineTool({
   execute: async (ctx, input) => {
     const rows = await recentSignals(personOf(ctx), { kinds: input.kinds, days: input.days })
     return { signals: rows.map((r) => ({ leadId: r.leadId, company: r.company, city: r.city, date: r.occurredAt, kind: r.label, summary: untrusted(r.summary, { source: "BODACC", maxChars: 300 }) })) }
+  },
+})
+
+/** E30 lot 2: what the Enquêteur found for the fiche, everything from the web fenced as outside content. */
+export const getLeadResearchTool = defineTool({
+  name: "get_lead_research",
+  description: "Lit ce que l'Enquêteur a trouvé pour la fiche : décideurs proposés (profil public, poste, confiance, à confirmer d'un clic), comptes de réseaux sociaux, sonde GEO (présence dans les sources des moteurs de réponse pour son métier et sa ville) et dernier brief de rendez-vous avec ses sources.",
+  permission: "lead:read",
+  approval: "auto",
+  costClass: "free",
+  family: "read_crm",
+  input: z.object({ leadId }),
+  execute: async (ctx, input) => {
+    const v = await researchView(personOf(ctx), input.leadId)
+    const web = (text: string, source: string) => untrusted(text, { source, maxChars: 400 })
+    const claims = (list: { text: string; sources: string[]; date: string | null }[]) => list.map((c) => ({ text: web(c.text, c.sources[0] ?? "fiche"), date: c.date, sources: c.sources }))
+    return {
+      decisionMakers: v.candidates.map((k) => ({ name: k.name, title: k.title, role: CANDIDATE_ROLE_LABELS[k.role], status: CANDIDATE_STATUS_LABELS[k.status], confidence: Math.round(k.confidence * 100) / 100, profile: k.url })),
+      socials: v.socials.map((s) => ({ network: s.label, url: s.url, foundByResearch: !!s.found })),
+      geo: v.geo ? { date: iso(v.geo.checkedAt), questions: v.geo.questions, present: v.geo.present, cited: v.geo.cited.map((c) => c.host), sources: v.geo.sources } : null,
+      brief: v.brief
+        ? { date: iso(v.brief.createdAt), who: claims(v.brief.content.who), news: claims(v.brief.content.news), market: claims(v.brief.content.market), angles: v.brief.content.angles.map((a) => ({ title: a.title, offer: a.offerName, why: web(a.why, "brief") })), questions: v.brief.content.questions }
+        : null,
+      running: v.running.map((r) => r.job),
+      note: v.candidates.length || v.brief || v.geo ? null : "L'Enquêteur n'a encore rien cherché pour cette fiche : start_research le lance.",
+    }
   },
 })
 
@@ -656,6 +684,7 @@ export const READ_ACTIONS = [
   getLeadAuditTool,
   getLeadRegistryTool,
   listSignalsTool,
+  getLeadResearchTool,
   getLeadOffersTool,
   getTodayTool,
   listMeetingsTool,

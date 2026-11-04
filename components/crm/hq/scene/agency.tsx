@@ -130,12 +130,13 @@ export function LabFloor({ zone, selected }: { zone: "agents" | "studio"; select
 // "Agents IA": the control room
 // ---------------------------------------------------------------------------------------------------------------
 
-/** A hexagonal ring between two apothems, flat sides facing the posts, extruded upwards. */
+/** A ring with one flat side per post, between two apothems, extruded upwards. */
 function hexRing(inner: number, outer: number, height: number, bevel = 0.015) {
+  const half = Math.PI / CONTROL_ROOM_SEATS.length
   const corners = (apothem: number) =>
     CONTROL_ROOM_SEATS.map((s) => {
-      const a = s.angle + Math.PI / 6
-      const r = apothem / Math.cos(Math.PI / 6)
+      const a = s.angle + half
+      const r = apothem / Math.cos(half)
       // Drawn in the shape's plane, which becomes the floor once turned (its y is the world's -z).
       return new THREE.Vector2(Math.cos(a) * r, -Math.sin(a) * r)
     })

@@ -24,6 +24,8 @@ export interface IdentityData {
   category: string | null
   labels: string[]
   legalForm: string | null
+  /** E30 lot 2: the company objected to commercial use of its registry data: nobody is searched for it. */
+  opposition?: boolean
 }
 
 type Target = Pick<Company, "id" | "name" | "siren" | "siret" | "postalCode" | "legalState" | "data">
@@ -44,6 +46,7 @@ export function identityUpdate(c: Target, found: { record: CompanyRecord | null;
     category: r?.category ?? null,
     labels: r?.labels ?? [],
     legalForm: r?.legalForm ?? null,
+    opposition: r?.opposition ?? false,
   }
   const update: Prisma.CompanyUpdateInput = { identityCheckedAt: now, data: { ...(isObj(c.data) ? c.data : {}), identity } as unknown as Prisma.InputJsonValue }
   if (!r) return update
