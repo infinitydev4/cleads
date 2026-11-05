@@ -39,22 +39,32 @@ export type RuleViolation = { code: "forbidden" | "invalid"; message: string }
 
 interface Move {
   actor: { id: string; role: CrmRole }
-  deal: { ownerId: string | null; stage: DealStage }
+  deal: { ownerId: string | null; stage: DealStage; amountCents?: number | null }
   to: DealStage
   lostReason?: string | null
+  /** The amount the change sets; undefined when it leaves the amount as it is. */
+  amountCents?: number | null
 }
+
+export const WON_AMOUNT_MESSAGE = "Indiquez le montant HT signé pour passer l’opportunité en « Gagné »."
 
 /**
  * Who may move an opportunity where. Closers move their own, managers and owners any; SDRs and viewers none (an SDR
- * hands over by qualifying). A closed opportunity (won or lost) is reopened by a manager only, and losing needs a reason.
- * Returns null when the move is allowed (or is no move).
+ * hands over by qualifying). A closed opportunity (won or lost) is reopened by a manager only, losing needs a reason and
+ * winning the amount signed (E10: the reports add it up). Returns null when the move is allowed (or is no move).
  */
-export function checkDealMove({ actor, deal, to, lostReason }: Move): RuleViolation | null {
+export function checkDealMove({ actor, deal, to, lostReason, amountCents }: Move): RuleViolation | null {
   const scope = scopeOf(actor.role, "deal:move")
   if (!scope) return { code: "forbidden", message: "Votre rôle ne déplace pas les opportunités : le closer ou un manager s’en charge." }
   if (scope === "own" && deal.ownerId !== actor.id) return { code: "forbidden", message: "Cette opportunité ne vous est pas attribuée." }
-  if (deal.stage === to) return null
-  if (!isOpen(deal.stage) && scope !== "all") return { code: "forbidden", message: "Seul un manager rouvre une opportunité gagnée ou perdue." }
+  const moving = deal.stage !== to
+  if (moving && !isOpen(deal.stage) && scope !== "all") return { code: "forbidden", message: "Seul un manager rouvre une opportunité gagnée ou perdue." }
+  // Winning, or removing the amount of a won one. A won opportunity from before the rule keeps its other edits.
+  if (to === "WON" && (moving || amountCents !== undefined)) {
+    const amount = amountCents !== undefined ? amountCents : deal.amountCents
+    if (!amount || amount <= 0) return { code: "invalid", message: WON_AMOUNT_MESSAGE }
+  }
+  if (!moving) return null
   if (to === "LOST" && !lostReason?.trim()) return { code: "invalid", message: "Indiquez pourquoi l’opportunité est perdue." }
   return null
 }

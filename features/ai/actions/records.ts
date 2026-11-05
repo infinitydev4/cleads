@@ -167,7 +167,7 @@ export const qualifyLeadTool = defineTool({
 
 export const moveDealTool = defineTool({
   name: "move_deal",
-  description: "Fait avancer une opportunité (dealId lu avec get_lead ou get_pipeline) : étape, montant, date de signature prévue ; « LOST » demande une raison.",
+  description: "Fait avancer une opportunité (dealId lu avec get_lead ou get_pipeline) : étape, montant, date de signature prévue ; « LOST » demande une raison, « WON » le montant HT signé (amountEur) si l'opportunité n'en a pas.",
   permission: "deal:move",
   approval: "user",
   costClass: "free",

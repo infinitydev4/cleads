@@ -11,6 +11,7 @@ import { DEAL_OWNER_ROLES, STAGES } from "@/features/pipeline/rules"
 import type { LeadDetail } from "@/features/leads/types"
 import { api } from "./api"
 import { LostDialog } from "./lost-dialog"
+import { WonDialog } from "./won-dialog"
 import { personName, type Assignee } from "./filter-bar"
 
 const NONE = "__none__"
@@ -18,6 +19,7 @@ const NONE = "__none__"
 /** The opportunities of a fiche. Editable by whoever may move them; the server applies the rules per role either way. */
 export function DealsEditor({ lead, assignees, onChange }: { lead: LeadDetail; assignees: Assignee[]; onChange: (lead: LeadDetail) => void }) {
   const [lostFor, setLostFor] = useState<string | null>(null)
+  const [wonFor, setWonFor] = useState<string | null>(null)
   const owners = assignees.filter((a) => (DEAL_OWNER_ROLES as readonly string[]).includes(a.role))
 
   async function patch(dealId: string, body: object) {
@@ -33,6 +35,10 @@ export function DealsEditor({ lead, assignees, onChange }: { lead: LeadDetail; a
 
   if (lead.deals.length === 0) return null
   const target = lead.deals.find((d) => d.id === lostFor)
+  const winning = lead.deals.find((d) => d.id === wonFor)
+  // Winning needs the amount signed: asked here when the opportunity has none yet.
+  const choose = (d: (typeof lead.deals)[number], stage: string) =>
+    stage === "LOST" ? setLostFor(d.id) : stage === "WON" && !(d.amountCents && d.amountCents > 0) ? setWonFor(d.id) : patch(d.id, { stage })
 
   return (
     <section aria-label="Opportunités" className="space-y-3">
@@ -40,7 +46,7 @@ export function DealsEditor({ lead, assignees, onChange }: { lead: LeadDetail; a
       {lead.deals.map((d) => (
         <div key={d.id} className="grid gap-3 rounded-xl border p-3 text-sm sm:grid-cols-2">
           <label className="space-y-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Étape
-            <Select value={d.stage} disabled={!d.canMove} onValueChange={(stage) => (stage === "LOST" ? setLostFor(d.id) : patch(d.id, { stage }))}>
+            <Select value={d.stage} disabled={!d.canMove} onValueChange={(stage) => choose(d, stage)}>
               <SelectTrigger aria-label="Étape de l’opportunité"><SelectValue /></SelectTrigger>
               <SelectContent>{STAGES.map((s) => <SelectItem key={s} value={s}>{dealStage[s].label}</SelectItem>)}</SelectContent>
             </Select>
@@ -81,6 +87,15 @@ export function DealsEditor({ lead, assignees, onChange }: { lead: LeadDetail; a
         onCancel={() => setLostFor(null)}
         onConfirm={async (reason, detail) => {
           if (await patch(lostFor!, { stage: "LOST", lostReason: reason, lostDetail: detail || undefined })) setLostFor(null)
+        }}
+      />
+      <WonDialog
+        key={`won-${wonFor ?? "closed"}`}
+        name={lead.company?.name ?? "Opportunité"}
+        open={!!winning}
+        onCancel={() => setWonFor(null)}
+        onConfirm={async (amountCents) => {
+          if (await patch(wonFor!, { stage: "WON", amountCents })) setWonFor(null)
         }}
       />
     </section>

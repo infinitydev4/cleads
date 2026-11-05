@@ -20,6 +20,7 @@ import { api } from "../leads/api"
 import { personName, type Assignee } from "../leads/filter-bar"
 import { LeadPanel } from "../leads/lead-panel"
 import { LostDialog } from "../leads/lost-dialog"
+import { WonDialog } from "../leads/won-dialog"
 
 const ANY = "__any__"
 
@@ -40,6 +41,7 @@ export function PipelineBoard({ deals: initial, filters, assignees, currentUserI
   const [openLead, setOpenLead] = useState<string | null>(null)
   const [dragging, setDragging] = useState<BoardDeal | null>(null)
   const [losing, setLosing] = useState<BoardDeal | null>(null)
+  const [winning, setWinning] = useState<BoardDeal | null>(null)
   const [q, setQ] = useState(filters.q ?? "")
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor))
 
@@ -72,6 +74,8 @@ export function PipelineBoard({ deals: initial, filters, assignees, currentUserI
   async function move(deal: BoardDeal, stage: DealStage, extra: object = {}) {
     if (deal.stage === stage) return
     if (stage === "LOST" && !("lostReason" in extra)) return setLosing(deal)
+    // Winning needs the amount signed; the server refuses without it, the dialog asks first.
+    if (stage === "WON" && !(deal.amountCents && deal.amountCents > 0) && !("amountCents" in extra)) return setWinning(deal)
     const before = deals
     setDeals((all) => all.map((d) => (d.id === deal.id ? { ...d, stage } : d)))
     try {
@@ -127,6 +131,17 @@ export function PipelineBoard({ deals: initial, filters, assignees, currentUserI
           const deal = losing!
           setLosing(null)
           void move(deal, "LOST", { lostReason: reason, lostDetail: detail || undefined })
+        }}
+      />
+      <WonDialog
+        key={`won-${winning?.id ?? "none"}`}
+        name={winning?.name ?? ""}
+        open={!!winning}
+        onCancel={() => setWinning(null)}
+        onConfirm={(amountCents) => {
+          const deal = winning!
+          setWinning(null)
+          void move(deal, "WON", { amountCents })
         }}
       />
       <LeadPanel id={openLead} assignees={assignees} currentUserId={currentUserId} onClose={() => { setOpenLead(null); router.refresh() }} />

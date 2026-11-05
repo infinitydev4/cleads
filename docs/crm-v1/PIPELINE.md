@@ -31,7 +31,7 @@ Le menu « Statut » de la fiche suit les mêmes règles : choisir « Qualifié 
 | SDR | créer l'opportunité en qualifiant, choisir le closer à ce moment-là ; pas la déplacer ensuite |
 | Lecteur | la voir, jamais la déplacer |
 
-Perdre demande un **motif** (liste fixe : budget insuffisant, concurrent, mauvais moment, plus de réponse, pas de besoin, autre + précision) pour pouvoir les compter dans les rapports. Une opportunité n'est rouverte que s'il n'y en a pas déjà une autre d'ouverte sur la fiche. Toute règle est vérifiée **sur le serveur** : l'interface n'est qu'un confort. Le tableau « rôle × étape de départ × étape d'arrivée » est testé en entier.
+Perdre demande un **motif** (liste fixe : budget insuffisant, concurrent, mauvais moment, plus de réponse, pas de besoin, autre + précision) pour pouvoir les compter dans les rapports. Gagner demande le **montant HT signé** (E10, D56), depuis le tableau, la fiche, le copilote ou MCP ; une opportunité gagnée garde un montant (on le corrige, on ne l'efface pas), et celles gagnées avant la règle restent « non renseigné » jusqu'à ce qu'on le saisisse. Une opportunité n'est rouverte que s'il n'y en a pas déjà une autre d'ouverte sur la fiche. Toute règle est vérifiée **sur le serveur** : l'interface n'est qu'un confort. Le tableau « rôle × étape de départ × étape d'arrivée » est testé en entier.
 
 ## Le tableau
 
