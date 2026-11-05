@@ -63,7 +63,7 @@ Accès depuis un pays tiers : un membre qui consulte les fiches depuis un pays s
 - **Destinataires internes** : la matrice des rôles (`lib/rbac.ts`) : propriétaire et managers voient tout ; un SDR ses fiches et le pool non attribué ; un closer les siennes et celles où il a une opportunité ou un rendez-vous ; un lecteur lit tout.
 - **Sous-traitants** : Vercel, Railway, OVH, Pusher.
 - **Durée** :
-  - **Ce que fait le code** : aucune purge. Une fiche reste jusqu'à ce que le propriétaire la supprime (`data:delete`). La suppression efface l'historique, les rendez-vous, les opportunités, les maquettes et les conversations du copilote qui l'ont lue, puis le contact et l'entreprise quand plus rien ne les utilise. L'adresse reste sur la liste d'opposition.
+  - **Ce que fait le code** : aucune purge. Une fiche reste jusqu'à ce que le propriétaire la supprime (`data:delete`). La suppression efface l'historique, les rendez-vous, les opportunités, les maquettes et les conversations du copilote qui l'ont lue, puis le contact et l'entreprise quand plus rien ne les utilise. Les emails restent (traitement 2), et l'adresse reste sur la liste d'opposition.
   - **Écart** : la politique de confidentialité annonce « 3 ans à compter du dernier contact » pour les données de prospection, ce qui correspond au repère de la CNIL. Rien ne l'applique encore.
   - **Question pour l'avocat** : confirmer 3 ans après le dernier contact venant du prospect. Une purge automatique serait alors à construire (V2).
 - **Mesures** :
@@ -91,8 +91,8 @@ Accès depuis un pays tiers : un membre qui consulte les fiches depuis un pays s
 - **Sous-traitants** : l'hébergeur des boîtes, sur les domaines secondaires (`trycleads.com`, `usecleads.com`), jamais `cleads.fr` ; Vercel (tâches planifiées d'envoi et de lecture) ; Railway. SES et Resend sont interdits pour la prospection, et le code le refuse.
 - **Pas de suivi** : ni pixel d'ouverture ni suivi des clics.
 - **Durée** :
-  - **Ce que fait le code** : les messages restent avec la fiche, sans limite, et partent avec elle. La liste d'opposition est gardée même après la suppression de la fiche, pour ne jamais recontacter la personne.
-  - **Question pour l'avocat** : combien de temps garder les messages, et la liste d'opposition après la suppression d'une fiche ?
+  - **Ce que fait le code** : les messages restent sans limite. **La suppression d'une fiche ne les efface pas** : ils en sont seulement détachés (`onDelete: SetNull` sur la fiche et sur le contact), avec l'adresse, l'objet et le texte. La liste d'opposition est gardée, pour ne jamais recontacter la personne.
+  - **Question pour l'avocat** : combien de temps garder les messages, et la liste d'opposition après la suppression d'une fiche ? Faut-il effacer les messages avec la fiche ? Ils servent aussi à compter les envois du jour et la santé des boîtes.
 - **Mesures** :
   - pied de page imposé (signature, origine de l'adresse, lien de désinscription) et en-têtes de désinscription en un clic (RFC 8058) ;
   - arrêt automatique d'une séquence sur une réponse, un rebond, une désinscription, une plainte ou « Ne plus écrire » ;
@@ -226,7 +226,7 @@ Accès depuis un pays tiers : un membre qui consulte les fiches depuis un pays s
 | Droit | Dans le CRM | Qui |
 |---|---|---|
 | **Accès (art. 15) et portabilité (art. 20)** | « Exporter ses données (RGPD) » dans la partie contact de la fiche. Un fichier JSON : identité et entreprise ; fiches avec leur historique (notes, appels, statuts) et leurs opportunités ; emails échangés ; rendez-vous ; profils proposés pour la personne ; présence sur la liste d'opposition. Rien d'une autre personne : ni collègue, ni membre de l'équipe, ni homonyme. Chaque export est inscrit au journal (`contact.exported`), sans son contenu | Propriétaire, managers (`data:export`) |
-| **Effacement (art. 17)** | Suppression de la fiche (voir le traitement 1). L'adresse reste sur la liste d'opposition. Effacer une personne sans sa fiche : V2 (D66) | Propriétaire (`data:delete`) |
+| **Effacement (art. 17)** | Suppression de la fiche (voir le traitement 1). L'adresse reste sur la liste d'opposition. **Les emails échangés restent**, détachés de la fiche (traitement 2) : à corriger. Effacer une personne sans sa fiche : V2 (D66) | Propriétaire (`data:delete`) |
 | **Opposition (art. 21)** | Lien de désinscription, réponse classée « Ne plus écrire », « ne pas contacter », liste d'exclusion ; vérifiés à l'import et avant chaque envoi | Automatique, ou toute personne qui peut écrire sur la fiche |
 | **Rectification (art. 16)** | « Modifier » sur la fiche | Qui peut écrire sur la fiche |
 
@@ -247,7 +247,7 @@ Accès depuis un pays tiers : un membre qui consulte les fiches depuis un pays s
 
 1. **Représentant dans l'UE** (art. 27), ou établissement en France (art. 3.1). Le nommer dans la politique de confidentialité.
 2. **Délégué à la protection des données** (art. 37) et **analyse d'impact** (art. 35).
-3. **Durées de conservation** : prospects (la politique annonce 3 ans, le code ne purge pas), emails, liste d'opposition après effacement, rendez-vous, journaux d'exécution de l'IA, profils écartés, journal d'audit, messages du formulaire.
+3. **Durées de conservation** : prospects (la politique annonce 3 ans, le code ne purge pas), emails (gardés même après la suppression de la fiche), liste d'opposition après effacement, rendez-vous, journaux d'exécution de l'IA, profils écartés, journal d'audit, messages du formulaire.
 4. **Transferts hors UE** : Vercel, Railway, la passerelle IA et ses fournisseurs, Resend, Sentry, et l'accès des membres depuis un pays tiers. Pour chacun : DPF, clauses types, analyse d'impact du transfert ; un DPA signé.
 5. **Collecte** : Google Maps sans API (conditions de Google), sites des entreprises, profils LinkedIn trouvés par Exa.
 6. **Bases légales** : réservation en ligne et formulaire (consentement, ou art. 6.1.b) ; régime B2B des emails (art. L34-5 du CPCE).
