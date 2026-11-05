@@ -13,17 +13,6 @@ function authorized(request: Request) {
   return given.length === expected.length && timingSafeEqual(given, expected)
 }
 
-/**
- * Hourly: reminds the contact and the closer of meetings starting within 24 hours, once each. Safe to run twice. Then
- * queues the Enquêteur's scheduled work (E30 lot 2): the brief of tomorrow's meetings, and the GEO probes of the day.
- */
-export async function POST(request: Request) {
-  if (!authorized(request)) return NextResponse.json({ error: "Non autorisé" }, { status: 401 })
-  // On Vercel the tasks come from Vercel Cron (GET): a call from Netlify's functions after the switch is ignored.
-  if (process.env.VERCEL) return NextResponse.json({ skipped: "Sur Vercel, ces tâches passent par Vercel Cron." }, { status: 202 })
-  return run()
-}
-
 async function run() {
   try {
     const reminders = await sendMeetingReminders()
@@ -35,8 +24,9 @@ async function run() {
 }
 
 /**
- * Vercel Cron calls in GET, with the same secret. It runs only once the tasks are switched to Vercel
- * (CRON_RUNNER=vercel, docs/crm-v1/MIGRATION-VERCEL.md): Netlify and Vercel never send at once.
+ * Hourly: reminds the contact and the closer of meetings starting within 24 hours, once each. Safe to run twice. Then
+ * queues the Enquêteur's scheduled work (E30 lot 2): the brief of tomorrow's meetings, and the GEO probes of the day.
+ * Called by Vercel Cron (vercel.json); works only with CRON_RUNNER=vercel (docs/crm-v1/MIGRATION-VERCEL.md).
  */
 export async function GET(request: Request) {
   if (!authorized(request)) return NextResponse.json({ error: "Non autorisé" }, { status: 401 })

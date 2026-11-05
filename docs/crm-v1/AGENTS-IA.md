@@ -31,7 +31,7 @@ Trois contraintes encadrent le tout : plusieurs modèles interchangeables, l'hum
 ## 3. Vue d'ensemble
 
 ```
-UI 2D + 3D (Netlify, Next 16)
+UI 2D + 3D (Vercel, Next 16)
  ├─ Fiche : Audit IA · Offres suggérées · Brouillon IA · Générer une landing ─► AgentRun en file
  ├─ /app/agents (exécutions, à valider, skills, offres, coûts) · /app/studio (maquettes)
  └─ Copilote ⌘J (tours courts en streaming)               ▲ Pusher : progression en direct
