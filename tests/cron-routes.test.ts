@@ -1,5 +1,5 @@
-// Migration to Vercel: the scheduled tasks never run twice. Vercel Cron (GET) works only once CRON_RUNNER=vercel; on
-// Vercel, a POST (Netlify's functions) does nothing. No database: every case stops before the task.
+// Scheduled tasks (Vercel Cron, GET): they need CRON_SECRET and work only with CRON_RUNNER=vercel. No database: every
+// case stops before the task.
 import { afterEach, describe, expect, it } from "vitest"
 import * as mailbox from "@/app/api/cron/mailbox-poll/route"
 import * as sequences from "@/app/api/cron/sequence-run/route"
@@ -13,26 +13,23 @@ describe.each([
   ["sequence-run", sequences],
   ["meeting-reminders", reminders],
 ])("/api/cron/%s", (path, route) => {
-  const req = (method: string, secret = "s3cret") => new Request(`https://cleads.fr/api/cron/${path}`, { method, ...call(secret) })
+  const req = (secret = "s3cret") => new Request(`https://cleads.fr/api/cron/${path}`, call(secret))
   afterEach(() => {
     process.env = { ...saved }
   })
 
-  it("refuses a wrong secret in GET and POST", async () => {
+  it("refuses a wrong secret", async () => {
     process.env.CRON_SECRET = "s3cret"
-    expect((await route.GET(req("GET", "nope"))).status).toBe(401)
-    expect((await route.POST(req("POST", "nope"))).status).toBe(401)
+    expect((await route.GET(req("nope"))).status).toBe(401)
   })
 
-  it("waits for CRON_RUNNER=vercel before working in GET", async () => {
+  it("waits for CRON_RUNNER=vercel before working", async () => {
     process.env.CRON_SECRET = "s3cret"
     delete process.env.CRON_RUNNER
-    expect((await route.GET(req("GET"))).status).toBe(202)
+    expect((await route.GET(req())).status).toBe(202)
   })
 
-  it("ignores a POST on Vercel", async () => {
-    process.env.CRON_SECRET = "s3cret"
-    process.env.VERCEL = "1"
-    expect((await route.POST(req("POST"))).status).toBe(202)
+  it("answers GET only: Next.js returns 405 to the other methods", () => {
+    expect(Object.keys(route).filter((name) => /^[A-Z]+$/.test(name))).toEqual(["GET"])
   })
 })
