@@ -7,7 +7,7 @@ Quatre sources, chacune pour une question (décisions D45 à D53 dans [PLAN.md](
 | Quand appeler, qui écarter | **BODACC** (open data de la DILA) et **annuaire des entreprises** (INSEE, RNE) | 1, fait | gratuit, sans clé |
 | À qui parler | **Exa**, par les outils de la passerelle IA | 2, fait | 7 $ les 1 000 recherches |
 | Quoi dire | **Perplexity**, par les outils de la passerelle IA | 2, fait | 5 $ les 1 000 recherches |
-| La preuve d'un budget | **Meta**, bibliothèque publicitaire | 3 | gratuit, application Meta vérifiée |
+| La preuve d'un budget | **Meta**, bibliothèque publicitaire | 3, fait | gratuit : une app Meta et une identité confirmée |
 
 Reporté en V2 (D53) :
 - emails nominatifs vérifiés (Icypeas) ;
@@ -197,7 +197,7 @@ Le premier soir en production, le worker a pris les dix sondes du jour. Neuf n'o
 - **Un mois perdu** : l'entreprise restait réservée un mois malgré l'échec. La réservation dure désormais trois jours.
 
 ### Ce que les autres agents en font
-- **Offres (E21) et rédacteur (E22)** : la création récente, la reprise, l'absence des moteurs de réponse et l'actualité du dernier brief s'ajoutent aux preuves de l'audit (identifiants R1, R2…). Trois nouveaux signaux d'offre :
+- **Offres (E21) et rédacteur (E22)** : la création récente, la reprise, l'absence des moteurs de réponse et l'actualité du dernier brief s'ajoutent aux preuves de l'audit (identifiants R1, R2…), et, depuis le lot 3, les publicités Meta en cours (`ads_running`). Trois signaux d'offre viennent du lot 2 :
   - `new_business`, que sert l'offre « site vitrine » ;
   - `takeover`, que sert l'offre « refonte du site » ;
   - `geo_absent`, que sert l'offre « GEO ».
@@ -210,8 +210,65 @@ Le premier soir en production, le worker a pris les dix sondes du jour. Neuf n'o
   - le tableau de bord montre la part des profils confirmés d'un clic.
   - Changer le modèle « Traiter en volume » demande désormais aussi cette évaluation.
 
+## Lot 3 — Meta : les publicités en cours
+
+Une entreprise qui paie des publicités Facebook ou Instagram a un budget marketing. Meta publie toutes les publicités diffusées dans l'Union européenne, quel qu'en soit le sujet (Digital Services Act), et les garde un an après leur dernière diffusion. Son API, `ads_archive`, est gratuite.
+
+### La mise en place, une fois (propriétaire)
+1. **L'application Meta** « cleads » existe depuis le 5 novembre 2026 :
+   - ID `1843657773498923`, portefeuille business Webconcepter ;
+   - créée sans cas d'utilisation : l'API n'a besoin d'aucune autorisation ni revue d'app.
+2. **Confirmer son identité et son pays** sur [facebook.com/ID](https://www.facebook.com/ID) : pièce d'identité, puis quelques jours d'attente. Meta refuse sinon toute lecture.
+3. **Le jeton** :
+   - dans l'[explorateur de l'API Graph](https://developers.facebook.com/tools/explorer/), choisir l'app « cleads », puis « Générer un token d'accès » (jeton utilisateur) ;
+   - dans l'[outil de débogage des tokens](https://developers.facebook.com/tools/debug/accesstoken/), « Prolonger le token d'accès » : il vaut alors 60 jours.
+4. **Le poser sur le worker**, en saisie masquée, puis redéployer :
+   ```bash
+   scripts/set-ai-worker-env.sh META_ADS_TOKEN
+   scripts/deploy-ai-worker.sh
+   ```
+5. **Le renouveler** de la même façon tous les 60 jours. Cleads prévient les propriétaires 7 jours avant l'échéance, puis s'il expire ou s'il est refusé.
+
+### Ce qui se passe seul (`features/signals/ads.ts`)
+- **Quand** : les fiches des campagnes actives sont relues une fois par semaine. « Vérifier » sur la fiche la fait relire dans la minute.
+- **Le rythme** : c'est la boucle du registre du worker, une tâche à la fois, sans modèle ni dépense, 120 appels par heure au plus. Sur une limite de Meta, elle s'arrête une heure.
+- **Retrouver la page de l'entreprise** :
+  1. par son numéro, quand l'adresse Facebook de la fiche le donne (`profile.php?id=…`) ou qu'une lecture précédente l'a trouvé : dix pages par appel ;
+  2. sinon, par une recherche sur le nom de l'entreprise. Une page n'est retenue que si :
+     - ses publicités affichent le domaine du site de l'entreprise ;
+     - ou elle porte le nom de l'entreprise, entier, d'au moins deux mots. Elle est alors marquée « reconnue à son nom : à vérifier ».
+  - Un nom d'un seul mot (« Boulangerie ») n'est rapproché que par le domaine.
+  - Une adresse Facebook personnalisée (facebook.com/plomberie.roche) ne donne pas le numéro de la page : il faudrait une revue d'app chez Meta.
+- **Ce qui est gardé** dans `data.ads` :
+  - la page, avec son numéro et sa façon d'être reconnue ;
+  - le nombre de publicités en cours, depuis quand, sur quelles plateformes ;
+  - les domaines affichés ;
+  - cinq publicités au plus, avec leur titre et leur lien public.
+- **Le signal `ADS_RUNNING`** :
+  - il est posé tant que des publicités tournent, un par page et par mois, renouvelé à chaque lecture ;
+  - il reste récent un mois après la dernière lecture : c'est un état, pas un événement ;
+  - le responsable de la fiche est prévenu quand l'entreprise se met à faire de la publicité.
+- **Les offres** :
+  - le signal d'offre `ads_running` sert « Landing de conversion » et « Meta Ads » ;
+  - le catalogue version 4 l'ajoute aux espaces existants ;
+  - la preuve citée est la page de l'entreprise dans la bibliothèque publicitaire.
+
+### Le jeton, en sûreté
+- Il n'existe que sur le worker (`META_ADS_TOKEN`), en saisie masquée, jamais dans le CRM ni dans le dépôt.
+- Il voyage dans l'en-tête `Authorization`. Seul le contrôle du jeton lui-même (`debug_token`) le prend dans son adresse, comme Meta l'exige. Aucune adresse n'est journalisée, et les messages d'erreur sont nettoyés du jeton.
+- Les aperçus de Meta (`ad_snapshot_url`) contiennent le jeton : ils ne sont jamais demandés. Chaque publicité est liée par sa page publique dans la bibliothèque.
+- Le worker vérifie le jeton toutes les six heures (`debug_token`). Il en publie l'état, jamais la valeur, dans son battement (`AiWorker.meta`), et la fiche l'affiche.
+
+### Limites
+- **Pas de page d'arrivée** : l'API ne donne pas l'adresse de destination d'une publicité, seulement le domaine qu'elle affiche. L'audit de la landing reste celui du site (V2 si besoin).
+- **Couverture** : le nombre de publicités est celui que Meta publie pour la France. Une page de plus de 500 publicités en cours est comptée « plus de 500 ».
+
 ## Conformité
 - **Sources** : BODACC et annuaire des entreprises sont des données publiques sous Licence Ouverte Etalab 2.0. On n'en garde que ce qui sert à la fiche.
+- **Bibliothèque publicitaire Meta (lot 3)** :
+  - ce sont des données publiques d'entreprises (des pages et leurs publicités), lues avec les conditions de Meta ;
+  - aucune donnée personnelle n'est envoyée : seulement le nom de l'entreprise ou le numéro de sa page ;
+  - Meta est à inscrire comme source au registre des traitements.
 - **Recherches web (lot 2)** :
   - les requêtes ne portent que le nom de l'entreprise, sa ville, son métier et le nom d'un dirigeant du registre, jamais un email ;
   - elles passent par la passerelle Vercel (sans entraînement sur nos données, D16) vers Exa et Perplexity, destinataires à inscrire au registre des traitements ;
@@ -228,3 +285,6 @@ Le premier soir en production, le worker a pris les dix sondes du jour. Neuf n'o
   - les exécutions de l'Enquêteur sont dans Réglages › IA, avec leur travail (« Décideurs et réseaux », « Brief de rendez-vous », « Sonde GEO ») ;
   - le coût des recherches est à part dans la consommation du mois ;
   - la réponse de la tâche horaire des rappels donne `research: { briefs, geo }`.
+- **Lot 3** :
+  - le journal du worker donne `registry work` de type `ads` : `companies`, `read`, `running`, `signals` et `error` ;
+  - en base : `SELECT "beatAt", "meta" FROM "AiWorker" ORDER BY "beatAt" DESC LIMIT 1;` pour l'état du jeton, puis `SELECT "metaNotice" FROM "SignalSweep";` pour le dernier avis aux propriétaires.

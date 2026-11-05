@@ -2,8 +2,8 @@ import type { LegalState, SignalKind } from "@prisma/client"
 import type { BodaccFamily, BodaccNotice } from "@/features/enrichment/sources/bodacc"
 
 /**
- * Company signals (E30): what a BODACC notice says about a company, turned into one dated sentence by code. No model
- * reads or writes them. Safe in the browser.
+ * Company signals (E30): what a BODACC notice says about a company, or what the GEO probe and Meta's Ad Library found,
+ * turned into one dated sentence by code. No model writes them. Safe in the browser.
  */
 export const SIGNAL_LABELS: Record<SignalKind, string> = {
   CREATED: "Création",
@@ -14,6 +14,7 @@ export const SIGNAL_LABELS: Record<SignalKind, string> = {
   INSOLVENCY: "Procédure collective",
   CLOSED: "Radiation ou dissolution",
   GEO_ABSENT: "Absente des moteurs de réponse",
+  ADS_RUNNING: "Publicités Meta en cours",
 }
 
 /** A signal counts as recent for 90 days after its publication, and is purged after a year. */

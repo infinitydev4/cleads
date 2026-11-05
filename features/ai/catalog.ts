@@ -11,10 +11,11 @@ import { SKILLS_V1 } from "./skills/catalog-v1"
  * like V1 itself. A skill of the same name the team already has is left as it is. E30 adds offer signals too: each one
  * is added to the offer of that identifier if the workspace still has it, and never removes anything.
  */
-export const CATALOG_VERSION = 3
+export const CATALOG_VERSION = 4
 const ADDITIONS: Record<number, { skills: readonly string[]; offerSignals?: Readonly<Record<string, readonly string[]>> }> = {
   2: { skills: ["missions-cleads"] },
   3: { skills: ["brief-rendez-vous"], offerSignals: { "site-vitrine": ["new_business"], "refonte-site": ["takeover"], geo: ["geo_absent"] } },
+  4: { skills: [], offerSignals: { "landing-conversion": ["ads_running"], "meta-ads": ["ads_running"] } },
 }
 
 /** Adds signals to the offers of these identifiers that do not have them yet. */

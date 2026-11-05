@@ -205,10 +205,14 @@ export const getLeadAuditTool = defineTool({
   },
 })
 
-/** E30: what the registry and the BODACC say about the fiche's company. The notices' wording comes from outside. */
+/**
+ * E30: what the registry, the BODACC and Meta's Ad Library say about the fiche's company. The notices' wording and the
+ * ads' titles come from outside.
+ */
 export const getLeadRegistryTool = defineTool({
   name: "get_lead_registry",
-  description: "Lit le registre de la fiche : SIREN, activité (NAF), date de création, effectif, état légal (procédure collective, radiée), dirigeants listés et signaux du BODACC (création, reprise, nouveau dirigeant, déménagement…). Une entreprise bloquée ne se prospecte pas.",
+  description:
+    "Lit le registre de la fiche : SIREN, activité (NAF), date de création, effectif, état légal (procédure collective, radiée), dirigeants listés, signaux (BODACC, sonde GEO) et publicités Meta en cours (bibliothèque publicitaire : combien, depuis quand, où). Une entreprise bloquée ne se prospecte pas.",
   permission: "lead:read",
   approval: "auto",
   costClass: "free",
@@ -220,7 +224,19 @@ export const getLeadRegistryTool = defineTool({
       identity: v.identity.found === false ? { found: false, note: "Introuvable dans l'annuaire des entreprises." } : { siren: v.identity.siren, naf: v.identity.nafCode, foundedOn: v.identity.foundedOn, headcount: v.identity.headcount, category: v.identity.category, labels: v.identity.labels },
       legal: { state: v.legal.label, since: v.legal.since ? iso(v.legal.since) : null, prospectingBlocked: v.legal.blocked },
       officers: v.officers.map((o) => ({ name: o.name, role: o.role, alreadyContact: o.added })),
-      signals: v.signals.filter((s) => !s.dismissed).slice(0, 8).map((s) => ({ date: s.occurredAt, kind: s.label, recent: s.recent, summary: untrusted(s.summary, { source: "BODACC", maxChars: 300 }) })),
+      signals: v.signals.filter((s) => !s.dismissed).slice(0, 8).map((s) => ({ date: s.occurredAt, kind: s.label, recent: s.recent, summary: untrusted(s.summary, { source: "registre et sondes", maxChars: 300 }) })),
+      metaAds: !v.ads.checkedAt
+        ? { read: false, note: v.ads.meta === "ok" || v.ads.meta === "expiring" ? "Pas encore relues : chaque semaine pour les campagnes actives." : "Lecture des publicités Meta non branchée ou jeton à renouveler." }
+        : {
+            read: true,
+            checkedAt: iso(v.ads.checkedAt),
+            running: v.ads.active,
+            more: v.ads.more,
+            since: v.ads.since,
+            platforms: v.ads.platforms,
+            page: v.ads.page ? { name: v.ads.page.name ? untrusted(v.ads.page.name, { source: "Meta", maxChars: 120 }) : null, library: v.ads.page.url, matchedBy: v.ads.page.how } : null,
+            ads: v.ads.ads.map((a) => ({ start: a.start, title: a.title ? untrusted(a.title, { source: "Meta", maxChars: 120 }) : null, library: a.url })),
+          },
     }
   },
 })
@@ -228,18 +244,19 @@ export const getLeadRegistryTool = defineTool({
 /** E30: the recent signals of the fiches the person may see, newest first. */
 export const listSignalsTool = defineTool({
   name: "list_signals",
-  description: "Liste les signaux récents du BODACC sur les fiches visibles : créations, reprises, nouveaux dirigeants, déménagements, nouveaux établissements, procédures collectives, radiations. Pour savoir qui appeler maintenant et pourquoi.",
+  description:
+    "Liste les signaux récents sur les fiches visibles : annonces du BODACC (créations, reprises, nouveaux dirigeants, déménagements, nouveaux établissements, procédures collectives, radiations), absence des moteurs de réponse (sonde GEO) et publicités Meta en cours (preuve d'un budget marketing). Pour savoir qui appeler maintenant et pourquoi.",
   permission: "lead:read",
   approval: "auto",
   costClass: "free",
   family: "read_crm",
   input: z.object({
-    kinds: z.array(z.enum(["CREATED", "TAKEOVER", "NEW_LEADER", "MOVED", "NEW_SITE", "INSOLVENCY", "CLOSED"])).max(7).optional(),
+    kinds: z.array(z.enum(["CREATED", "TAKEOVER", "NEW_LEADER", "MOVED", "NEW_SITE", "INSOLVENCY", "CLOSED", "GEO_ABSENT", "ADS_RUNNING"])).max(9).optional(),
     days: z.number().int().min(1).max(365).optional().describe("Fenêtre en jours, 30 par défaut"),
   }),
   execute: async (ctx, input) => {
     const rows = await recentSignals(personOf(ctx), { kinds: input.kinds, days: input.days })
-    return { signals: rows.map((r) => ({ leadId: r.leadId, company: r.company, city: r.city, date: r.occurredAt, kind: r.label, summary: untrusted(r.summary, { source: "BODACC", maxChars: 300 }) })) }
+    return { signals: rows.map((r) => ({ leadId: r.leadId, company: r.company, city: r.city, date: r.occurredAt, kind: r.label, summary: untrusted(r.summary, { source: r.source, maxChars: 300 }) })) }
   },
 })
 

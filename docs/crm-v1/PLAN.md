@@ -1167,7 +1167,26 @@ Quatre sources, chacune pour une question : **quand appeler** (BODACC), **à qui
 > - **sondes et briefs automatiques** : ils passent par la tâche horaire des rappels, pas par le worker ;
 > - **copilote** : les profils se confirment sur la fiche, pas par le copilote.
 >
-> **Lot 3 — Meta** : publicités en cours (bibliothèque publicitaire). Le propriétaire doit d'abord créer l'application Meta et faire vérifier son identité.
+> **Lot 3 — Meta : publicités en cours (branche `feat/e30-meta`)** — fait :
+> - **migration additive** `20261118090000_enrichment_meta_ads` :
+>   - le signal `ADS_RUNNING` ;
+>   - `Company.adsCheckedAt` et `adsRequestedAt` ;
+>   - l'état du jeton dans le battement du worker (`AiWorker.meta`) ;
+>   - le dernier avis aux propriétaires (`SignalSweep.metaNotice`) ;
+> - **source** `features/enrichment/sources/meta-ads.ts` : `ads_archive` en France, toutes publicités, actives. Le jeton passe dans l'en-tête ; seul son contrôle (`debug_token`) le prend dans son adresse, et aucun message ne le contient ;
+> - **lecture** (`features/signals/ads.ts`), dans la boucle du registre du worker :
+>   - chaque semaine pour les fiches des campagnes actives, ou dans la minute sur demande ;
+>   - la page vient de son numéro, sinon du nom de l'entreprise, avec un rapprochement prudent par le domaine affiché ou le nom entier ;
+>   - le signal `ADS_RUNNING` et l'avis au responsable ;
+> - **jeton** : vérifié toutes les six heures ; les propriétaires sont prévenus 7 jours avant son échéance, puis s'il est refusé ;
+> - **offres** : le signal d'offre `ads_running` (« Landing de conversion », « Meta Ads »), catalogue version 4 ;
+> - **interface** : la section « Publicités Meta » de la carte « Registre et signaux », avec « Vérifier » ;
+> - **copilote et MCP** : `get_lead_registry` (`metaAds`) et `list_signals`.
+>
+> **Écarts** :
+> - **pas de page d'arrivée dans l'audit** : l'API ne donne que le domaine affiché par une publicité ;
+> - **adresses Facebook personnalisées** : leur numéro de page demande une revue d'app chez Meta. Ces pages sont retrouvées par le nom de l'entreprise ;
+> - **l'app Meta** a été créée le 5 novembre 2026 (ID `1843657773498923`, portefeuille Webconcepter). L'essai réel attend la confirmation d'identité du propriétaire et son jeton.
 
 ### Ordre conseillé
 | Jalon | Epics | Résultat visible |

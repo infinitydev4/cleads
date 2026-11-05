@@ -12,6 +12,7 @@ import { effectiveAgent } from "@/features/ai/definitions"
 import { executeApprovedCalls } from "@/features/ai/tools"
 import { advanceMission, claimMission } from "@/features/missions/engine"
 import { claimSignalWork, runSignalWork } from "@/features/signals/engine"
+import { adsTokenState } from "@/features/signals/ads"
 import { errorFields, log } from "./log"
 
 /**
@@ -239,7 +240,8 @@ export class AgentWorker {
 
   async beat(): Promise<void> {
     try {
-      await workerBeat({ id: this.cfg.id, version: this.cfg.version, host: os.hostname(), startedAt: this.startedAt, running: this.running.size })
+      const meta = adsTokenState()
+      await workerBeat({ id: this.cfg.id, version: this.cfg.version, host: os.hostname(), startedAt: this.startedAt, running: this.running.size, meta: meta ? { state: meta.state, expiresAt: meta.expiresAt, checkedAt: meta.checkedAt } : null })
     } catch (error) {
       log("warn", "beat failed", errorFields(error))
     }

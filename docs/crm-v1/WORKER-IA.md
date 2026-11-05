@@ -162,6 +162,7 @@ Ses recherches passent par la passerelle IA (clé `AI_GATEWAY_API_KEY`, aucune a
 | `EXTRACTOR_API_KEY` | clé `crm` de l'Extractor, copiée sur le serveur |
 | `NEXT_PUBLIC_PUSHER_APP_ID`, `NEXT_PUBLIC_PUSHER_KEY`, `NEXT_PUBLIC_PUSHER_CLUSTER`, `PUSHER_SECRET` | temps réel ; facultatives (sinon les pages interrogent) |
 | `WORKER_CONCURRENCY` | exécutions simultanées, 3 par défaut |
+| `META_ADS_TOKEN` | facultative (E30 lot 3) : jeton utilisateur de l'app Meta « cleads », valable 60 jours, pour lire la bibliothèque publicitaire. Sans elle, les publicités ne sont pas relues et la fiche le dit. Il se pose seul avec `scripts/set-ai-worker-env.sh META_ADS_TOKEN` ; Cleads prévient les propriétaires 7 jours avant son échéance ([ENRICHISSEMENT.md](ENRICHISSEMENT.md)). |
 | `EXTRACTOR_WEBHOOK_SECRET` | facultative (E28) : la même que celle du CRM. L'Extractor prévient alors le CRM de la fin d'une recherche lancée par une mission, qui reprend aussitôt et notifie la personne ; sans elle, la mission relit sa recherche chaque minute. |
 | `NEXT_PUBLIC_APP_URL` | adresse publique du CRM, pour les liens que le worker écrit (lien de réservation d'une réponse, E22). Elle est fixée dans `compose.yml` (`https://cleads.fr` par défaut) et peut être changée par `APP_URL` dans le `.env` du serveur. |
 | `STUDIO_PREVIEW_HOST` | hôte des aperçus du Studio (E23), où PageSpeed mesure chaque nouvelle version. Fixé dans `compose.yml` (`apercu.cleads.fr` par défaut), modifiable par `PREVIEW_HOST` dans le `.env` du serveur. |

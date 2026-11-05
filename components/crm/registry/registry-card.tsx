@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { ExternalLink, Landmark, Loader2, RefreshCw, ShieldAlert, UserPlus } from "lucide-react"
+import { ExternalLink, Landmark, Loader2, Megaphone, RefreshCw, ShieldAlert, UserPlus } from "lucide-react"
 import { toast } from "sonner"
 import type { SignalKind } from "@prisma/client"
 import { Badge } from "@/components/ui/badge"
@@ -22,7 +22,11 @@ const TONE: Record<SignalKind, "success" | "info" | "neutral" | "destructive"> =
   INSOLVENCY: "destructive",
   CLOSED: "destructive",
   GEO_ABSENT: "neutral",
+  ADS_RUNNING: "info",
 }
+
+/** What a signal's link opens. */
+const SOURCE_LINK: Partial<Record<SignalKind, string>> = { GEO_ABSENT: "Source citée", ADS_RUNNING: "Bibliothèque publicitaire" }
 
 /** Months since a calendar day, for « créée il y a 3 mois ». */
 function age(iso: string, now = new Date()) {
@@ -150,7 +154,7 @@ export function RegistryCard({ leadId, onChanged }: { leadId: string; onChanged?
       )}
 
       <section aria-label="Signaux" className="space-y-1.5">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Signaux (BODACC)</h4>
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Signaux</h4>
         {data.signals.length === 0 ? (
           <p className="text-sm text-muted-foreground">Aucune annonce publiée pour cette entreprise depuis qu’elle est suivie.</p>
         ) : (
@@ -166,7 +170,7 @@ export function RegistryCard({ leadId, onChanged }: { leadId: string; onChanged?
                   </div>
                   <p>{s.summary}</p>
                   <div className="flex items-center gap-3 text-xs">
-                    {href && <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-muted-foreground underline-offset-2 hover:underline">Annonce BODACC <ExternalLink className="h-3 w-3" aria-hidden="true" /></a>}
+                    {href && <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-muted-foreground underline-offset-2 hover:underline">{SOURCE_LINK[s.kind] ?? "Annonce BODACC"} <ExternalLink className="h-3 w-3" aria-hidden="true" /></a>}
                     {data.can.write && s.recent && (
                       <button type="button" className="text-muted-foreground underline-offset-2 hover:underline disabled:opacity-50" disabled={!!busy} onClick={() => act(`dismiss-${s.id}`, { action: "dismiss", signalId: s.id }, "Signal ignoré")}>Ignorer</button>
                     )}
@@ -178,10 +182,73 @@ export function RegistryCard({ leadId, onChanged }: { leadId: string; onChanged?
         )}
       </section>
 
+      <AdsSection ads={data.ads} canCheck={data.can.write && legal.state === "ACTIVE"} busy={busy === "ads"} disabled={!!busy} onCheck={() => act("ads", { action: "ads" }, "Relecture demandée : le worker la fait dans la minute.")} />
+
       <p className="text-xs text-muted-foreground">
-        Données publiques : annuaire des entreprises (INSEE, RNE) et BODACC{id.checkedAt ? `, registre lu le ${formatDate(id.checkedAt)}` : "."}
+        Données publiques : annuaire des entreprises (INSEE, RNE), BODACC et bibliothèque publicitaire Meta{id.checkedAt ? `, registre lu le ${formatDate(id.checkedAt)}` : "."}
       </p>
     </Card>
+  )
+}
+
+const META_OFF: Partial<Record<NonNullable<RegistryView["ads"]["meta"]> | "none", string>> = {
+  none: "Non branchée : aucun worker n’a encore relu de jeton Meta.",
+  off: "Non branchée : le jeton Meta n’est pas posé sur le worker.",
+  renew: "Jeton Meta expiré ou refusé : les publicités ne sont plus relues tant que le propriétaire ne l’a pas renouvelé.",
+  identity: "En attente de Meta : l’identité du titulaire du jeton doit être confirmée sur facebook.com/ID.",
+}
+
+/** E30 lot 3: the ads the company runs now, as the worker read them in Meta's Ad Library (the proof of a budget). */
+function AdsSection({ ads, canCheck, busy, disabled, onCheck }: { ads: RegistryView["ads"]; canCheck: boolean; busy: boolean; disabled: boolean; onCheck: () => void }) {
+  const off = META_OFF[ads.meta ?? "none"]
+  const page = ads.page ? safeLink(ads.page.url) : null
+  return (
+    <section aria-label="Publicités Meta" className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground"><Megaphone className="h-3.5 w-3.5" aria-hidden="true" /> Publicités Meta</h4>
+        {!off && canCheck && !ads.requested && (
+          <Button variant="ghost" size="sm" disabled={disabled} onClick={onCheck}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />} Vérifier
+          </Button>
+        )}
+      </div>
+      {off ? (
+        <p className="text-sm text-muted-foreground">{off}</p>
+      ) : ads.requested ? (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Relecture demandée : le worker la fait dans la minute.</p>
+      ) : !ads.checkedAt ? (
+        <p className="text-sm text-muted-foreground">Pas encore relues : elles le sont chaque semaine pour les campagnes actives, ou à la demande.</p>
+      ) : ads.active > 0 ? (
+        <div className="space-y-1.5 text-sm">
+          <p>
+            <Badge variant="info">{ads.more ? `Plus de ${ads.active}` : ads.active} en cours</Badge>{" "}
+            {ads.platforms.length ? `sur ${ads.platforms.length > 1 ? `${ads.platforms.slice(0, -1).join(", ")} et ${ads.platforms.at(-1)}` : ads.platforms[0]}` : null}
+            {ads.since ? `, depuis le ${formatDate(ads.since)}` : null}
+          </p>
+          <ul className="space-y-1">
+            {ads.ads.map((a) => {
+              const href = safeLink(a.url)
+              return (
+                <li key={a.url} className="flex flex-wrap items-center gap-2">
+                  {a.start && <span className="text-xs tabular-nums text-muted-foreground">{formatDate(a.start)}</span>}
+                  {href ? <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline-offset-2 hover:underline">{a.title ?? "Publicité"} <ExternalLink className="h-3 w-3" aria-hidden="true" /></a> : <span>{a.title ?? "Publicité"}</span>}
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">Aucune publicité en cours au {formatDate(ads.checkedAt)}.</p>
+      )}
+      {!off && ads.checkedAt && (
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          {page && ads.page && <a href={page} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline-offset-2 hover:underline">Page « {ads.page.name ?? "Facebook"} » dans la bibliothèque <ExternalLink className="h-3 w-3" aria-hidden="true" /></a>}
+          {ads.page?.how === "name" && <span>reconnue à son nom : à vérifier</span>}
+          <span>Relues le {formatDate(ads.checkedAt)}</span>
+          {ads.meta === "expiring" && ads.tokenExpiresAt && <span>Jeton Meta à renouveler avant le {formatDate(ads.tokenExpiresAt)}</span>}
+        </p>
+      )}
+    </section>
   )
 }
 

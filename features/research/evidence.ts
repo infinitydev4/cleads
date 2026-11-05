@@ -3,10 +3,11 @@ import type { AuditReport, Evidence, SignalHit } from "@/features/prospect-audit
 import { briefContentSchema } from "./brief-schemas"
 
 /**
- * What the registry and the Enquêteur add to an audit's evidence (E30 lot 2), for the offers (E21) and the writer
- * (E22): a recent creation or takeover, an absence from the answer engines, and the dated news of the latest brief.
- * Each is a source with its link and date, under ids of its own (R1, R2…) that never meet the audit's (P, M, C, S).
- * The three first raise the offer signals new_business, takeover and geo_absent.
+ * What the registry and the Enquêteur add to an audit's evidence (E30 lots 2 and 3), for the offers (E21) and the
+ * writer (E22): a recent creation or takeover, an absence from the answer engines, ads running in Meta's Ad Library,
+ * and the dated news of the latest brief. Each is a source with its link and date, under ids of its own (R1, R2…) that
+ * never meet the audit's (P, M, C, S). The four first raise the offer signals new_business, takeover, geo_absent and
+ * ads_running.
  */
 export const NEW_BUSINESS_DAYS = 183
 const BRIEF_NEWS_DAYS = 30
@@ -17,7 +18,7 @@ export async function researchEvidence(companyId: string | null, now = new Date(
   if (!companyId) return { evidence: [], signals: [] }
   const [signals, brief] = await Promise.all([
     prisma.companySignal.findMany({
-      where: { companyId, dismissedAt: null, expiresAt: { gt: now }, kind: { in: ["CREATED", "TAKEOVER", "GEO_ABSENT"] } },
+      where: { companyId, dismissedAt: null, expiresAt: { gt: now }, kind: { in: ["CREATED", "TAKEOVER", "GEO_ABSENT", "ADS_RUNNING"] } },
       orderBy: { occurredAt: "desc" },
       select: { kind: true, summary: true, occurredAt: true, source: true, sourceUrl: true },
     }),
@@ -36,6 +37,9 @@ export async function researchEvidence(companyId: string | null, now = new Date(
   if (takeover) hits.push({ key: "takeover", evidence: [add(`${takeover.source} : reprise, le ${DATE.format(takeover.occurredAt)}`, takeover.summary, takeover.sourceUrl)] })
   const geo = signals.find((s) => s.kind === "GEO_ABSENT")
   if (geo) hits.push({ key: "geo_absent", evidence: [add(`${geo.source}, le ${DATE.format(geo.occurredAt)}`, geo.summary, geo.sourceUrl)] })
+  // Seen within the month (the signal expires a month after its last read): the budget is spent now.
+  const ads = signals.find((s) => s.kind === "ADS_RUNNING")
+  if (ads) hits.push({ key: "ads_running", evidence: [add(`${ads.source}, relue le ${DATE.format(ads.occurredAt)}`, ads.summary, ads.sourceUrl)] })
   const content = brief ? briefContentSchema.safeParse(brief.content) : null
   if (content?.success) {
     for (const n of content.data.news.slice(0, 2)) add(`Actualité relevée par l'Enquêteur${n.date ? ` (${n.date})` : ""}`, n.text, n.sources[0] ?? null)
