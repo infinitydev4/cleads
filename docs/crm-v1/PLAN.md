@@ -97,6 +97,13 @@ Détails et conséquences techniques : [AGENTS-IA.md](AGENTS-IA.md).
 | D57 | Attribution par personne | **SDR** : contactés (emails de ses boîtes, appels qu'il enregistre), réponses (dans ses boîtes, hors absences), qualifiés (opportunités qu'il crée), RDV pris (réservés par lui). **Closer** : RDV tenus, gagnés et perdus (à son nom), montants HT, taux de transformation. L'opportunité garde son auteur (`Deal.createdById`) | Chaque chiffre est défini et recalculable (règle d'E10). |
 | D58 | Qui voit les rapports | **La matrice existante** : SDR et closer leurs chiffres, propriétaire, manager et lecteur tout ; l'export CSV demande `data:export` (propriétaire, manager) et est journalisé | Aucune permission nouvelle. |
 | D59 | Reporté en V2 (E10) | Pipeline ouvert par étape et pondéré, relevés de commissions, rapports dans la vue 3D et le copilote | L'activité du jour est dans « Aujourd'hui », la délivrabilité dans Emails. |
+| D60 | Contrôles avant production (E14, 5 novembre 2026) | **Bloquants** : GitHub Actions passe chaque PR et `main` (types, lint, tests sur une base Postgres, build du worker et son test de démarrage) ; les Deployment Checks de Vercel retiennent la production tant que `CI` n'est pas vert ; aucune PR rouge n'est fusionnée | Un `main` cassé n'atteint plus cleads.fr. |
+| D61 | Lint hérité | Les fichiers tiers de `public/` sont ignorés ; les erreurs existantes sont **gelées** (`eslint-suppressions.json`) ; toute erreur nouvelle échoue | Une CI verte dès le premier jour, sans réécrire l'ancien back-office. |
+| D62 | Sauvegardes | **Deux copies, chez deux fournisseurs** : sauvegardes planifiées de Railway (quotidienne et hebdomadaire) et copie quotidienne chiffrée (`age`) sur le VPS OVH, gardée 14 jours ; chaque copie est restaurée dans une base jetable avant d'être gardée | Si Railway perd le volume, ses sauvegardes partent avec lui. La clé privée reste chez le propriétaire. |
+| D63 | Suivi des sauvegardes | Chaque passage est enregistré (`BackupRun`) ; un échec, ou plus de 36 h sans sauvegarde réussie, avertit les propriétaires ; Réglages › Sauvegardes (propriétaire) | Une sauvegarde qui échoue en silence ne sert à rien. |
+| D64 | Erreurs | **Sentry**, offre gratuite, région UE, site et worker ; aucune donnée personnelle envoyée (ni corps, ni cookie, ni email ; identifiant seul) ; erreurs seulement | Un fournisseur de plus, gratuit et sans maintenance. |
+| D65 | RGPD | **Export des données d'une personne** en un clic (`data:export`, journalisé) ; l'effacement reste la suppression de la fiche ; **brouillon du registre des traitements** à faire valider par l'avocat, dont le représentant dans l'UE (art. 27) | Les deux droits les plus demandés, et la pièce que l'avocat attendra. |
+| D66 | Reporté en V2 (E14) | Tests de bout en bout des 5 parcours, journaux structurés côté site, protection de branche GitHub, effacement d'une personne sans sa fiche, tableau « Santé », restauration à un instant donné de Railway | Mis de côté, pas abandonnés. |
 
 ---
 
@@ -565,8 +572,20 @@ Section 9 : redirections, `robots.ts`, `sitemap.ts`, `llms.txt`, JSON-LD, métad
 `api/v1` avec clés de service à portée limitée, rôle `AGENT` dans le schéma, `actor` dans les activités et le journal, interfaces `Classifier` / `Generator`, jeu d'évaluation, file de validation humaine (structure). **Aucun agent autonome en V1.**
 - **Critères** : une action réalisée par clé de service est tracée comme telle ; un envoi par un agent exige une validation.
 
-### E14 — Qualité, exploitation, conformité · **M**
-Tests de bout en bout sur 5 parcours (connexion, recherche → import, qualification, réservation, envoi), Sentry, journaux structurés, sauvegardes de la base, export et effacement d'un contact, registre des traitements, déploiement automatisé avec retour arrière.
+### E14 — Qualité, exploitation, conformité · **M**, en quatre lots *(décidé le 5 novembre 2026, D60 à D66)*
+Référence : [EXPLOITATION.md](EXPLOITATION.md).
+
+> **Lot 1 — Contrôles avant production (branche `chore/e14-ci`)** — fait :
+> - **CI** (`.github/workflows/ci.yml`), sur chaque PR et sur `main` :
+>   - types, lint, tests sur une base Postgres 17 jetable, en UTC comme la production ;
+>   - build du worker et test de démarrage sur une base injoignable ;
+> - **lint** : `public/` ignoré ; 16 erreurs héritées gelées dans `eslint-suppressions.json` ;
+> - **docs** : `EXPLOITATION.md` (la CI, revenir en arrière, la procédure d'incident) ;
+> - **réglage du propriétaire** : dans Vercel, Deployment Checks exige `CI` avant la production.
+>
+> **Lot 2 — Sauvegardes vérifiées** · **Lot 3 — Sentry** · **Lot 4 — Export RGPD et registre** — à faire.
+
+Plan d'origine : tests de bout en bout sur 5 parcours (connexion, recherche → import, qualification, réservation, envoi), Sentry, journaux structurés, sauvegardes de la base, export et effacement d'un contact, registre des traitements, déploiement automatisé avec retour arrière.
 - **Critères** : pipeline vert obligatoire pour déployer ; restauration d'une sauvegarde testée une fois.
 
 ### E15 — Campagnes · **M** *(ajout, après E9)*

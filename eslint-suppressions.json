@@ -1,0 +1,62 @@
+{
+  "app/dashboard/availability/page.tsx": {
+    "react-hooks/set-state-in-effect": {
+      "count": 2
+    }
+  },
+  "app/not-found.tsx": {
+    "react-hooks/purity": {
+      "count": 3
+    }
+  },
+  "components/consent/CookieConsent.tsx": {
+    "react-hooks/set-state-in-effect": {
+      "count": 2
+    }
+  },
+  "components/consent/CookieSettings.tsx": {
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "components/dashboard/ExceptionsManager.tsx": {
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "components/home-v2/locale.tsx": {
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "hooks/useAvailability.ts": {
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "hooks/useBreakTime.ts": {
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "hooks/useExceptions.ts": {
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "hooks/useMediaQuery.ts": {
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "hooks/useNotificationSettings.ts": {
+    "react-hooks/immutability": {
+      "count": 1
+    }
+  },
+  "tailwind.config.js": {
+    "@typescript-eslint/no-require-imports": {
+      "count": 1
+    }
+  }
+}
