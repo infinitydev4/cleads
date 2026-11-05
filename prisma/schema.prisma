@@ -761,6 +761,11 @@ model Company {
   /// E30 lot 2: last GEO probe (Perplexity), whose result is in data.geo; at most one a month (D52). A queued probe
   /// sets it a month minus three days back, so a probe that fails or expires frees the company after three days.
   geoCheckedAt      DateTime?
+  /// E30 lot 3: last read of its ads in Meta's Ad Library (the worker's, once a week for active campaigns); data.ads
+  /// keeps what it found. Null while still to do.
+  adsCheckedAt      DateTime?
+  /// E30 lot 3: someone asked from the fiche for a read now; the worker takes it first, then clears it.
+  adsRequestedAt    DateTime?
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
 
@@ -778,6 +783,7 @@ model Company {
   @@index([workspaceId, phone])
   @@index([workspaceId, siren])
   @@index([identityCheckedAt])
+  @@index([adsCheckedAt])
 }
 
 model Contact {
@@ -1698,6 +1704,8 @@ model AiWorker {
   beatAt    DateTime
   /// Runs in progress on this worker.
   running   Int      @default(0)
+  /// E30 lot 3: the state of its Meta Ad Library token as it last checked it (never the token itself).
+  meta      Json?
 }
 
 // E19: agents, skills and offers catalogue (docs/crm-v1/AGENTS-IA.md §7, §8 and §14).
@@ -2781,6 +2789,8 @@ enum SignalKind {
   CLOSED
   /// E30 lot 2: absent from the sources an answer engine gives for its trade and city (GEO probe, D52).
   GEO_ABSENT
+  /// E30 lot 3: ads running now in Meta's Ad Library, the proof of a marketing budget (D49).
+  ADS_RUNNING
 }
 
 /// A dated event about a company: a BODACC notice. Written by code from the source, never by a model.
@@ -2860,6 +2870,9 @@ model SignalSweep {
   cursorDay   DateTime? @db.Date
   lastRunAt   DateTime?
   lastReport  Json?
+  /// E30 lot 3: the notices the owners got about the Meta token in use (« expiring:2026-12-30:ab12cd34 »), so each
+  /// goes out once.
+  metaNotice  String?
 }
 
 enum CandidateStatus {

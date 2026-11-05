@@ -1,7 +1,7 @@
 /**
  * Audit signals that call for an offer (docs/crm-v1/AGENTS-IA.md §14). The audit (E20) raises them with their proof,
- * the registry and the Enquêteur add three (E30), the offers catalogue lists which ones each offer answers, and the
- * rules of E21 match the two. Safe in the browser.
+ * the registry, the Enquêteur and Meta's Ad Library add four (E30), the offers catalogue lists which ones each offer
+ * answers, and the rules of E21 match the two. Safe in the browser.
  */
 export const SIGNAL_GROUPS = {
   site: "Site",
@@ -47,6 +47,8 @@ export const OFFER_SIGNALS = {
   new_business: { group: "global", label: "Entreprise créée il y a moins de six mois" },
   takeover: { group: "global", label: "Reprise récente de l'entreprise ou du fonds" },
   geo_absent: { group: "geo", label: "Absente des sources des moteurs de réponse" },
+  // E30 lot 3: raised from Meta's Ad Library (features/signals/ads.ts): the company pays for ads now.
+  ads_running: { group: "ads", label: "Publicités Meta en cours" },
 } as const satisfies Record<string, { group: SignalGroup; label: string }>
 
 export type OfferSignal = keyof typeof OFFER_SIGNALS

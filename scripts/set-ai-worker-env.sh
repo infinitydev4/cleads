@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
 # Sets the AI worker's secrets on the VPS (docs/crm-v1/WORKER-IA.md). Run it yourself, in your own terminal: each value
 # is typed hidden, sent over SSH and written to /opt/cleads/ai/worker.env (chmod 600). Nothing is printed or stored on
-# this computer. Leave a value empty to keep the current one.
+# this computer. Leave a value empty to keep the current one. Name some variables to set only those:
+#   scripts/set-ai-worker-env.sh META_ADS_TOKEN
 set -euo pipefail
+
+ALL=(DATABASE_URL AI_GATEWAY_API_KEY GOOGLE_PAGESPEED_API_KEY NEXT_PUBLIC_PUSHER_APP_ID NEXT_PUBLIC_PUSHER_KEY NEXT_PUBLIC_PUSHER_CLUSTER PUSHER_SECRET META_ADS_TOKEN)
+NAMES=("$@")
+[ ${#NAMES[@]} -gt 0 ] || NAMES=("${ALL[@]}")
+for name in "${NAMES[@]}"; do
+  case " ${ALL[*]} " in *" $name "*) ;; *) echo "Variable inconnue : $name (attendu : ${ALL[*]})"; exit 1 ;; esac
+done
 
 DIR="${CLEADS_SECRETS_DIR:-$HOME/.config/cleads}"
 HOST="$(sed -n 's/^VPS_HOST=//p' "$DIR/vps.env" | tail -n1)"
@@ -16,10 +24,12 @@ DATABASE_URL : l'URL PUBLIQUE de la base Railway (onglet Connect, « Public Netw
                ?sslmode=require&connection_limit=5   (ou &sslmode=… si l'URL a déjà des paramètres)
                Idéalement le rôle dédié de worker/db-role.sql plutôt que le propriétaire de la base.
 GOOGLE_PAGESPEED_API_KEY : clé gratuite de l'API PageSpeed Insights (Google Cloud), pour les audits (E20).
+META_ADS_TOKEN : jeton utilisateur de l'app Meta « cleads », prolongé à 60 jours, pour la bibliothèque
+               publicitaire (E30) ; il faut une identité confirmée sur facebook.com/ID.
 EOF
 
 payload=""
-for name in DATABASE_URL AI_GATEWAY_API_KEY GOOGLE_PAGESPEED_API_KEY NEXT_PUBLIC_PUSHER_APP_ID NEXT_PUBLIC_PUSHER_KEY NEXT_PUBLIC_PUSHER_CLUSTER PUSHER_SECRET; do
+for name in "${NAMES[@]}"; do
   read -r -s -p "$name : " value
   echo
   if [ -n "$value" ]; then

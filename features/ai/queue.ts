@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client"
+import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { utc } from "@/lib/ai/sql"
 import { isAgentId, type AgentId } from "./agents"
@@ -127,15 +127,18 @@ export interface WorkerInfo {
   host: string | null
   startedAt: Date
   running: number
+  /** E30 lot 3: its Meta Ad Library token's state, never the token; null before its first check. */
+  meta?: Prisma.InputJsonValue | null
 }
 
 /** The worker says it is alive (every few seconds). */
 export async function workerBeat(info: WorkerInfo): Promise<void> {
   const now = new Date()
+  const meta = info.meta === undefined ? {} : { meta: info.meta ?? Prisma.DbNull }
   await prisma.aiWorker.upsert({
     where: { id: info.id },
-    create: { id: info.id, version: info.version, host: info.host, startedAt: info.startedAt, beatAt: now, running: info.running },
-    update: { version: info.version, host: info.host, startedAt: info.startedAt, beatAt: now, running: info.running },
+    create: { id: info.id, version: info.version, host: info.host, startedAt: info.startedAt, beatAt: now, running: info.running, ...meta },
+    update: { version: info.version, host: info.host, startedAt: info.startedAt, beatAt: now, running: info.running, ...meta },
   })
 }
 
