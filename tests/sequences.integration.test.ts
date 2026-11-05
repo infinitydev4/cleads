@@ -315,7 +315,9 @@ suite("outreach: sequences (database)", () => {
       const waiting = await prisma.sequenceEnrollment.findMany({ where: { currentStep: 0 } })
       expect(waiting).toHaveLength(1)
       expect(waiting[0]).toMatchObject({ status: "ACTIVE", failures: 0 })
-      expect(waiting[0].nextAt!.getTime()).toBeGreaterThan(Date.now())
+      // Tomorrow for the run's clock (Monday), not the real one: some minute of Tuesday's window.
+      expect(waiting[0].nextAt!.getTime()).toBeGreaterThanOrEqual(paris("2026-11-03", 9).getTime())
+      expect(waiting[0].nextAt!.getTime()).toBeLessThan(paris("2026-11-03", 17, 30).getTime())
     })
 
     it("holds back everything while the mailbox or the sequence is paused", async () => {
