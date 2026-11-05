@@ -540,7 +540,14 @@ Couche d'envoi unique pour les emails du CRM : Amazon SES par défaut, Resend en
 > - **copilote et MCP** : `move_deal` passe par le même service ; sa description dit que « WON » demande `amountEur` ;
 > - **migration additive** `20261119090000_deal_created_by` : `Deal.createdById`, rempli à la qualification et à la réservation par un membre (vide pour une réservation publique et avant E10).
 >
-> **Lot 2 — La page Rapports (branche `feat/e10-rapports`)** — à faire : entonnoir de la période, résultats par personne, gagnés du mois et export CSV.
+> **Lot 2 — La page Rapports (branche `feat/e10-rapports`)** — fait ; référence : [RAPPORTS.md](RAPPORTS.md) :
+> - **périodes** (`features/metrics/periods.ts`) : semaines et mois civils en heure de Paris, changements d'heure compris, comparés à la période précédente ; l'adresse porte la période ;
+> - **page** `/app/reports` (`report:read`), qui n'est plus « bientôt » dans le menu :
+>   - l'entonnoir et son évolution ;
+>   - « Prospection » et « Conversion » par personne, chaque chiffre défini dans `PERSON_INDICATORS` ;
+>   - les gagnés avec leurs totaux par devise ;
+> - **export CSV** `/api/reports/won` (`data:export`) : prêt pour Excel en français, protégé contre les formules, journalisé (`report.exported`, sans contenu) ;
+> - **aucune migration** : le lot 1 a ajouté `Deal.createdById`.
 
 Entonnoir hebdomadaire, performances par SDR et closer, activité du jour, délivrabilité, pipeline pondéré (seulement si les montants sont renseignés), export CSV.
 - **Critères** : chaque chiffre est défini dans une fiche (« contacté = au moins un message envoyé… ») et recalculable ; aucun indicateur inventé.
@@ -1219,6 +1226,7 @@ Quatre sources, chacune pour une question : **quand appeler** (BODACC), **à qui
 | **M10 QG IA** | E26 | L'agence IA visible dans le QG 3D |
 | **M11 Copilote opérateur** | E28, puis E29 | Le copilote agit dans tout le CRM, puis le CRM s'ouvre en MCP |
 | **M12 Enrichissement** | E30 (trois lots) | Chaque matin, de nouveaux prospects et la raison de les appeler ; personne de démarché en pleine procédure |
+| **M13 Rapports** | E10 (deux lots) | Qui contacte, qui qualifie, qui signe et pour combien, par semaine ou par mois ; les gagnés du mois en CSV |
 
 E1 peut démarrer en parallèle d'E0 ; E5 peut commencer dès que E3 fixe le modèle. M6 ne dépend pas de M5, mais mieux vaut disposer des sauvegardes et de la supervision d'E14 avant d'ouvrir les agents à toute l'équipe.
 

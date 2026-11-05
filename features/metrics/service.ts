@@ -35,7 +35,7 @@ const sentEmail = (p?: Period): Prisma.EmailMessageWhereInput => ({ direction: "
 const humanReply = (p?: Period): Prisma.EmailMessageWhereInput => ({ direction: "INBOUND", OR: [{ replyClass: null }, { replyClass: { not: "OUT_OF_OFFICE" } }], ...(p ? { createdAt: within(p) } : {}) })
 const contactedWhere = (p?: Period): Prisma.LeadWhereInput => ({ OR: [{ emails: { some: sentEmail(p) } }, { activities: { some: { kind: "CALL", ...(p ? { occurredAt: within(p) } : {}) } } }] })
 /** A booking that holds: cancelled ones never happened, a moved one lives on in its replacement. */
-const heldMeeting = { status: { notIn: ["CANCELED", "RESCHEDULED"] } } satisfies Prisma.MeetingWhereInput
+export const heldMeeting = { status: { notIn: ["CANCELED", "RESCHEDULED"] } } satisfies Prisma.MeetingWhereInput
 
 export interface PeriodCounts {
   leads: number

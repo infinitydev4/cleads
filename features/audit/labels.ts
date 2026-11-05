@@ -16,6 +16,8 @@ export const AUDIT_LABELS: Record<string, string> = {
   "mcp.token_revoked": "Accès MCP fermé",
   "mcp.oauth_authorized": "Application autorisée (MCP)",
   "mcp.oauth_refresh_reused": "Connexion MCP fermée : jeton réutilisé",
+  // E10: the reports.
+  "report.exported": "Rapport exporté (CSV)",
 }
 
 export const AUDIT_FILTERS = [
@@ -23,6 +25,7 @@ export const AUDIT_FILTERS = [
   { value: "auth.", label: "Connexions" },
   { value: "team.", label: "Équipe" },
   { value: "mcp.", label: "Accès MCP" },
+  { value: "report.", label: "Rapports" },
 ] as const
 
 export const auditLabel = (action: string) => AUDIT_LABELS[action] ?? action

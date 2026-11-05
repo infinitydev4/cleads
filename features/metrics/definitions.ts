@@ -1,6 +1,6 @@
 /**
  * Every figure the CRM shows, with the sentence that defines it (E10 rule: no indicator without a definition, all of
- * them recalculable from the data). Shared by the 3D view, the campaigns and, later, the reports. No open or click
+ * them recalculable from the data). Shared by the 3D view, the campaigns and the reports. No open or click
  * rate: prospecting emails carry no tracking pixel (E9a), so those numbers do not exist.
  */
 export const INDICATORS = {
@@ -33,6 +33,28 @@ export const CAMPAIGN_INDICATORS = {
 } as const
 
 export type CampaignIndicatorKey = keyof typeof CAMPAIGN_INDICATORS
+
+/**
+ * E10 (D57): what each person did in a period. An SDR is credited with the fiches reached from their mailboxes and calls,
+ * the opportunities they created and the meetings they booked; a closer with the meetings they held and the
+ * opportunities in their name.
+ */
+export const PERSON_INDICATORS = {
+  contacted: { label: "Contactés", definition: "Fiches qui ont reçu pendant la période un email de prospection parti des boîtes de la personne (hors test), ou un appel qu’elle a enregistré." },
+  replied: { label: "Réponses", definition: "Fiches dont quelqu’un a répondu pendant la période dans les boîtes de la personne ; les absences automatiques ne comptent pas." },
+  qualified: { label: "Qualifiés", definition: "Opportunités créées par la personne pendant la période : en qualifiant une fiche, ou en réservant un rendez-vous sur une fiche qui n’en avait pas." },
+  meetingsBooked: { label: "RDV pris", definition: "Rendez-vous réservés par la personne pendant la période, hors annulés ; un rendez-vous reporté compte une fois." },
+  meetingsHeld: { label: "RDV tenus", definition: "Rendez-vous animés par la personne, prévus pendant la période et clôturés comme tenus (les absences ne comptent pas)." },
+  won: { label: "Gagnés", definition: "Opportunités au nom de la personne passées à « Gagné » pendant la période." },
+  lost: { label: "Perdus", definition: "Opportunités au nom de la personne passées à « Perdu » pendant la période." },
+  wonAmount: { label: "Montant HT signé", definition: "Somme des montants HT de ses opportunités gagnées pendant la période, par devise et sans conversion ; celles gagnées sans montant (avant la règle d’E10) sont comptées à part." },
+  winRate: { label: "Taux de transformation", definition: "Gagnées ÷ (gagnées + perdues), sur la même période." },
+} as const
+
+export type PersonIndicatorKey = keyof typeof PERSON_INDICATORS
+/** The two tables of the reports: who prospects, who converts. */
+export const PROSPECTING_COLUMNS = ["contacted", "replied", "qualified", "meetingsBooked"] as const satisfies readonly PersonIndicatorKey[]
+export const CONVERSION_COLUMNS = ["meetingsHeld", "won", "lost", "wonAmount", "winRate"] as const satisfies readonly PersonIndicatorKey[]
 
 export const PERIODS = [7, 30, 90] as const
 export type PeriodDays = (typeof PERIODS)[number]
