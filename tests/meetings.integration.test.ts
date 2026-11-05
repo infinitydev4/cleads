@@ -69,7 +69,8 @@ suite("meetings (database)", () => {
       expect(m).toMatchObject({ status: "SCHEDULED", hostId: u.closer.id, source: "sdr", type: "DISCOVERY" })
       expect(new Date(m.endsAt).getTime() - new Date(m.startsAt).getTime()).toBe(30 * 60_000)
       expect((await history(l.id)).map((a) => (a.data as { event: string }).event)).toEqual(["booked"])
-      expect(await dealOf(l.id)).toMatchObject({ stage: "MEETING_SET", ownerId: u.closer.id })
+      // E10: the reports credit the SDR who booked it with the opportunity.
+      expect(await dealOf(l.id)).toMatchObject({ stage: "MEETING_SET", ownerId: u.closer.id, createdById: u.sdr.id })
       expect((await prisma.lead.findUniqueOrThrow({ where: { id: l.id } })).status).toBe("QUALIFIED")
     })
 
@@ -255,7 +256,7 @@ suite("meetings (database)", () => {
       expect(meeting.lead!.company!.name).toBe("Boulangerie Durand")
       expect(meeting.lead!).toMatchObject({ source: "INBOUND", ownerId: u.closer.id })
       expect(meeting.lead!.contact).toMatchObject({ email: "camille@boulangerie.test", phone: "+33612345678", source: "INBOUND", legalBasis: "consent" })
-      expect(await dealOf(meeting.leadId!)).toMatchObject({ stage: "MEETING_SET", ownerId: u.closer.id })
+      expect(await dealOf(meeting.leadId!)).toMatchObject({ stage: "MEETING_SET", ownerId: u.closer.id, createdById: null })
       const g = await svc.guestMeeting(r.manageUrl.split("/rdv/gerer/")[1])
       expect(g).toMatchObject({ status: "SCHEDULED", hostName: "closer", durationMin: 30, locked: null })
       const notes = await prisma.activity.findMany({ where: { leadId: meeting.leadId!, kind: "NOTE" } })

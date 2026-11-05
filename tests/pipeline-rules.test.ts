@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { DealStage } from "@prisma/client"
 import { CRM_ROLES, type CrmRole } from "@/lib/crm/roles"
-import { DEAL_OWNER_ROLES, DISQUALIFY_REASONS, LOST_REASONS, OPEN_STAGES, STAGES, checkDealAssign, checkDealMove, isOpen, qualificationSchema } from "@/features/pipeline/rules"
+import { DEAL_OWNER_ROLES, DISQUALIFY_REASONS, LOST_REASONS, OPEN_STAGES, STAGES, WON_AMOUNT_MESSAGE, checkDealAssign, checkDealMove, isOpen, qualificationSchema } from "@/features/pipeline/rules"
 
 const me = (role: CrmRole) => ({ id: `${role}-1`, role })
 
@@ -10,9 +10,10 @@ describe("moving an opportunity", () => {
     for (const from of STAGES) {
       for (const to of STAGES) {
         for (const role of CRM_ROLES) {
-          const mine = checkDealMove({ actor: me(role), deal: { ownerId: me(role).id, stage: from }, to, lostReason: "Budget insuffisant" })
-          const theirs = checkDealMove({ actor: me(role), deal: { ownerId: "someone-else", stage: from }, to, lostReason: "Budget insuffisant" })
-          const unassigned = checkDealMove({ actor: me(role), deal: { ownerId: null, stage: from }, to, lostReason: "Budget insuffisant" })
+          const move = { to, lostReason: "Budget insuffisant", amountCents: 450000 }
+          const mine = checkDealMove({ actor: me(role), deal: { ownerId: me(role).id, stage: from }, ...move })
+          const theirs = checkDealMove({ actor: me(role), deal: { ownerId: "someone-else", stage: from }, ...move })
+          const unassigned = checkDealMove({ actor: me(role), deal: { ownerId: null, stage: from }, ...move })
           const label = `${role} ${from}->${to}`
           if (role === "SDR" || role === "VIEWER") {
             expect(mine?.code, label).toBe("forbidden")
@@ -33,8 +34,27 @@ describe("moving an opportunity", () => {
     }
   })
 
-  it("never needs a reason unless the opportunity is lost", () => {
-    expect(checkDealMove({ actor: me("CLOSER"), deal: { ownerId: "CLOSER-1", stage: "PROPOSAL" }, to: "WON" })).toBeNull()
+  it("winning needs the amount signed, from the change or already on the opportunity", () => {
+    const closer = { actor: me("CLOSER"), deal: { ownerId: "CLOSER-1", stage: "PROPOSAL" as const } }
+    expect(checkDealMove({ ...closer, to: "WON" })).toEqual({ code: "invalid", message: WON_AMOUNT_MESSAGE })
+    expect(checkDealMove({ ...closer, to: "WON", amountCents: 0 })).toMatchObject({ code: "invalid" })
+    expect(checkDealMove({ ...closer, to: "WON", amountCents: null })).toMatchObject({ code: "invalid" })
+    expect(checkDealMove({ ...closer, to: "WON", amountCents: 450000 })).toBeNull()
+    expect(checkDealMove({ ...closer, deal: { ...closer.deal, amountCents: 120000 }, to: "WON" })).toBeNull()
+    // A change that would set the amount to nothing is refused even though the deal had one.
+    expect(checkDealMove({ ...closer, deal: { ...closer.deal, amountCents: 120000 }, to: "WON", amountCents: null })).toMatchObject({ code: "invalid" })
+  })
+
+  it("a won opportunity keeps its amount, and one won before the rule keeps its other edits", () => {
+    const won = { actor: me("CLOSER"), deal: { ownerId: "CLOSER-1", stage: "WON" as const, amountCents: 450000 }, to: "WON" as const }
+    expect(checkDealMove({ ...won, amountCents: null })).toMatchObject({ code: "invalid" })
+    expect(checkDealMove({ ...won, amountCents: 0 })).toMatchObject({ code: "invalid" })
+    expect(checkDealMove({ ...won, amountCents: 500000 })).toBeNull()
+    expect(checkDealMove({ ...won, deal: { ...won.deal, amountCents: null } })).toBeNull()
+  })
+
+  it("asks for a reason only when the opportunity is lost", () => {
+    expect(checkDealMove({ actor: me("CLOSER"), deal: { ownerId: "CLOSER-1", stage: "PROPOSAL" }, to: "NEGOTIATION" })).toBeNull()
     expect(checkDealMove({ actor: me("CLOSER"), deal: { ownerId: "CLOSER-1", stage: "PROPOSAL" }, to: "LOST" })).toMatchObject({ code: "invalid" })
     expect(checkDealMove({ actor: me("CLOSER"), deal: { ownerId: "CLOSER-1", stage: "PROPOSAL" }, to: "LOST", lostReason: "   " })).toMatchObject({ code: "invalid" })
     expect(checkDealMove({ actor: me("MANAGER"), deal: { ownerId: null, stage: "PROPOSAL" }, to: "LOST", lostReason: "Autre" })).toBeNull()

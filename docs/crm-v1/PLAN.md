@@ -91,6 +91,12 @@ Détails et conséquences techniques : [AGENTS-IA.md](AGENTS-IA.md).
 | D51 | Recherche profonde | **Un brief sourcé avant chaque rendez-vous, et à la demande** | Le closer arrive préparé ; aucune dépense en masse. |
 | D52 | Sonde GEO | **Sur les fiches qualifiées** : 2 ou 3 recherches « métier + ville », entreprises citées et sources. Lève l'interdiction de sonde externe de D23 | Une preuve directe pour l'offre GEO, pour environ un centime. |
 | D53 | Reporté en V2 | Emails nominatifs vérifiés (Icypeas), bugs des sites (Chromium du worker), recrutements (France Travail), chiffres Instagram, créations d'artisans en nom propre (Sirene), enveloppe séparée | Mis de côté, pas abandonnés. |
+| D54 | Contenu des rapports (E10, 5 novembre 2026) | **L'entonnoir de la période, les résultats par personne, les gagnés du mois avec export CSV** | Piloter l'équipe et calculer les commissions des closers (hors de Cleads). |
+| D55 | Périodes des rapports | **Semaines (lundi à dimanche) et mois civils, heure de Paris**, comparés à la période précédente ; la vue 3D et les campagnes gardent leurs 7, 30 ou 90 jours glissants | Le relevé d'un mois se lit tel quel. |
+| D56 | Montant au gain | **Obligatoire** : passer en « Gagné » demande le montant HT signé, comme perdre demande un motif (pipeline, fiche, copilote, MCP). Une gagnée garde un montant ; celles d'avant la règle restent « non renseigné ». Les montants s'additionnent par devise, sans conversion | Des montants complets pour les rapports. |
+| D57 | Attribution par personne | **SDR** : contactés (emails de ses boîtes, appels qu'il enregistre), réponses (dans ses boîtes, hors absences), qualifiés (opportunités qu'il crée), RDV pris (réservés par lui). **Closer** : RDV tenus, gagnés et perdus (à son nom), montants HT, taux de transformation. L'opportunité garde son auteur (`Deal.createdById`) | Chaque chiffre est défini et recalculable (règle d'E10). |
+| D58 | Qui voit les rapports | **La matrice existante** : SDR et closer leurs chiffres, propriétaire, manager et lecteur tout ; l'export CSV demande `data:export` (propriétaire, manager) et est journalisé | Aucune permission nouvelle. |
+| D59 | Reporté en V2 (E10) | Pipeline ouvert par étape et pondéré, relevés de commissions, rapports dans la vue 3D et le copilote | L'activité du jour est dans « Aujourd'hui », la délivrabilité dans Emails. |
 
 ---
 
@@ -527,7 +533,15 @@ Couche d'envoi unique pour les emails du CRM : Amazon SES par défaut, Resend en
 - **E9c** : séquences (3 à 4 étapes), arrêt automatique, fenêtres horaires, pause automatique sur seuils, tableau de délivrabilité.
 - **Critères** : aucun envoi vers une adresse supprimée ; plafonds jamais dépassés ; arrêt de séquence testé dans chaque cas (réponse, rebond, désinscription, plainte).
 
-### E10 — Tableaux de bord et rapports · **M**
+### E10 — Tableaux de bord et rapports · **M**, en deux lots *(décidé le 5 novembre 2026, D54 à D59)*
+> **Lot 1 — Montant obligatoire au gain (branche `feat/e10-montant-gagne`)** — fait :
+> - **règle** (`checkDealMove`) : passer en « Gagné » demande le montant HT signé, celui du changement ou celui déjà saisi ; une gagnée ne perd plus son montant. Les gagnées d'avant la règle gardent leurs autres modifications ;
+> - **interface** : le pipeline et la fiche ouvrent « Opportunité gagnée » quand le montant manque, comme « Opportunité perdue » pour le motif ;
+> - **copilote et MCP** : `move_deal` passe par le même service ; sa description dit que « WON » demande `amountEur` ;
+> - **migration additive** `20261119090000_deal_created_by` : `Deal.createdById`, rempli à la qualification et à la réservation par un membre (vide pour une réservation publique et avant E10).
+>
+> **Lot 2 — La page Rapports (branche `feat/e10-rapports`)** — à faire : entonnoir de la période, résultats par personne, gagnés du mois et export CSV.
+
 Entonnoir hebdomadaire, performances par SDR et closer, activité du jour, délivrabilité, pipeline pondéré (seulement si les montants sont renseignés), export CSV.
 - **Critères** : chaque chiffre est défini dans une fiche (« contacté = au moins un message envoyé… ») et recalculable ; aucun indicateur inventé.
 

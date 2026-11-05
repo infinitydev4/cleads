@@ -1,5 +1,6 @@
 // Needs a disposable PostgreSQL with the migrations applied (never your development database).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
+import { WON_AMOUNT_MESSAGE } from "@/features/pipeline/rules"
 import { resetDatabase } from "./helpers/reset-db"
 
 const url = process.env.TEST_DATABASE_URL
@@ -45,7 +46,7 @@ suite("qualification and pipeline (database)", () => {
       expect(stored.status).toBe("QUALIFIED")
       expect(stored.qualification).toMatchObject({ need: "Refonte du site", budget: "yes", authority: "decision_maker", updatedById: u.sdr.id })
       const deal = await prisma.deal.findUniqueOrThrow({ where: { id: dealId! } })
-      expect(deal).toMatchObject({ stage: "QUALIFIED", ownerId: u.closer.id, leadId: l.id })
+      expect(deal).toMatchObject({ stage: "QUALIFIED", ownerId: u.closer.id, leadId: l.id, createdById: u.sdr.id })
       const history = (await leads.getLead(u.sdr, l.id)).activities.map((a) => a.body)
       expect(history).toEqual(expect.arrayContaining(["Qualifiée", "Opportunité créée"]))
       // The closer now sees the fiche and the opportunity, though they never owned the fiche.
@@ -182,6 +183,28 @@ suite("qualification and pipeline (database)", () => {
       await expect(pipe.updateDeal(u.viewer, id, { stage: "PROPOSAL" })).rejects.toMatchObject({ code: "forbidden" }) // a viewer sees the card, never moves it
       expect((await prisma.deal.findUniqueOrThrow({ where: { id } })).stage).toBe("QUALIFIED")
       expect((await prisma.deal.findUniqueOrThrow({ where: { id: pooled } })).stage).toBe("QUALIFIED")
+    })
+
+    it("winning needs the amount signed, from the board, the fiche or the copilot (E10)", async () => {
+      const id = await deal(u.closer)
+      await expect(pipe.updateDeal(u.closer, id, { stage: "WON" })).rejects.toMatchObject({ code: "invalid", message: WON_AMOUNT_MESSAGE })
+      await expect(pipe.updateDeal(u.closer, id, { stage: "WON", amountCents: 0 })).rejects.toMatchObject({ code: "invalid" })
+      expect((await prisma.deal.findUniqueOrThrow({ where: { id } })).stage).toBe("QUALIFIED")
+      // The copilot and MCP go through the same service: refused without amount, done with it.
+      const { moveDealTool } = await import("@/features/ai/actions/records")
+      const ctx = { run: { requester: u.closer } } as never
+      await expect(moveDealTool.execute(ctx, { dealId: id, stage: "WON" })).rejects.toMatchObject({ code: "invalid" })
+      await moveDealTool.execute(ctx, { dealId: id, stage: "WON", amountEur: 4500 })
+      expect(await prisma.deal.findUniqueOrThrow({ where: { id } })).toMatchObject({ stage: "WON", amountCents: 450000, wonAt: expect.any(Date) })
+      // Once won, the amount can change but not go away.
+      await expect(pipe.updateDeal(u.closer, id, { amountCents: null })).rejects.toMatchObject({ code: "invalid" })
+      expect((await pipe.updateDeal(u.closer, id, { amountCents: 480000 })).amountCents).toBe(480000)
+    })
+
+    it("an opportunity won before the rule keeps its other edits without an amount", async () => {
+      const l = await lead("Ancienne", u.sdr.id)
+      const old = await prisma.deal.create({ data: { workspaceId: ws, leadId: l.id, ownerId: u.closer.id, stage: "WON", wonAt: new Date() } })
+      expect((await pipe.updateDeal(u.manager, old.id, { expectedCloseAt: "2026-10-01T00:00:00.000Z" })).stage).toBe("WON")
     })
 
     it("losing needs a reason; 'Autre' keeps its detail", async () => {

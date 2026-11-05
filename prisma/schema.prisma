@@ -31,6 +31,7 @@ model User {
   workspace              Workspace?              @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   ownedLeads             Lead[]                  @relation("LeadOwner")
   ownedDeals             Deal[]                  @relation("DealOwner")
+  createdDeals           Deal[]                  @relation("DealCreator")
   assignedTasks          Task[]                  @relation("TaskAssignee")
   createdTasks           Task[]                  @relation("TaskCreator")
   activities             Activity[]
@@ -906,6 +907,9 @@ model Deal {
   lead            Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
   ownerId         String?
   owner           User?     @relation("DealOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  /// E10: who created it (qualification or a booking by a member); null for a public booking and before E10.
+  createdById     String?
+  createdBy       User?     @relation("DealCreator", fields: [createdById], references: [id], onDelete: SetNull)
   stage           DealStage @default(QUALIFIED)
   /// Amount in cents; optional, so weighted pipeline figures are only shown when it is filled in.
   amountCents     Int?
@@ -923,6 +927,7 @@ model Deal {
 
   @@index([workspaceId, stage])
   @@index([workspaceId, ownerId, stage])
+  @@index([workspaceId, createdById, createdAt])
   @@index([leadId])
 }
 

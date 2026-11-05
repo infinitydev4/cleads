@@ -31,7 +31,7 @@ export async function ensureOpenDeal(tx: Tx, user: CurrentUser, leadId: string, 
   const open = await tx.deal.findFirst({ where: { leadId, stage: { in: [...OPEN_STAGES] } }, orderBy: { createdAt: "desc" } })
   if (open) return { deal: open, created: false }
   await assertDealOwner(tx, user.workspaceId, ownerId)
-  const deal = await tx.deal.create({ data: { workspaceId: user.workspaceId, leadId, ownerId, stage: "QUALIFIED" } })
+  const deal = await tx.deal.create({ data: { workspaceId: user.workspaceId, leadId, ownerId, stage: "QUALIFIED", createdById: user.id } })
   await logDeal(tx, user, { leadId, dealId: deal.id, body: "Opportunité créée", data: { stage: "QUALIFIED" } })
   return { deal, created: true }
 }

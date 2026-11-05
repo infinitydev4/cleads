@@ -195,7 +195,7 @@ export async function updateDeal(user: CurrentUser, id: string, patch: UpdateDea
     // Editing the numbers or the owner is as restricted as moving the card.
     const editsDeal = patch.stage !== undefined || patch.amountCents !== undefined || patch.expectedCloseAt !== undefined || patch.ownerId !== undefined
     if (editsDeal) {
-      const violation = checkDealMove({ actor: user, deal, to: patch.stage ?? deal.stage, lostReason: lostReason ?? deal.lostReason })
+      const violation = checkDealMove({ actor: user, deal, to: patch.stage ?? deal.stage, lostReason: lostReason ?? deal.lostReason, amountCents: patch.amountCents })
       if (violation) throw new LeadError(violation.code === "invalid" ? "invalid" : "forbidden", violation.message, violation.code === "invalid" ? 400 : 403)
     }
 

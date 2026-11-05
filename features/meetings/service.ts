@@ -197,7 +197,8 @@ async function syncDealOnBooked(tx: Tx, ctx: Ctx, lead: { id: string; status: st
   await lockLead(tx, lead.id)
   const open = await tx.deal.findFirst({ where: { leadId: lead.id, stage: { in: [...OPEN_STAGES] } }, orderBy: { createdAt: "desc" } })
   if (!open) {
-    const deal = await tx.deal.create({ data: { workspaceId: ctx.workspaceId, leadId: lead.id, ownerId: hostId, stage: "MEETING_SET" } })
+    // A booking from the public page has no member behind it: that opportunity has no author.
+    const deal = await tx.deal.create({ data: { workspaceId: ctx.workspaceId, leadId: lead.id, ownerId: hostId, stage: "MEETING_SET", createdById: ctx.actorId } })
     await logDealMove(tx, ctx, lead.id, deal.id, "Opportunité créée : RDV planifié", { to: "MEETING_SET", meeting: true })
     if (["NEW", "CONTACTED", "REPLIED"].includes(lead.status)) await tx.lead.update({ where: { id: lead.id }, data: { status: "QUALIFIED" } })
     return deal.id
