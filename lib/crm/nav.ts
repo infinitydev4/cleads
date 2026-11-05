@@ -79,7 +79,7 @@ export const navGroups: NavGroup[] = [
     label: "Pilotage",
     items: [
       { id: "agents", label: "Agents IA", href: "/app/agents", icon: Bot, permission: "ai:use", keywords: ["ia", "skills", "offres", "catalogue", "exécutions", "validations", "auditeur", "rédacteur", "designer"] },
-      { id: "reports", label: "Rapports", href: "/app/reports", icon: BarChart3, permission: "report:read", soon: true, keywords: ["entonnoir", "statistiques"] },
+      { id: "reports", label: "Rapports", href: "/app/reports", icon: BarChart3, permission: "report:read", keywords: ["entonnoir", "statistiques", "gagnés", "chiffre d’affaires", "commissions", "export", "csv", "sdr", "closer"] },
     ],
   },
 ]

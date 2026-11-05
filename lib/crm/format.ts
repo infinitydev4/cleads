@@ -23,3 +23,7 @@ export function ago(iso: string | null | undefined, now = Date.now()) {
 
 export const euros = (cents: number | null | undefined) =>
   cents == null ? "—" : new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(cents / 100)
+
+/** An amount in its own currency (E10: amounts add up per currency, never converted). */
+export const money = (cents: number, currency: string) =>
+  new Intl.NumberFormat("fr-FR", { style: "currency", currency, maximumFractionDigits: cents % 100 === 0 ? 0 : 2 }).format(cents / 100)
