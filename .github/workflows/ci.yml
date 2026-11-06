@@ -1,0 +1,67 @@
+# E14 (D60): what must be green before anything reaches cleads.fr. Vercel's Deployment Checks hold a production
+# deployment until this check passes (docs/crm-v1/EXPLOITATION.md). No secret is needed: the tests use mock models and
+# in-process fake servers, and the database is a throwaway Postgres service.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: cleads
+          POSTGRES_PASSWORD: cleads
+          POSTGRES_DB: cleads_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U cleads -d cleads_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://cleads:cleads@localhost:5432/cleads_ci?schema=public
+      TEST_DATABASE_URL: postgresql://cleads:cleads@localhost:5432/cleads_ci?schema=public
+      # The worker bundle and next build must never reach a real model or send anything.
+      AI_GATEWAY_API_KEY: ""
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: Dépendances
+        run: npm ci --no-audit --no-fund
+      - name: Client Prisma et migrations
+        run: |
+          npx prisma generate
+          npx prisma migrate deploy
+      - name: Types
+        run: npx tsc --noEmit
+      - name: Lint (erreurs nouvelles seulement, eslint-suppressions.json)
+        run: npx eslint .
+      - name: Tests
+        run: npx vitest run
+      - name: Build du worker
+        run: npm run worker:build
+      - name: Démarrage du worker (base injoignable)
+        # The bundle must start and stop on the unreachable database, not crash on an import (the 3 November incident).
+        run: |
+          set +e
+          env -i PATH="$PATH" HOME="$HOME" DATABASE_URL="postgresql://smoke@127.0.0.1:1/none" timeout 20 node worker/dist/main.mjs >worker-smoke.log 2>&1
+          cat worker-smoke.log
+          grep -q "database unreachable" worker-smoke.log

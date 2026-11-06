@@ -131,6 +131,8 @@ describe("the message", () => {
   })
 
   it("signs unsubscribe links on the message id, never the address, and refuses a forged one", () => {
+    // Its own secret: the test once passed only when an earlier file had left one in the process (E14 CI).
+    process.env.OUTREACH_LINK_SECRET = "unit-test-secret-for-unsubscribe-links"
     process.env.OUTREACH_LINK_BASE_URL = "https://trycleads.com/"
     const token = signUnsubscribeToken("msg-1")
     expect(verifyUnsubscribeToken(token)).toBe("msg-1")
