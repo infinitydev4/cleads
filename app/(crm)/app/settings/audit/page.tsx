@@ -35,7 +35,7 @@ export default async function AuditPage(props: { searchParams: Promise<{ filter?
         description="Les 200 derniers événements : connexions, refus, invitations, changements de rôle. Le journal ne se modifie pas."
         breadcrumbs={[{ label: "CRM", href: "/app" }, { label: "Journal d’audit" }]}
       />
-      <nav aria-label="Filtrer le journal" className="mb-4 flex gap-2">
+      <nav aria-label="Filtrer le journal" className="mb-4 flex flex-wrap gap-2">
         {AUDIT_FILTERS.map((f) => (
           <Link
             key={f.label}
