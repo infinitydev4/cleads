@@ -53,7 +53,7 @@ suite("Meta's Ad Library (database)", () => {
     const at = new URL(String(input))
     calls.push({ url: at.toString(), auth: new Headers(init?.headers).get("authorization") })
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
-    if (at.pathname.endsWith("/debug_token")) return json({ data: { is_valid: true, expires_at: Math.round((Date.now() + expiresInDays * DAY) / 1000) } })
+    if (at.pathname.endsWith("/debug_token")) return json({ data: { is_valid: true, expires_at: Math.round((now.getTime() + expiresInDays * DAY) / 1000) } })
     if (failWith) return json(failWith.body, failWith.status)
     const pages = at.searchParams.get("search_page_ids")
     const data = pages ? pages.slice(1, -1).split(",").flatMap((p) => BY_PAGE[p] ?? []) : (BY_NAME[at.searchParams.get("search_terms") ?? ""] ?? [])

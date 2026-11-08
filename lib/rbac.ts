@@ -58,6 +58,8 @@ const matrix = {
   "offer:manage": { OWNER: "all", MANAGER: "all" },
   /** E23: demonstration landing pages of the Studio Web, on the fiches the person may edit (same scope as lead:write). */
   "studio:generate": { OWNER: "all", MANAGER: "all", SDR: "pool", CLOSER: "own" },
+  /** E16: the 3D view of the CRM (/app/3d), a team overview; the other roles work in the 2D pages. */
+  "hq:view": { OWNER: "all", MANAGER: "all" },
   // Administration
   "team:read": { OWNER: "all", MANAGER: "all" },
   "team:manage": { OWNER: "all" },

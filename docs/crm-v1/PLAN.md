@@ -202,6 +202,7 @@ Entonnoir par semaine : prospects importés → contactés → réponses → qua
 | Utiliser l'IA : audit, offres, brouillon, maquette, dans son quota *(E17)* | ✓ | ✓ | ✓ | ✓ | lecture des audits |
 | Régler l'IA : modèles par rôle, plafonds *(E17)* | ✓ | — | — | — | — |
 | Gérer les skills et le catalogue d'offres *(E19)* | ✓ | ✓ | — | — | — |
+| Ouvrir la vue 3D du CRM *(E16, réservée depuis le 8 novembre 2026)* | ✓ | ✓ | — | — | — |
 
 **Règles d'implémentation.** Un module unique `lib/rbac` définit la matrice ; chaque route et chaque action serveur passe par `requirePermission(user, "lead:update", resource)`. Jamais de contrôle uniquement côté interface. Les filtres de portée (« siens ») sont appliqués dans la requête, pas après coup. Le middleware actuel ne protège que le préfixe d'URL : il devient une première barrière, pas la seule. Les outils des agents IA passent par les mêmes contrôles, avec les droits de la personne qui a lancé l'exécution (section 10).
 

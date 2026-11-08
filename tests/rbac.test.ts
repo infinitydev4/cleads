@@ -30,6 +30,7 @@ const expected: Record<string, Record<CrmRole, string>> = {
   "ai:manage": { OWNER: "all", MANAGER: "-", SDR: "-", CLOSER: "-", VIEWER: "-" },
   "skill:manage": { OWNER: "all", MANAGER: "all", SDR: "-", CLOSER: "-", VIEWER: "-" },
   "offer:manage": { OWNER: "all", MANAGER: "all", SDR: "-", CLOSER: "-", VIEWER: "-" },
+  "hq:view": { OWNER: "all", MANAGER: "all", SDR: "-", CLOSER: "-", VIEWER: "-" },
 }
 
 describe("role matrix", () => {

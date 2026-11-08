@@ -14,6 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { can } from "@/lib/rbac"
 import { allNavItems, navFor } from "@/lib/crm/nav"
 import { HQ_PATH } from "@/lib/crm/hq-window"
 import { useNotifications } from "@/hooks/useNotifications"
@@ -188,7 +189,7 @@ export function AppShell({ user, embedded = false, children }: { user: ShellUser
           </button>
 
           <div className="ml-auto flex items-center gap-1">
-            <Suspense><ViewSwitch className="mr-1" /></Suspense>
+            {can(user.role, "hq:view") && <Suspense><ViewSwitch className="mr-1" /></Suspense>}
             <CopilotButton />
             <Notifications />
             <div className="lg:hidden">

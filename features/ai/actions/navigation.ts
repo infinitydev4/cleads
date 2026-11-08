@@ -29,6 +29,7 @@ export const PAGE_RIGHTS: Partial<Record<(typeof PAGES)[number], Permission>> = 
   mailbox: "email:send",
   sequences: "sequence:manage",
   agents: "ai:use",
+  hq: "hq:view",
 }
 
 export const openPageTool = defineTool({
