@@ -14,6 +14,13 @@ export type RelevanceFilter = (typeof RELEVANCE_FILTERS)[number]
 export const REGISTRY_FILTERS = ["new", "signal", "takeover", "blocked"] as const
 export type RegistryFilter = (typeof REGISTRY_FILTERS)[number]
 
+/**
+ * The closer's desk (9 November 2026): the call file in four segments. Hot (worth calling first, priority 1), a
+ * callback due today or late, no website, never contacted. The rules are in features/leads/insights.ts.
+ */
+export const FOCUS_FILTERS = ["hot", "callback", "nosite", "fresh"] as const
+export type FocusFilter = (typeof FOCUS_FILTERS)[number]
+
 export interface LeadFilters {
   q?: string
   status: (typeof LEAD_STATUSES)[number][]
@@ -33,6 +40,8 @@ export interface LeadFilters {
   relevance?: RelevanceFilter
   /** E30: what the registry and the BODACC say. */
   registry?: RegistryFilter
+  /** The closer's desk: one segment of the call file. */
+  focus?: FocusFilter
   sort: LeadSort
   dir: "asc" | "desc"
   page: number
@@ -70,6 +79,7 @@ export function parseLeadFilters(params: Params): LeadFilters {
     campaign: one("campaign"),
     relevance: RELEVANCE_FILTERS.find((r) => r === one("relevance")),
     registry: REGISTRY_FILTERS.find((r) => r === one("registry")),
+    focus: FOCUS_FILTERS.find((r) => r === one("focus")),
     sort,
     dir: one("dir") === "asc" ? "asc" : one("dir") === "desc" ? "desc" : sort === "name" ? "asc" : "desc",
     page: page >= 1 ? page : 1,
@@ -92,6 +102,7 @@ export const viewFiltersSchema = z.object({
   campaign: optionalText(100),
   relevance: z.enum(RELEVANCE_FILTERS).optional(),
   registry: z.enum(REGISTRY_FILTERS).optional(),
+  focus: z.enum(FOCUS_FILTERS).optional(),
   sort: z.enum(SORTS).default("score"),
   dir: z.enum(["asc", "desc"]).default("desc"),
 })

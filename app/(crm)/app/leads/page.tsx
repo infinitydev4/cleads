@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { requirePagePermission } from "@/lib/auth/guard"
 import { can, scopeOf } from "@/lib/rbac"
 import { parseLeadFilters } from "@/features/leads/schemas"
-import { listAssignees, listLeads } from "@/features/leads/service"
+import { focusCounts, listAssignees, listLeads } from "@/features/leads/service"
 import { listViews } from "@/features/leads/views"
 import { campaignOptions } from "@/features/campaigns/service"
 import { LeadsView } from "./leads-view"
@@ -16,14 +16,16 @@ export const dynamic = "force-dynamic"
 export default async function LeadsPage(props: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { user } = await requirePagePermission("lead:read")
   const filters = parseLeadFilters(await props.searchParams)
-  const [list, assignees, views, campaigns] = await Promise.all([listLeads(user, filters), listAssignees(user), listViews(user), can(user.role, "campaign:read") ? campaignOptions(user) : []])
+  const [list, assignees, views, campaigns, counts] = await Promise.all([listLeads(user, filters), listAssignees(user), listViews(user), can(user.role, "campaign:read") ? campaignOptions(user) : [], focusCounts(user)])
   const canWrite = can(user.role, "lead:write")
+  // The closer sees only his fiches (9 November 2026): his list is his call file.
+  const ownOnly = scopeOf(user.role, "lead:read") === "own"
 
   return (
     <>
       <PageHeader
-        title="Prospects"
-        description="Les entreprises à contacter, qualifier et convertir. Chaque entreprise a une seule fiche : les doublons sont repérés à l’import et à la saisie."
+        title={ownOnly ? "Mes prospects" : "Prospects"}
+        description={ownOnly ? "Tes fiches, avec ce qu’il faut savoir avant d’appeler. Commence par « À appeler en premier »." : "Les entreprises à contacter, qualifier et convertir. Chaque entreprise a une seule fiche : les doublons sont repérés à l’import et à la saisie."}
         actions={
           <>
             {can(user.role, "lead:merge") && (
@@ -51,6 +53,8 @@ export default async function LeadsPage(props: { searchParams: Promise<Record<st
         canImport={can(user.role, "lead:import")}
         canSequence={can(user.role, "sequence:manage") && can(user.role, "email:send")}
         canCampaign={can(user.role, "campaign:manage")}
+        ownOnly={ownOnly}
+        focusCounts={counts}
       />
     </>
   )

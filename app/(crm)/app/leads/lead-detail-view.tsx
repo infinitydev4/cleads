@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Building2, CalendarDays, ClipboardCheck, Globe, Mail, MapPin, Pencil, Phone, PhoneCall, ShieldAlert, Trash2, UserRound, X } from "lucide-react"
+import { Building2, CalendarDays, ChevronDown, ClipboardCheck, Globe, Mail, MapPin, Pencil, Phone, PhoneCall, ShieldAlert, Trash2, UserRound, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -35,6 +35,7 @@ import { CampaignField } from "./campaign-field"
 import { LeadAiCard } from "@/components/crm/ai/lead-ai-card"
 import { RegistryCard } from "@/components/crm/registry/registry-card"
 import { ResearchCard } from "@/components/crm/research/research-card"
+import { CallBrief } from "./call-brief"
 
 interface Props {
   lead: LeadDetail
@@ -112,6 +113,11 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
   const title = c?.name ?? k?.name ?? k?.email ?? "Sans nom"
   const mineOrPool = lead.can.write
   const ownerOptions = lead.can.assignOthers ? assignees : assignees.filter((a) => a.id === currentUserId)
+  // The closer's desk (9 November 2026): the call first, then its follow-up; the rest of the fiche is folded away.
+  const focus = lead.layout === "focus"
+  const phone = k?.phone ?? c?.phone ?? null
+  const tasks = <TasksCard lead={lead} assignees={assignees} currentUserId={currentUserId} adding={addingTask} onAddingChange={setAddingTask} onChange={(next) => { onChange(next); router.refresh() }} refresh={reload} />
+  const timeline = <Timeline lead={lead} onChange={onChange} />
 
   return (
     <div className="space-y-6">
@@ -122,8 +128,16 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
             <p className="text-sm text-muted-foreground">{[c?.city, c?.sector].filter(Boolean).join(" · ") || "Aucune localisation"} · ajoutée {formatDate(lead.createdAt)}</p>
           </div>
           <div className="flex flex-wrap gap-2 2xl:shrink-0">
+            {focus && phone && lead.can.log && lead.status !== "DO_NOT_CONTACT" && (
+              // The number dials from the computer or the phone; the call window opens to note how it went.
+              <Button asChild size="sm" title="Raccourci pour noter un appel : c">
+                <a href={`tel:${phone}`} onClick={() => setCalling(true)}>
+                  <Phone className="h-4 w-4" aria-hidden="true" /> Appeler {formatPhone(phone)}
+                </a>
+              </Button>
+            )}
             {canQualifyNow && (
-              <Button size="sm" onClick={() => setQualifying(true)} title="Raccourci : q">
+              <Button size="sm" variant={focus ? "outline" : "default"} onClick={() => setQualifying(true)} title="Raccourci : q">
                 <ClipboardCheck className="h-4 w-4" aria-hidden="true" /> Qualifier
               </Button>
             )}
@@ -137,7 +151,7 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
                 <Mail className="h-4 w-4" aria-hidden="true" /> Email
               </Button>
             )}
-            {lead.can.log && (
+            {lead.can.log && !(focus && phone) && (
               <Button variant="outline" size="sm" onClick={() => setCalling(true)} title="Raccourci : c">
                 <PhoneCall className="h-4 w-4" aria-hidden="true" /> Appel
               </Button>
@@ -150,14 +164,14 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className={cn("grid gap-3", !focus && "sm:grid-cols-2")}>
           <label className="space-y-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Statut
             <Select value={lead.status} disabled={!mineOrPool} onValueChange={(status) => patch({ status }, "Statut mis à jour")}>
               <SelectTrigger aria-label="Statut"><SelectValue /></SelectTrigger>
               <SelectContent>{Object.entries(leadStatus).map(([key, m]) => <SelectItem key={key} value={key}>{m.label}</SelectItem>)}</SelectContent>
             </Select>
           </label>
-          <label className="space-y-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Responsable
+          {!focus && <label className="space-y-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Responsable
             <Select value={lead.ownerId ?? NONE} disabled={!mineOrPool && lead.ownerId !== null} onValueChange={(v) => patch({ ownerId: v === NONE ? null : v }, "Responsable mis à jour")}>
               <SelectTrigger aria-label="Responsable"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -166,12 +180,12 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
                 {lead.ownerId && !ownerOptions.some((a) => a.id === lead.ownerId) && <SelectItem value={lead.ownerId}>{lead.ownerName}</SelectItem>}
               </SelectContent>
             </Select>
-          </label>
+          </label>}
         </div>
 
-        <CampaignField lead={lead} onChange={(campaignId) => patch({ campaignId }, campaignId ? "Fiche rangée dans la campagne" : "Fiche retirée de la campagne")} />
+        {!focus && <CampaignField lead={lead} onChange={(campaignId) => patch({ campaignId }, campaignId ? "Fiche rangée dans la campagne" : "Fiche retirée de la campagne")} />}
 
-        <TagEditor tags={lead.tags} disabled={!mineOrPool} onChange={(tags) => patch({ tags })} />
+        {!focus && <TagEditor tags={lead.tags} disabled={!mineOrPool} onChange={(tags) => patch({ tags })} />}
 
         {k?.doNotContact && (
           <p role="status" className="flex items-start gap-2 rounded-lg bg-destructive-subtle p-3 text-sm font-medium text-destructive-text">
@@ -180,6 +194,8 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
           </p>
         )}
       </header>
+
+      {focus && <CallBrief lead={lead} onChanged={reload} />}
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card className="space-y-3 p-4">
@@ -207,6 +223,12 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
           )}
         </Card>
       </div>
+
+      {focus && tasks}
+      {focus && timeline}
+
+      <Fold folded={focus}>
+      {focus && <TagEditor tags={lead.tags} disabled={!mineOrPool} onChange={(tags) => patch({ tags })} />}
 
       {lead.company && <RegistryCard leadId={lead.id} onChanged={reload} />}
 
@@ -252,10 +274,11 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
       )}
 
       {lead.can.email && <SequenceCard leadId={lead.id} refreshKey={lead.activities[0]?.id} onChange={reload} />}
+      </Fold>
 
-      <TasksCard lead={lead} assignees={assignees} currentUserId={currentUserId} adding={addingTask} onAddingChange={setAddingTask} onChange={(next) => { onChange(next); router.refresh() }} refresh={reload} />
+      {!focus && tasks}
 
-      <Timeline lead={lead} onChange={onChange} />
+      {!focus && timeline}
 
       {lead.can.delete && (
         <div className="border-t pt-4">
@@ -537,5 +560,25 @@ function QualificationCard({ lead, onEdit }: { lead: LeadDetail; onEdit: () => v
         </div>
       )}
     </Card>
+  )
+}
+
+/**
+ * The closer's desk: the part of the fiche that does not serve the call (registry, research, score, AI, qualification,
+ * deals, sequence) stays one click away instead of in the way. For everyone else it is laid out as before.
+ */
+function Fold({ folded, children }: { folded: boolean; children: React.ReactNode }) {
+  if (!folded) return <>{children}</>
+  return (
+    <details className="group rounded-xl border bg-card">
+      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-2 px-4 text-sm font-bold [&::-webkit-details-marker]:hidden">
+        Plus d’informations
+        <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+          Entreprise, registre, audit, offres, qualification
+          <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" aria-hidden="true" />
+        </span>
+      </summary>
+      <div className="space-y-4 border-t p-4">{children}</div>
+    </details>
   )
 }

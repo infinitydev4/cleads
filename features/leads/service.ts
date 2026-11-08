@@ -15,8 +15,9 @@ import { MATCH_LABELS, cleanCompany, cleanContact, matchCompany, normalizeTags }
 import { scoreLead } from "./scoring"
 import { stopForLead } from "@/features/outreach/stops"
 import { assertCampaign, setLeadCampaign } from "@/features/campaigns/filing"
-import type { BulkInput, CreateLeadInput, LeadFilters, LeadSort, RegistryFilter, RelevanceFilter, UpdateLeadInput } from "./schemas"
+import { FOCUS_FILTERS, type BulkInput, type CreateLeadInput, type FocusFilter, type LeadFilters, type LeadSort, type RegistryFilter, type RelevanceFilter, type UpdateLeadInput } from "./schemas"
 import type { LeadDetail, LeadList, LeadRow } from "./types"
+import { callBrief, focusWhere, rowInsights } from "./insights"
 import { leadAiReason } from "@/features/prospect-audit/latest"
 import { latestPitchSummary } from "@/features/offer-pitch/latest"
 import { forgetLead } from "@/features/copilot/forget"
@@ -82,6 +83,7 @@ function filterWhere(user: CurrentUser, f: LeadFilters): Prisma.LeadWhereInput {
   else if (f.campaign) and.push({ campaignId: f.campaign })
   if (f.relevance) and.push(relevanceWhere(f.relevance, f.campaign && f.campaign !== "none" ? f.campaign : null))
   if (f.registry) and.push(registryWhere(f.registry))
+  if (f.focus) and.push(focusWhere(f.focus))
   return { AND: and }
 }
 
@@ -129,7 +131,7 @@ function orderBy(sort: LeadSort, dir: "asc" | "desc"): Prisma.LeadOrderByWithRel
 // ---------------------------------------------------------------------------------------------------------------
 
 const rowInclude = {
-  company: { select: { name: true, city: true, sector: true, email: true, phone: true, website: true } },
+  company: { select: { name: true, city: true, sector: true, email: true, phone: true, website: true, domain: true, legalState: true } },
   contact: { select: { name: true, email: true, emailKind: true, phone: true } },
   owner: { select: { name: true, email: true } },
 } satisfies Prisma.LeadInclude
@@ -170,7 +172,21 @@ export async function listLeads(user: CurrentUser, filters: LeadFilters): Promis
       include: rowInclude,
     }),
   ])
-  return { rows: leads.map(toRow), total, page: filters.page, pageSize: filters.pageSize, pageCount: Math.max(1, Math.ceil(total / filters.pageSize)) }
+  const insights = await rowInsights(user.workspaceId, leads)
+  return {
+    rows: leads.map((l) => ({ ...toRow(l), ...insights.get(l.id)! })),
+    total,
+    page: filters.page,
+    pageSize: filters.pageSize,
+    pageCount: Math.max(1, Math.ceil(total / filters.pageSize)),
+  }
+}
+
+/** How many of the person's fiches fall in each segment of the call file, the other filters aside. */
+export async function focusCounts(user: CurrentUser): Promise<Record<FocusFilter, number>> {
+  const base = { workspaceId: user.workspaceId, ...scopeWhere(user, "lead:read") }
+  const counts = await Promise.all(FOCUS_FILTERS.map((focus) => prisma.lead.count({ where: { AND: [base, focusWhere(focus)] } })))
+  return Object.fromEntries(FOCUS_FILTERS.map((focus, i) => [focus, counts[i]])) as Record<FocusFilter, number>
 }
 
 const actorName = (u: { name: string | null; email: string | null } | null) => u?.name ?? u?.email ?? null
@@ -270,6 +286,9 @@ export async function getLead(user: CurrentUser, id: string): Promise<LeadDetail
     },
     aiReason: can(user.role, "ai:read") ? await leadAiReason(user.workspaceId, { id: lead.id, company: c && { domain: c.domain, website: c.website } }) : null,
     pitch: c && can(user.role, "ai:use") ? await latestPitchSummary(user.workspaceId, lead.id) : null,
+    brief: await callBrief(user.workspaceId, lead, { audit: can(user.role, "ai:read"), pitch: !!c && can(user.role, "ai:use") }),
+    // The closer works his own fiches one call at a time (9 November 2026): the call first, the rest folded away.
+    layout: user.role === "CLOSER" ? "focus" : "full",
   }
 }
 

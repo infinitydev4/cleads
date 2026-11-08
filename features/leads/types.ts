@@ -1,4 +1,5 @@
 import type { LeadStatus } from "@prisma/client"
+import type { CallScript, Objection } from "@/features/offer-pitch/schemas"
 import type { ScoreReason } from "./scoring"
 
 export const LEAD_STATUSES = ["NEW", "CONTACTED", "REPLIED", "QUALIFIED", "DISQUALIFIED", "DO_NOT_CONTACT"] as const satisfies readonly LeadStatus[]
@@ -23,8 +24,43 @@ export interface LeadRow {
   createdAt: string
 }
 
+/** The closer's desk (9 November 2026, features/leads/insights.ts): no site, a site to improve, a correct one, not audited. */
+export type SiteState = "none" | "weak" | "ok" | "unknown"
+/** 1: call first, 2: a good fiche with nothing urgent, 3: wait. */
+export type Priority = 1 | 2 | 3
+
+/** What a row of the list shows at a glance; computed when read, never stored. */
+export interface RowInsight {
+  site: SiteState
+  /** The best offer of the latest pitch the team has not rejected. */
+  offer: { name: string; price: string } | null
+  /** The next open task: a callback, a follow-up. */
+  next: { title: string; dueAt: string | null; late: boolean } | null
+  /** The latest registry or advertising signal of the last 30 days. */
+  signal: string | null
+  priority: Priority
+}
+
+export type LeadListRow = LeadRow & RowInsight
+
+/** What the fiche puts first to prepare a call: why now, and the latest call script. */
+export interface CallBrief {
+  priority: Priority
+  site: SiteState
+  siteScore: number | null
+  audited: boolean
+  reasons: { text: string; source: string; url: string | null }[]
+  pitch: {
+    headline: string
+    createdAt: string
+    script: CallScript | null
+    objections: Objection[]
+    offers: { name: string; price: string; why: string; gain: string }[]
+  } | null
+}
+
 export interface LeadList {
-  rows: LeadRow[]
+  rows: LeadListRow[]
   total: number
   page: number
   pageSize: number
@@ -95,4 +131,8 @@ export interface LeadDetail {
   aiReason: { label: string; confidence: number; createdAt: string } | null
   /** E21: the latest pitch of the Conseiller offres, for the tab of suggested offers; null without `ai:use`. */
   pitch: { offers: number; createdAt: string } | null
+  /** The closer's desk: why call now and the call script. */
+  brief: CallBrief
+  /** "focus" for the closer: the call first, the rest folded away; "full" for everyone else. */
+  layout: "focus" | "full"
 }

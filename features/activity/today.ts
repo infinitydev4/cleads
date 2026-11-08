@@ -161,7 +161,8 @@ async function suggest(user: CurrentUser): Promise<Suggestion[]> {
     })
     out.push(...deals.map((d) => ({ ...card(d.lead), reason: "deal_without_next_step" as const, detail: "Opportunité sans prochaine étape" })))
   }
-  if (user.role === "SDR") {
+  // The closer also calls his own fresh fiches (9 November 2026): he sells on the phone, not only at meetings.
+  if (user.role === "SDR" || user.role === "CLOSER") {
     const fresh = await prisma.lead.findMany({
       where: { workspaceId: user.workspaceId, ownerId: user.id, status: "NEW", ...noOpenTask, OR: [{ contact: { phone: { not: null } } }, { company: { phone: { not: null } } }] },
       select,

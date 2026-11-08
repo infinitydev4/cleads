@@ -1,19 +1,20 @@
 "use client"
 
-import { ArrowDown, ArrowUp, ChevronsUpDown, Globe, Mail, Phone } from "lucide-react"
+import { ArrowDown, ArrowUp, ChevronsUpDown, Globe, Mail, Phone, Radio } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { StatusBadge } from "@/components/crm/status-badge"
 import { leadStatus } from "@/lib/crm/status"
-import { ago } from "@/lib/crm/format"
+import { ago, formatDateTime } from "@/lib/crm/format"
 import { formatPhone } from "@/lib/crm/normalize"
 import { cn } from "@/lib/utils"
-import type { LeadRow } from "@/features/leads/types"
+import type { LeadListRow } from "@/features/leads/types"
 import type { LeadSort } from "@/features/leads/schemas"
+import { PriorityBadge, SiteIndicator } from "./indicators"
 import { ScoreMeter } from "./score-meter"
 
 interface Props {
-  rows: LeadRow[]
+  rows: LeadListRow[]
   selected: Set<string>
   onSelect: (ids: Set<string>) => void
   onOpen: (id: string) => void
@@ -21,11 +22,19 @@ interface Props {
   sort: LeadSort
   dir: "asc" | "desc"
   onSort: (sort: LeadSort) => void
+  /** Hidden for those who only see their own fiches: every row would say the same name. */
+  showOwner?: boolean
 }
 
-const SORTABLE: Record<string, LeadSort> = { Prospect: "name", Statut: "status", Score: "score", "Dernier contact": "contacted" }
+const SORTABLE: Record<string, LeadSort> = { Prospect: "name", "Statut et suivi": "status", Score: "score" }
 
-export function LeadsTable({ rows, selected, onSelect, onOpen, activeId, sort, dir, onSort }: Props) {
+/** The follow-up of a row: the next task when there is one, else the last contact. */
+function followUp(r: LeadListRow): { text: string; late: boolean } {
+  if (r.next) return { text: r.next.dueAt ? `${r.next.late ? "En retard · " : ""}${formatDateTime(r.next.dueAt)} · ${r.next.title}` : r.next.title, late: r.next.late }
+  return { text: r.lastContactedAt ? `Contacté ${ago(r.lastContactedAt)}` : "Jamais contacté", late: false }
+}
+
+export function LeadsTable({ rows, selected, onSelect, onOpen, activeId, sort, dir, onSort, showOwner = true }: Props) {
   const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.id))
   const toggle = (id: string, on: boolean) => onSelect(new Set(on ? [...selected, id] : [...selected].filter((x) => x !== id)))
 
@@ -56,14 +65,14 @@ export function LeadsTable({ rows, selected, onSelect, onOpen, activeId, sort, d
 
   return (
     <div className="overflow-x-auto rounded-xl border bg-card shadow-card">
-      <table className="w-full min-w-[920px] border-collapse text-sm">
+      <table className="w-full min-w-[1000px] border-collapse text-sm">
         <caption className="sr-only">Prospects</caption>
         <thead className="bg-muted/60">
           <tr className="text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             <th scope="col" className="w-10 px-4 py-3">
               <Checkbox checked={allSelected} onCheckedChange={(on) => onSelect(new Set(on ? rows.map((r) => r.id) : []))} aria-label="Tout sélectionner sur cette page" />
             </th>
-            {["Prospect", "Contact", "Statut", "Score", "Responsable", "Dernier contact"].map((label) => (
+            {["Prospect", "Site", "Opportunité", "Contact", "Statut et suivi", "Score", ...(showOwner ? ["Responsable"] : [])].map((label) => (
               <th key={label} scope="col" aria-sort={SORTABLE[label] === sort ? (dir === "asc" ? "ascending" : "descending") : undefined} className="px-4 py-3">
                 {header(label)}
               </th>
@@ -87,9 +96,13 @@ export function LeadsTable({ rows, selected, onSelect, onOpen, activeId, sort, d
               <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                 <Checkbox checked={selected.has(r.id)} onCheckedChange={(on) => toggle(r.id, !!on)} aria-label={`Sélectionner ${r.name}`} />
               </td>
-              <td className="max-w-[280px] px-4 py-3">
-                <p className="truncate font-semibold">{r.name}</p>
+              <td className="max-w-[260px] px-4 py-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <PriorityBadge priority={r.priority} />
+                  <p className="truncate font-semibold">{r.name}</p>
+                </div>
                 <p className="truncate text-xs text-muted-foreground">{[r.city, r.sector].filter(Boolean).join(" · ") || "—"}</p>
+                {r.signal && <p className="mt-0.5 flex min-w-0 items-center gap-1 text-xs font-medium text-info" title={r.signal}><Radio className="h-3 w-3 shrink-0" aria-hidden="true" /><span className="truncate">{r.signal}</span></p>}
                 {r.tags.length > 0 && (
                   <div className="mt-1 flex flex-wrap gap-1">
                     {r.tags.slice(0, 3).map((t) => (
@@ -98,19 +111,37 @@ export function LeadsTable({ rows, selected, onSelect, onOpen, activeId, sort, d
                   </div>
                 )}
               </td>
-              <td className="max-w-[260px] px-4 py-3">
-                {r.contactName && <p className="truncate">{r.contactName}</p>}
-                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                  {r.email && <span className="inline-flex min-w-0 items-center gap-1" title={r.emailKind === "NOMINATIVE" ? "Email nominatif" : r.emailKind === "GENERIC" ? "Email générique" : undefined}><Mail className="h-3 w-3 shrink-0" aria-hidden="true" /><span className="truncate">{r.email}</span></span>}
-                  {r.phone && <span className="inline-flex shrink-0 items-center gap-1"><Phone className="h-3 w-3" aria-hidden="true" />{formatPhone(r.phone)}</span>}
-                  {!r.email && !r.phone && r.website && <span className="inline-flex items-center gap-1"><Globe className="h-3 w-3" aria-hidden="true" />site seul</span>}
-                  {!r.email && !r.phone && !r.website && "—"}
-                </div>
+              <td className="px-4 py-3"><SiteIndicator state={r.site} /></td>
+              <td className="max-w-[190px] px-4 py-3">
+                {r.offer ? (
+                  <>
+                    <p className="truncate font-medium" title={r.offer.name}>{r.offer.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">{r.offer.price}</p>
+                  </>
+                ) : (
+                  <span className="text-xs text-muted-foreground">À découvrir</span>
+                )}
               </td>
-              <td className="px-4 py-3"><StatusBadge map={leadStatus} value={r.status} /></td>
+              {/* The closer's desk: the number first, it is what he dials; then who, then the email. */}
+              <td className="max-w-[200px] px-4 py-3">
+                {r.phone ? <p className="flex items-center gap-1 whitespace-nowrap font-medium tabular-nums"><Phone className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />{formatPhone(r.phone)}</p> : <p className="text-xs text-muted-foreground">Pas de téléphone</p>}
+                {(r.contactName || r.email) && (
+                  <p className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground" title={r.emailKind === "NOMINATIVE" ? "Email nominatif" : r.emailKind === "GENERIC" ? "Email générique" : undefined}>
+                    {!r.contactName && <Mail className="h-3 w-3 shrink-0" aria-hidden="true" />}
+                    <span className="truncate">{r.contactName ?? r.email}</span>
+                  </p>
+                )}
+                {!r.phone && !r.contactName && !r.email && r.website && <p className="flex items-center gap-1 text-xs text-muted-foreground"><Globe className="h-3 w-3" aria-hidden="true" />site seul</p>}
+              </td>
+              <td className="max-w-[200px] px-4 py-3">
+                <StatusBadge map={leadStatus} value={r.status} />
+                {(() => {
+                  const f = followUp(r)
+                  return <p className={cn("mt-1 truncate text-xs font-medium", f.late ? "text-destructive-text" : r.next ? "text-foreground" : "text-muted-foreground")} title={r.next?.title}>{f.text}</p>
+                })()}
+              </td>
               <td className="px-4 py-3"><ScoreMeter score={r.score} /></td>
-              <td className="px-4 py-3 text-muted-foreground">{r.ownerName ?? <span className="italic">Pool</span>}</td>
-              <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{ago(r.lastContactedAt)}</td>
+              {showOwner && <td className="px-4 py-3 text-muted-foreground">{r.ownerName ?? <span className="italic">Pool</span>}</td>}
             </tr>
           ))}
         </tbody>
