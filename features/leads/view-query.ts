@@ -8,7 +8,7 @@ export function viewToQuery(f: ViewFilters): string {
   const p = new URLSearchParams()
   if (f.q) p.set("q", f.q)
   if (f.status.length) p.set("status", f.status.join(","))
-  for (const k of ["owner", "source", "sector", "city", "tag", "campaign", "relevance"] as const) if (f[k]) p.set(k, f[k]!)
+  for (const k of ["owner", "source", "sector", "city", "tag", "campaign", "relevance", "registry", "focus"] as const) if (f[k]) p.set(k, f[k]!)
   if (f.hasEmail) p.set("hasEmail", "1")
   if (f.hasPhone) p.set("hasPhone", "1")
   if (f.minScore) p.set("minScore", String(f.minScore))

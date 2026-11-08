@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/crm/empty-state"
-import type { LeadFilters, LeadSort } from "@/features/leads/schemas"
+import type { FocusFilter, LeadFilters, LeadSort } from "@/features/leads/schemas"
 import type { LeadList } from "@/features/leads/types"
 import { BulkBar } from "./bulk-bar"
 import { FilterBar, type Assignee } from "./filter-bar"
@@ -26,12 +26,15 @@ interface Props {
   canImport: boolean
   canSequence: boolean
   canCampaign: boolean
+  /** Only one's own fiches (the closer): no owner filter nor column. */
+  ownOnly?: boolean
+  focusCounts?: Record<FocusFilter, number>
 }
 
 const EMPTY: Set<string> = new Set()
 
 /** Filters, sorting and paging live in the URL: a link or a saved view reproduces exactly what you see. */
-export function LeadsView({ list, filters, assignees, campaigns, views, currentUserId, canWrite, canAssignOthers, canShareViews, canImport, canSequence, canCampaign }: Props) {
+export function LeadsView({ list, filters, assignees, campaigns, views, currentUserId, canWrite, canAssignOthers, canShareViews, canImport, canSequence, canCampaign, ownOnly = false, focusCounts }: Props) {
   const router = useRouter()
   const pathname = usePathname()
   const params = useSearchParams()
@@ -73,7 +76,7 @@ export function LeadsView({ list, filters, assignees, campaigns, views, currentU
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start gap-2">
-        <div className="min-w-0 flex-1"><FilterBar filters={filters} assignees={assignees} campaigns={campaigns} canSeeOthers={canAssignOthers} onChange={update} searchRef={searchRef} /></div>
+        <div className="min-w-0 flex-1"><FilterBar filters={filters} assignees={assignees} campaigns={campaigns} canSeeOthers={canAssignOthers} ownOnly={ownOnly} focusCounts={focusCounts} onChange={update} searchRef={searchRef} /></div>
         <ViewsMenu views={views} current={filters} canShare={canShareViews} />
       </div>
 
@@ -84,13 +87,13 @@ export function LeadsView({ list, filters, assignees, campaigns, views, currentU
       {list.rows.length === 0 ? (
         <EmptyState
           art="target"
-          title={list.total === 0 && !filters.q && !filters.status.length && !filters.owner ? "Pas encore de prospects" : "Aucun prospect ne correspond"}
+          title={list.total === 0 && !filters.q && !filters.status.length && !filters.owner && !filters.focus ? (ownOnly ? "Aucune fiche ne t’est encore attribuée" : "Pas encore de prospects") : "Aucun prospect ne correspond"}
           description={canImport ? "Importez un fichier CSV ou ajoutez un prospect à la main. Les filtres actifs sont dans l’adresse de la page : « Effacer » les retire." : "Les filtres actifs sont dans l’adresse de la page : « Effacer » les retire."}
           action={canImport ? <Button onClick={() => router.push("/app/leads/import")}>Importer un CSV</Button> : undefined}
         />
       ) : (
         <div className={pending ? "opacity-70 transition-opacity" : "transition-opacity"}>
-          <LeadsTable rows={list.rows} selected={selected} onSelect={setSelected} onOpen={setOpenId} activeId={openId} sort={filters.sort} dir={filters.dir} onSort={onSort} />
+          <LeadsTable rows={list.rows} selected={selected} onSelect={setSelected} onOpen={setOpenId} activeId={openId} sort={filters.sort} dir={filters.dir} onSort={onSort} showOwner={!ownOnly} />
         </div>
       )}
 
