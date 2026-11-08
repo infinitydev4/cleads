@@ -109,7 +109,7 @@ export function navFor(role: CrmRole): { groups: NavGroup[]; footer: NavItem[] }
 
 /** Shortcuts offered by the command palette only (not in the sidebar). */
 export const paletteActions: NavItem[] = [
-  { id: "hq-3d", label: "Vue 3D du CRM", href: "/app/3d", icon: Box, permission: null, keywords: ["3d", "isométrique", "qg", "bureau", "vue d’ensemble", "tableau de bord"] },
+  { id: "hq-3d", label: "Vue 3D du CRM", href: "/app/3d", icon: Box, permission: "hq:view", keywords: ["3d", "isométrique", "qg", "bureau", "vue d’ensemble", "tableau de bord"] },
   { id: "new-search", label: "Nouvelle recherche d’entreprises", href: "/app/search", icon: Search, permission: "search:run", keywords: ["extractor", "trouver", "google maps"] },
   { id: "new-lead", label: "Nouveau prospect", href: "/app/leads/new", icon: Plus, permission: "lead:write", keywords: ["créer", "ajouter", "fiche"] },
   { id: "import-leads", label: "Importer des prospects (CSV)", href: "/app/leads/import", icon: Upload, permission: "lead:import", keywords: ["fichier", "excel", "csv"] },
