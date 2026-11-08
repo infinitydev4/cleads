@@ -19,7 +19,7 @@ export const metadata = { title: "Agents IA" }
 export const dynamic = "force-dynamic"
 
 export default async function AgentsPage(props: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { user } = await requirePagePermission("ai:use")
+  const { user } = await requirePagePermission("ai:console")
   const params = await props.searchParams
   const tab = (TABS as readonly string[]).includes(String(params.tab)) && (params.tab !== "quality" || isManager(user)) ? (params.tab as Tab) : "agents"
   await ensureAgentCatalog(user.workspaceId)

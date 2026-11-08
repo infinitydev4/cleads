@@ -191,7 +191,7 @@ Entonnoir par semaine : prospects importés → contactés → réponses → qua
 | Lancer une recherche Extractor / importer | ✓ | ✓ | ✓ | — | — |
 | Envoyer un email depuis une boîte | ✓ | ✓ | sa boîte | sa boîte | — |
 | Créer / lancer une séquence | ✓ | ✓ | ✓ | — | — |
-| Voir les campagnes (chiffres limités aux fiches visibles) *(E15)* | ✓ | ✓ | ✓ | ✓ | ✓ lecture |
+| Voir les campagnes (chiffres limités aux fiches visibles) *(E15 ; plus au closer depuis le 8 novembre 2026)* | ✓ | ✓ | ✓ | — | ✓ lecture |
 | Créer / modifier une campagne, y ranger des fiches *(E15)* | ✓ | ✓ | ✓ | — | — |
 | Déplacer une opportunité | ✓ | ✓ | jusqu'à « Qualifié » | siennes | — |
 | Réserver / attribuer un rendez-vous | ✓ | ✓ | ✓ | siens | — |
@@ -203,6 +203,8 @@ Entonnoir par semaine : prospects importés → contactés → réponses → qua
 | Régler l'IA : modèles par rôle, plafonds *(E17)* | ✓ | — | — | — | — |
 | Gérer les skills et le catalogue d'offres *(E19)* | ✓ | ✓ | — | — | — |
 | Ouvrir la vue 3D du CRM *(E16, réservée depuis le 8 novembre 2026)* | ✓ | ✓ | — | — | — |
+| Créer des maquettes du Studio Web *(E23 ; plus au closer depuis le 8 novembre 2026)* | ✓ | ✓ | pool + siennes | — | — |
+| Console IA : Agents IA, missions, réglages IA, accès MCP *(8 novembre 2026)* | ✓ | ✓ | ✓ | — | — |
 
 **Règles d'implémentation.** Un module unique `lib/rbac` définit la matrice ; chaque route et chaque action serveur passe par `requirePermission(user, "lead:update", resource)`. Jamais de contrôle uniquement côté interface. Les filtres de portée (« siens ») sont appliqués dans la requête, pas après coup. Le middleware actuel ne protège que le préfixe d'URL : il devient une première barrière, pas la seule. Les outils des agents IA passent par les mêmes contrôles, avec les droits de la personne qui a lancé l'exécution (section 10).
 

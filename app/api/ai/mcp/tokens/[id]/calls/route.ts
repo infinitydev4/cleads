@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic"
 /** A token's last calls: which action, from which client, and how it ended. */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { user } = await requirePermission("ai:use")
+    const { user } = await requirePermission("ai:console")
     return NextResponse.json(await tokenCalls(user, (await params).id))
   } catch (error) {
     return handleError(error)

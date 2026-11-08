@@ -19,7 +19,7 @@ export async function GET() {
 /** « Proposer des cibles » : the Stratège's run is queued for the worker, with the person's brief. */
 export async function POST(request: Request) {
   try {
-    const { user } = await requirePermission("ai:use")
+    const { user } = await requirePermission("ai:console")
     const brief = strategyBriefSchema.parse((await request.json().catch(() => ({}))) ?? {})
     return NextResponse.json(await requestStrategy(user, brief), { status: 202 })
   } catch (error) {

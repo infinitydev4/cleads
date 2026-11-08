@@ -9,7 +9,7 @@ export const metadata = { title: "Intelligence artificielle" }
 export const dynamic = "force-dynamic"
 
 export default async function AiSettingsPage() {
-  const { user } = await requirePagePermission("ai:use")
+  const { user } = await requirePagePermission("ai:console")
   const [view, approvals, runs] = await Promise.all([aiSettingsView(user), listApprovals(user), listRuns(user, { limit: 20 })])
   return (
     <>

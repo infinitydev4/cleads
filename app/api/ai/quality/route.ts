@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic"
 /** The quality dashboard of Agents IA (E27) over 7, 30 or 90 days: owners and managers. */
 export async function GET(request: Request) {
   try {
-    const { user } = await requirePermission("ai:use")
+    const { user } = await requirePermission("ai:console")
     const days = Number(new URL(request.url).searchParams.get("days"))
     return NextResponse.json(await qualityDashboard(user, (PERIODS as readonly number[]).includes(days) ? (days as Period) : 30))
   } catch (error) {

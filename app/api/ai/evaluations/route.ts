@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic"
 /** The evaluation suites, what each can compare and costs, and the latest evaluations (E27). */
 export async function GET() {
   try {
-    const { user } = await requirePermission("ai:use")
+    const { user } = await requirePermission("ai:console")
     return NextResponse.json(await qualityPage(user))
   } catch (error) {
     return handleError(error)

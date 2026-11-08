@@ -32,7 +32,7 @@ ${missionSignatures()}
 Références : une entrée peut citer ce qu'une étape précédente a donné, { "$ref": "s2.searchId" }. Boucle (forEach) : une liste écrite (${LOOP_MAX} au plus), "s1.targetIds" (une liste d'une étape) ou "s2" (continuer la boucle de s2) ; dans une boucle, { "$ref": "item" } est l'élément courant, et une référence à une étape de la même boucle donne la valeur de cet élément.
 Par mission : ${MISSION_BOUNDS.searches} recherches et ${MISSION_BOUNDS.results.toLocaleString("fr-FR")} entreprises, ${MISSION_BOUNDS.audits} audits, ${MISSION_BOUNDS.drafts} brouillons au plus. Les fiches de la dernière étape qui en donne reçoivent une étiquette « mission … ».
 Récurrence facultative : { frequency: "daily" | "weekly", days: [1 = lundi … 7], hour: 6 à 21, minute } ; le premier passage part au lancement.`,
-  permission: "ai:use",
+  permission: "ai:console",
   approval: "auto",
   costClass: "free",
   family: "missions",
@@ -80,7 +80,7 @@ async function missionOf(ctx: ToolContext, id: string) {
 export const manageMissionTool = defineTool({
   name: "manage_mission",
   description: "Met en pause, reprend ou annule une mission (missionId lu avec list_missions), ou arrête sa récurrence. Annuler arrête ses recherches et travaux en cours ; ce qui est fait reste. Relever son plafond se fait sur sa carte.",
-  permission: "ai:use",
+  permission: "ai:console",
   approval: "user",
   costClass: "free",
   family: "missions",
