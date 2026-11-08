@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Building2, CalendarDays, ClipboardCheck, Globe, Mail, MapPin, Pencil, Phone, PhoneCall, ShieldAlert, Trash2, UserRound, X } from "lucide-react"
+import { Building2, CalendarDays, ClipboardCheck, Download, Globe, Mail, MapPin, Pencil, Phone, PhoneCall, ShieldAlert, Trash2, UserRound, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -204,6 +204,13 @@ export function LeadDetailView({ lead, assignees, currentUserId, onChange, onDel
             </dl>
           ) : (
             <p className="text-sm text-muted-foreground">Aucun contact. Ajoutez un nom ou un email avec « Modifier ».</p>
+          )}
+          {k && lead.can.export && (
+            <Button asChild variant="outline" size="sm">
+              <a href={`/api/contacts/${k.id}/export`} download title="Tout ce que le CRM garde sur cette personne, en JSON : à joindre à la réponse d’une demande d’accès">
+                <Download className="h-4 w-4" aria-hidden="true" /> Exporter ses données (RGPD)
+              </a>
+            </Button>
           )}
         </Card>
       </div>

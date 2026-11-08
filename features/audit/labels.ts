@@ -18,6 +18,8 @@ export const AUDIT_LABELS: Record<string, string> = {
   "mcp.oauth_refresh_reused": "Connexion MCP fermée : jeton réutilisé",
   // E10: the reports.
   "report.exported": "Rapport exporté (CSV)",
+  // E14: the rights of the people in the CRM (GDPR).
+  "contact.exported": "Données d’une personne exportées (RGPD)",
 }
 
 export const AUDIT_FILTERS = [
@@ -26,6 +28,7 @@ export const AUDIT_FILTERS = [
   { value: "team.", label: "Équipe" },
   { value: "mcp.", label: "Accès MCP" },
   { value: "report.", label: "Rapports" },
+  { value: "contact.", label: "RGPD" },
 ] as const
 
 export const auditLabel = (action: string) => AUDIT_LABELS[action] ?? action
