@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic"
 
 /** E29: the CRM's MCP server, seen from the CRM: the owner's switch, how to connect, each member's connections and tokens. */
 export default async function McpSettingsPage() {
-  const { user } = await requirePagePermission("ai:use")
+  const { user } = await requirePagePermission("ai:console")
   const owner = can(user.role, "ai:manage")
   const [access, mine, team] = await Promise.all([mcpAccess(user.workspaceId), listTokens(user), owner ? listTokens(user, { team: true }) : Promise.resolve(null)])
   return (

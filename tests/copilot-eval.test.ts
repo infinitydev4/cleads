@@ -85,11 +85,11 @@ describe("the frozen CRM, as each person sees it", () => {
     expect(new Set(names(world("lea")))).toEqual(new Set(["Plomberie Martin", "Menuiserie Coutant"]))
     expect(run(world("hugo"), "search_leads", {}).total).toBe(LEADS.length)
     expect(() => run(world("ines"), "get_lead", { leadId: L.nova })).toThrow("Fiche introuvable.")
-    // A closer is never offered a search nor an enrolment; a mission that would run one is refused.
+    // A closer is never offered a search, an enrolment nor a mission (the AI console is not his, 8 November 2026).
     const offered = toolsFor(user("lea"), { skills: true, policy }).map((t) => t.name)
     expect(offered).not.toContain("start_search")
     expect(offered).not.toContain("enroll_in_sequence")
-    expect(offered).toContain("propose_mission")
+    expect(offered).not.toContain("propose_mission")
   })
 
   it("wraps what prospects and the web wrote, so the copilot reads it as data", () => {

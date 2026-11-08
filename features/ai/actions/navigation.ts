@@ -28,7 +28,7 @@ export const PAGE_RIGHTS: Partial<Record<(typeof PAGES)[number], Permission>> = 
   studio: "studio:generate",
   mailbox: "email:send",
   sequences: "sequence:manage",
-  agents: "ai:use",
+  agents: "ai:console",
   hq: "hq:view",
 }
 

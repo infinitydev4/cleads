@@ -28,8 +28,11 @@ const matrix = {
   // Prospecting tools
   "search:run": { OWNER: "all", MANAGER: "all", SDR: "all" },
   "sequence:manage": { OWNER: "all", MANAGER: "all", SDR: "all" },
-  /** Campaigns (E15): everyone reads them, figures limited to the fiches the person sees (lead:read). */
-  "campaign:read": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "all", VIEWER: "all" },
+  /**
+   * Campaigns (E15): figures limited to the fiches the person sees (lead:read). Not the closer's (8 November 2026):
+   * he works the fiches he is given, not the campaigns they come from.
+   */
+  "campaign:read": { OWNER: "all", MANAGER: "all", SDR: "all", VIEWER: "all" },
   /** Create, edit, change the status; filing a fiche also needs lead:write on it. */
   "campaign:manage": { OWNER: "all", MANAGER: "all", SDR: "all" },
   "email:send": { OWNER: "all", MANAGER: "all", SDR: "own", CLOSER: "own" },
@@ -57,7 +60,12 @@ const matrix = {
   /** E19: the offers catalogue agents recommend from. */
   "offer:manage": { OWNER: "all", MANAGER: "all" },
   /** E23: demonstration landing pages of the Studio Web, on the fiches the person may edit (same scope as lead:write). */
-  "studio:generate": { OWNER: "all", MANAGER: "all", SDR: "pool", CLOSER: "own" },
+  "studio:generate": { OWNER: "all", MANAGER: "all", SDR: "pool" },
+  /**
+   * The AI console: Agents IA (runs, missions, approvals, quality), the AI settings and the MCP access. The closer
+   * keeps the AI on his own fiches (ai:use) and the copilot, without the console (8 November 2026).
+   */
+  "ai:console": { OWNER: "all", MANAGER: "all", SDR: "all" },
   /** E16: the 3D view of the CRM (/app/3d), a team overview; the other roles work in the 2D pages. */
   "hq:view": { OWNER: "all", MANAGER: "all" },
   // Administration

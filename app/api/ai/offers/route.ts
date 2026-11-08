@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic"
 /** The offers catalogue; `?archived=1`: the archive. */
 export async function GET(request: Request) {
   try {
-    const { user } = await requirePermission("ai:use")
+    const { user } = await requirePermission("ai:console")
     await ensureAgentCatalog(user.workspaceId)
     return NextResponse.json({ offers: await listOffers(user, { archived: new URL(request.url).searchParams.get("archived") === "1" }) })
   } catch (error) {

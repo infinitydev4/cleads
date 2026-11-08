@@ -12,7 +12,7 @@ const expected: Record<string, Record<CrmRole, string>> = {
   "search:run": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "-", VIEWER: "-" },
   "email:send": { OWNER: "all", MANAGER: "all", SDR: "own", CLOSER: "own", VIEWER: "-" },
   "sequence:manage": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "-", VIEWER: "-" },
-  "campaign:read": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "all", VIEWER: "all" },
+  "campaign:read": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "-", VIEWER: "all" },
   "campaign:manage": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "-", VIEWER: "-" },
   "deal:move": { OWNER: "all", MANAGER: "all", SDR: "-", CLOSER: "own", VIEWER: "-" },
   "deal:qualify": { OWNER: "all", MANAGER: "all", SDR: "pool", CLOSER: "-", VIEWER: "-" },
@@ -31,6 +31,8 @@ const expected: Record<string, Record<CrmRole, string>> = {
   "skill:manage": { OWNER: "all", MANAGER: "all", SDR: "-", CLOSER: "-", VIEWER: "-" },
   "offer:manage": { OWNER: "all", MANAGER: "all", SDR: "-", CLOSER: "-", VIEWER: "-" },
   "hq:view": { OWNER: "all", MANAGER: "all", SDR: "-", CLOSER: "-", VIEWER: "-" },
+  "studio:generate": { OWNER: "all", MANAGER: "all", SDR: "pool", CLOSER: "-", VIEWER: "-" },
+  "ai:console": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "-", VIEWER: "-" },
 }
 
 describe("role matrix", () => {

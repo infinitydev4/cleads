@@ -21,7 +21,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 /** Launches (one click, D28), refuses, pauses, resumes or cancels a mission. */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { user } = await requirePermission("ai:use")
+    const { user } = await requirePermission("ai:console")
     return NextResponse.json(await actOnMission(user, (await params).id, missionRequestSchema.parse(await request.json())))
   } catch (error) {
     return handleError(error)

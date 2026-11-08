@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic"
 /** Models per role, caps and the month's consumption (Réglages › IA). */
 export async function GET() {
   try {
-    const { user } = await requirePermission("ai:use")
+    const { user } = await requirePermission("ai:console")
     return NextResponse.json(await aiSettingsView(user))
   } catch (error) {
     return handleError(error)

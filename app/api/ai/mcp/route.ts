@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic"
 /** MCP in this workspace (E29): on or off, and the MCP clients' rights matrix. */
 export async function GET() {
   try {
-    const { user } = await requirePermission("ai:use")
+    const { user } = await requirePermission("ai:console")
     return NextResponse.json(rightsView(await mcpAccess(user.workspaceId)))
   } catch (error) {
     return handleError(error)
