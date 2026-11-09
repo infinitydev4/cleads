@@ -21,6 +21,10 @@ export type RegistryFilter = (typeof REGISTRY_FILTERS)[number]
 export const FOCUS_FILTERS = ["hot", "callback", "nosite", "fresh"] as const
 export type FocusFilter = (typeof FOCUS_FILTERS)[number]
 
+/** What stands for a site (9 November 2026): no real site at all, only a social or directory page, a real site. */
+export const SITE_FILTERS = ["nosite", "social", "real"] as const
+export type SiteFilter = (typeof SITE_FILTERS)[number]
+
 export interface LeadFilters {
   q?: string
   status: (typeof LEAD_STATUSES)[number][]
@@ -42,6 +46,9 @@ export interface LeadFilters {
   registry?: RegistryFilter
   /** The closer's desk: one segment of the call file. */
   focus?: FocusFilter
+  /** ISO 3166-1 alpha-2 country of the company. */
+  country?: string
+  site?: SiteFilter
   sort: LeadSort
   dir: "asc" | "desc"
   page: number
@@ -80,6 +87,8 @@ export function parseLeadFilters(params: Params): LeadFilters {
     relevance: RELEVANCE_FILTERS.find((r) => r === one("relevance")),
     registry: REGISTRY_FILTERS.find((r) => r === one("registry")),
     focus: FOCUS_FILTERS.find((r) => r === one("focus")),
+    country: /^[A-Za-z]{2}$/.test(one("country") ?? "") ? one("country")!.toUpperCase() : undefined,
+    site: SITE_FILTERS.find((r) => r === one("site")),
     sort,
     dir: one("dir") === "asc" ? "asc" : one("dir") === "desc" ? "desc" : sort === "name" ? "asc" : "desc",
     page: page >= 1 ? page : 1,
@@ -103,6 +112,8 @@ export const viewFiltersSchema = z.object({
   relevance: z.enum(RELEVANCE_FILTERS).optional(),
   registry: z.enum(REGISTRY_FILTERS).optional(),
   focus: z.enum(FOCUS_FILTERS).optional(),
+  country: z.string().regex(/^[A-Z]{2}$/).optional(),
+  site: z.enum(SITE_FILTERS).optional(),
   sort: z.enum(SORTS).default("score"),
   dir: z.enum(["asc", "desc"]).default("desc"),
 })

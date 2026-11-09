@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { requirePagePermission } from "@/lib/auth/guard"
 import { can, scopeOf } from "@/lib/rbac"
 import { parseLeadFilters } from "@/features/leads/schemas"
-import { focusCounts, listAssignees, listLeads } from "@/features/leads/service"
+import { countryCounts, focusCounts, listAssignees, listLeads } from "@/features/leads/service"
 import { listViews } from "@/features/leads/views"
 import { campaignOptions } from "@/features/campaigns/service"
 import { LeadsView } from "./leads-view"
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic"
 export default async function LeadsPage(props: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { user } = await requirePagePermission("lead:read")
   const filters = parseLeadFilters(await props.searchParams)
-  const [list, assignees, views, campaigns, counts] = await Promise.all([listLeads(user, filters), listAssignees(user), listViews(user), can(user.role, "campaign:read") ? campaignOptions(user) : [], focusCounts(user)])
+  const [list, assignees, views, campaigns, counts, countries] = await Promise.all([listLeads(user, filters), listAssignees(user), listViews(user), can(user.role, "campaign:read") ? campaignOptions(user) : [], focusCounts(user), countryCounts(user)])
   const canWrite = can(user.role, "lead:write")
   // The closer sees only his fiches (9 November 2026): his list is his call file.
   const ownOnly = scopeOf(user.role, "lead:read") === "own"
@@ -55,6 +55,7 @@ export default async function LeadsPage(props: { searchParams: Promise<Record<st
         canCampaign={can(user.role, "campaign:manage")}
         ownOnly={ownOnly}
         focusCounts={counts}
+        countries={countries}
       />
     </>
   )

@@ -6,7 +6,7 @@ import { AGGREGATOR_DOMAINS, domainFromUrl } from "@/lib/crm/normalize"
 import { formatOfferPrice } from "@/features/offers/labels"
 import { domainOf, latestFor } from "@/features/prospect-audit/latest"
 import { objectionSchema, scriptSchema } from "@/features/offer-pitch/schemas"
-import type { FocusFilter } from "./schemas"
+import type { FocusFilter, SiteFilter } from "./schemas"
 import type { CallBrief, Priority, RowInsight, SiteState } from "./types"
 
 /**
@@ -46,8 +46,17 @@ export function priorityOf(l: { status: LeadStatus; score: number; hasPhone: boo
   return l.score < COLD_SCORE ? 3 : 2
 }
 
+/** Only a social or directory page: the query twin of siteState's "social". */
+const socialPage: Prisma.CompanyWhereInput[] = AGGREGATOR_DOMAINS.map((d) => ({ website: { contains: d, mode: "insensitive" as const } }))
 /** No website, an empty one, or only a social or directory page: the query twin of siteState's "none" and "social". */
-const noRealSite: Prisma.CompanyWhereInput[] = [{ website: null }, { website: "" }, ...AGGREGATOR_DOMAINS.map((d) => ({ website: { contains: d, mode: "insensitive" as const } }))]
+const noRealSite: Prisma.CompanyWhereInput[] = [{ website: null }, { website: "" }, ...socialPage]
+
+/** The « Site web » filter of the list, with the same rules as the sign. */
+export function siteWhere(site: SiteFilter): Prisma.LeadWhereInput {
+  if (site === "nosite") return focusWhere("nosite")
+  if (site === "social") return { company: { is: { OR: socialPage } } }
+  return { company: { is: { AND: [{ website: { not: null } }, { NOT: { website: "" } }, { NOT: { OR: socialPage } }] } } }
+}
 
 const since = (now: Date) => new Date(now.getTime() - SIGNAL_DAYS * 86_400_000)
 
