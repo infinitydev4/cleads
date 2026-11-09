@@ -15,7 +15,7 @@ const expected: Record<string, Record<CrmRole, string>> = {
   "campaign:read": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "-", VIEWER: "all" },
   "campaign:manage": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "-", VIEWER: "-" },
   "deal:move": { OWNER: "all", MANAGER: "all", SDR: "-", CLOSER: "own", VIEWER: "-" },
-  "deal:qualify": { OWNER: "all", MANAGER: "all", SDR: "pool", CLOSER: "-", VIEWER: "-" },
+  "deal:qualify": { OWNER: "all", MANAGER: "all", SDR: "pool", CLOSER: "own", VIEWER: "-" },
   "meeting:book": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "own", VIEWER: "-" },
   "meeting:outcome": { OWNER: "all", MANAGER: "all", SDR: "-", CLOSER: "own", VIEWER: "-" },
   "availability:manage": { OWNER: "all", MANAGER: "all", SDR: "-", CLOSER: "own", VIEWER: "-" },

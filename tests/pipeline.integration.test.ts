@@ -87,8 +87,10 @@ suite("qualification and pipeline (database)", () => {
 
     it("refuses what the role cannot do, and never touches the fiche when it refuses", async () => {
       const mine = await lead("À moi", u.closer.id)
-      await expect(pipe.qualifyLead(u.closer, mine.id, { decision: "qualify", qualification: {} })).rejects.toMatchObject({ code: "forbidden" })
       await expect(pipe.qualifyLead(u.viewer, mine.id, { decision: "save", qualification: {} })).rejects.toMatchObject({ code: "forbidden" })
+      // The closer qualifies his own fiches (9 November 2026), never another's.
+      const sdrs = await lead("Du SDR", u.sdr.id)
+      await expect(pipe.qualifyLead(u.closer, sdrs.id, { decision: "qualify", qualification: {} })).rejects.toMatchObject({ code: "not_found" })
       const theirs = await lead("À l’autre SDR", u.sdr2.id)
       await expect(pipe.qualifyLead(u.sdr, theirs.id, { decision: "qualify", qualification: {} })).rejects.toMatchObject({ code: "not_found" })
       expect(await prisma.deal.count()).toBe(0)
@@ -130,13 +132,13 @@ suite("qualification and pipeline (database)", () => {
   })
 
   describe("the status menu and the pipeline stay consistent", () => {
-    it("setting a fiche to Qualified from the menu opens the opportunity, and a closer cannot do it", async () => {
+    it("setting a fiche to Qualified from the menu opens the opportunity, the closer's own too", async () => {
       const l = await lead("Menu", u.sdr.id)
       await leads.updateLead(u.sdr, l.id, { status: "QUALIFIED" })
       expect(await openDeals(l.id)).toHaveLength(1)
       const c = await lead("Du closer", u.closer.id)
-      await expect(leads.updateLead(u.closer, c.id, { status: "QUALIFIED" })).rejects.toMatchObject({ code: "forbidden" })
-      expect((await prisma.lead.findUniqueOrThrow({ where: { id: c.id } })).status).toBe("NEW")
+      await leads.updateLead(u.closer, c.id, { status: "QUALIFIED" })
+      expect(await openDeals(c.id)).toHaveLength(1)
     })
 
     it("a fiche cannot leave Qualified while an opportunity is open, but can be disqualified or blocked", async () => {
