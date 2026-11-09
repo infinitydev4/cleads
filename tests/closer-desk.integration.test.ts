@@ -113,6 +113,17 @@ suite("the closer's desk (database)", () => {
     expect(await names(u.closer, { focus: "nosite", q: "Autre" })).toEqual(new Set())
   })
 
+  it("filters by country and by what stands for a site, a Facebook page being no site", async () => {
+    await prisma.company.update({ where: { id: id["Boulangerie:company"] }, data: { website: "https://www.facebook.com/boulangerie", country: "GB" } })
+    expect(await names(u.closer, { site: "nosite" })).toEqual(new Set(["Plomberie", "Boulangerie"]))
+    expect(await names(u.closer, { site: "social" })).toEqual(new Set(["Boulangerie"]))
+    expect(await names(u.closer, { site: "real" })).toEqual(new Set(["Salon", "Garage", "Faillite"]))
+    expect(await names(u.closer, { country: "gb" })).toEqual(new Set(["Boulangerie"]))
+    expect(await leads.countryCounts(u.closer)).toEqual([{ code: "FR", count: 4 }, { code: "GB", count: 1 }])
+    const views = await import("@/features/leads/view-query")
+    expect(views.viewToQuery({ ...schemas.parseLeadFilters({ country: "GB", site: "social" }), status: [] } as never)).toBe("country=GB&site=social")
+  })
+
   it("opens the closer's fiche on the call: why now with its sources, the script, the offers left, the objections", async () => {
     const fiche = await leads.getLead(u.closer, id.Salon)
     expect(fiche.layout).toBe("focus")

@@ -29,12 +29,13 @@ interface Props {
   /** Only one's own fiches (the closer): no owner filter nor column. */
   ownOnly?: boolean
   focusCounts?: Record<FocusFilter, number>
+  countries?: { code: string; count: number }[]
 }
 
 const EMPTY: Set<string> = new Set()
 
 /** Filters, sorting and paging live in the URL: a link or a saved view reproduces exactly what you see. */
-export function LeadsView({ list, filters, assignees, campaigns, views, currentUserId, canWrite, canAssignOthers, canShareViews, canImport, canSequence, canCampaign, ownOnly = false, focusCounts }: Props) {
+export function LeadsView({ list, filters, assignees, campaigns, views, currentUserId, canWrite, canAssignOthers, canShareViews, canImport, canSequence, canCampaign, ownOnly = false, focusCounts, countries }: Props) {
   const router = useRouter()
   const pathname = usePathname()
   const params = useSearchParams()
@@ -75,10 +76,7 @@ export function LeadsView({ list, filters, assignees, campaigns, views, currentU
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start gap-2">
-        <div className="min-w-0 flex-1"><FilterBar filters={filters} assignees={assignees} campaigns={campaigns} canSeeOthers={canAssignOthers} ownOnly={ownOnly} focusCounts={focusCounts} onChange={update} searchRef={searchRef} /></div>
-        <ViewsMenu views={views} current={filters} canShare={canShareViews} />
-      </div>
+      <FilterBar filters={filters} assignees={assignees} campaigns={campaigns} canSeeOthers={canAssignOthers} ownOnly={ownOnly} focusCounts={focusCounts} countries={countries} onChange={update} searchRef={searchRef} extra={<ViewsMenu views={views} current={filters} canShare={canShareViews} />} />
 
       <div className="flex items-center justify-between text-sm text-muted-foreground" aria-live="polite">
         <span>{list.total === 0 ? "Aucun prospect" : `${from}–${Math.min(list.total, from + list.rows.length - 1)} sur ${list.total.toLocaleString("fr-FR")} prospect${list.total > 1 ? "s" : ""}`}{pending && " · chargement…"}</span>

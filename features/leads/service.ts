@@ -17,7 +17,7 @@ import { stopForLead } from "@/features/outreach/stops"
 import { assertCampaign, setLeadCampaign } from "@/features/campaigns/filing"
 import { FOCUS_FILTERS, type BulkInput, type CreateLeadInput, type FocusFilter, type LeadFilters, type LeadSort, type RegistryFilter, type RelevanceFilter, type UpdateLeadInput } from "./schemas"
 import type { LeadDetail, LeadList, LeadRow } from "./types"
-import { callBrief, focusWhere, rowInsights } from "./insights"
+import { callBrief, focusWhere, rowInsights, siteWhere } from "./insights"
 import { leadAiReason } from "@/features/prospect-audit/latest"
 import { latestPitchSummary } from "@/features/offer-pitch/latest"
 import { forgetLead } from "@/features/copilot/forget"
@@ -84,6 +84,8 @@ function filterWhere(user: CurrentUser, f: LeadFilters): Prisma.LeadWhereInput {
   if (f.relevance) and.push(relevanceWhere(f.relevance, f.campaign && f.campaign !== "none" ? f.campaign : null))
   if (f.registry) and.push(registryWhere(f.registry))
   if (f.focus) and.push(focusWhere(f.focus))
+  if (f.site) and.push(siteWhere(f.site))
+  if (f.country) and.push({ company: { is: { country: f.country } } })
   return { AND: and }
 }
 
@@ -180,6 +182,12 @@ export async function listLeads(user: CurrentUser, filters: LeadFilters): Promis
     pageSize: filters.pageSize,
     pageCount: Math.max(1, Math.ceil(total / filters.pageSize)),
   }
+}
+
+/** The countries of the person's fiches, the most frequent first, for the « Pays » filter. */
+export async function countryCounts(user: CurrentUser): Promise<{ code: string; count: number }[]> {
+  const rows = await prisma.company.groupBy({ by: ["country"], where: { workspaceId: user.workspaceId, leads: { some: scopeWhere(user, "lead:read") } }, _count: { _all: true } })
+  return rows.map((r) => ({ code: r.country.toUpperCase(), count: r._count._all })).sort((a, b) => b.count - a.count)
 }
 
 /** How many of the person's fiches fall in each segment of the call file, the other filters aside. */
