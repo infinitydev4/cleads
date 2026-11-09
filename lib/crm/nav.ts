@@ -97,11 +97,14 @@ export const footerItems: NavItem[] = [
 
 export const canSee = (item: NavItem, role: CrmRole) => item.permission === null || can(role, item.permission)
 
+/** The closer's home is his cockpit (9 November 2026): the same page, named for what it is to him. */
+const renamed = (item: NavItem, role: CrmRole): NavItem => (role === "CLOSER" && item.id === "today" ? { ...item, label: "Ma journée" } : role === "CLOSER" && item.id === "leads" ? { ...item, label: "Mes prospects" } : item)
+
 /** Navigation visible for a role; empty groups disappear. */
 export function navFor(role: CrmRole): { groups: NavGroup[]; footer: NavItem[] } {
   return {
     groups: navGroups
-      .map((g) => ({ ...g, items: g.items.filter((i) => canSee(i, role)) }))
+      .map((g) => ({ ...g, items: g.items.filter((i) => canSee(i, role)).map((i) => renamed(i, role)) }))
       .filter((g) => g.items.length > 0),
     footer: footerItems.filter((i) => canSee(i, role)),
   }

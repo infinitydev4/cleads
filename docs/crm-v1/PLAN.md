@@ -194,6 +194,7 @@ Entonnoir par semaine : prospects importés → contactés → réponses → qua
 | Voir les campagnes (chiffres limités aux fiches visibles) *(E15 ; plus au closer depuis le 8 novembre 2026)* | ✓ | ✓ | ✓ | — | ✓ lecture |
 | Créer / modifier une campagne, y ranger des fiches *(E15)* | ✓ | ✓ | ✓ | — | — |
 | Déplacer une opportunité | ✓ | ✓ | jusqu'à « Qualifié » | siennes | — |
+| Qualifier un prospect *(closer : ses fiches, depuis le 9 novembre 2026)* | ✓ | ✓ | pool + siens | siens | — |
 | Réserver / attribuer un rendez-vous | ✓ | ✓ | ✓ | siens | — |
 | Voir les rapports | ✓ | ✓ | siens | siens | ✓ |
 | Inviter / désactiver un membre | ✓ | — | — | — | — |

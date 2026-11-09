@@ -20,8 +20,11 @@ const matrix = {
   /** Merging two fiches rewrites history: managers and owners only. */
   "lead:merge": { OWNER: "all", MANAGER: "all" },
   "deal:read": { OWNER: "all", MANAGER: "all", SDR: "pool", CLOSER: "own", VIEWER: "all" },
-  /** SDRs move an opportunity up to "Qualifié" only. */
-  "deal:qualify": { OWNER: "all", MANAGER: "all", SDR: "pool" },
+  /**
+   * SDRs move an opportunity up to "Qualifié" only. The closer qualifies his own fiches too (9 November 2026): he
+   * prospects on the phone before he converts.
+   */
+  "deal:qualify": { OWNER: "all", MANAGER: "all", SDR: "pool", CLOSER: "own" },
   "deal:move": { OWNER: "all", MANAGER: "all", CLOSER: "own" },
   /** Tasks follow the fiche they belong to: the service checks the record (assignee, author, who holds the fiche). */
   "task:write": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "all" },

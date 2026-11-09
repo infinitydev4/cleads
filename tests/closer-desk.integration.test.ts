@@ -126,6 +126,15 @@ suite("the closer's desk (database)", () => {
     expect(brief.pitch?.objections).toEqual([{ objection: "C'est trop cher", answer: "Un client de plus par mois la rembourse." }])
   })
 
+  it("counts the closer's own day: calls and who answered, meetings ahead, sales of the month", async () => {
+    const { deskStats } = await import("@/features/leads/desk")
+    const call = (outcome: string, at = new Date()) => ({ workspaceId: ws, leadId: id.Salon, actorId: u.closer.id, kind: "CALL" as const, data: { outcome }, occurredAt: at })
+    await prisma.activity.createMany({ data: [call("reached"), call("no_answer"), call("reached", new Date(Date.now() - 3 * DAY)), { ...call("reached"), actorId: u.owner.id }] })
+    await prisma.meeting.create({ data: { workspaceId: ws, leadId: id.Salon, hostId: u.closer.id, startsAt: new Date(Date.now() + DAY), endsAt: new Date(Date.now() + DAY + 1_800_000), status: "SCHEDULED", type: "DISCOVERY" } })
+    await prisma.deal.create({ data: { workspaceId: ws, leadId: id.Garage, ownerId: u.closer.id, stage: "WON", wonAt: new Date() } })
+    expect(await deskStats(u.closer)).toEqual({ calls: 2, reached: 1, goal: 40, meetings: 1, wonThisMonth: 1 })
+  })
+
   it("keeps the full fiche for the others, and the script for those who use the AI", async () => {
     expect((await leads.getLead(u.owner, id.Salon)).layout).toBe("full")
     const viewer = (await leads.getLead(u.viewer, id.Salon)).brief
