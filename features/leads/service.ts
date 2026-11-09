@@ -8,6 +8,7 @@ import { LeadError } from "./errors"
 import { closeOpenDeals, ensureOpenDeal } from "@/features/pipeline/deals"
 import { canWorkLead, closeOpenTasks, insertTask } from "@/features/activity/core"
 import { NOT_A_CONTACT, type ActivityInput } from "@/features/activity/rules"
+import { pendingPhoneCall } from "@/features/telephony/pending"
 import { canChangeTask } from "@/features/activity/rules"
 import { OPEN_STAGES } from "@/features/pipeline/rules"
 import { mayEmailLead } from "@/features/outreach/rules"
@@ -571,7 +572,13 @@ export async function addActivity(user: CurrentUser, id: string, input: Activity
   if (input.followUp && lead.status === "DO_NOT_CONTACT") throw new LeadError("conflict", "Cette fiche est marquée « ne pas contacter » : aucune relance ne peut être planifiée.", 409)
   await prisma.$transaction(async (tx) => {
     const data = input.kind === "CALL" ? { ...(input.outcome ? { outcome: input.outcome } : {}), ...(input.durationMin != null ? { durationMin: input.durationMin } : {}) } : undefined
-    await log(tx, user, id, input.kind, input.body || null, data && Object.keys(data).length ? data : undefined)
+    // E32: the PBX already put this call on the timeline; the person's log completes it rather than counting it twice.
+    const reported = input.kind === "CALL" ? await pendingPhoneCall(tx, user.id, id) : null
+    if (reported) {
+      await tx.activity.update({ where: { id: reported.id }, data: { body: input.body || null, data: withVia({ ...(reported.data as Prisma.JsonObject), ...data, pending: false }) } })
+    } else {
+      await log(tx, user, id, input.kind, input.body || null, data && Object.keys(data).length ? data : undefined)
+    }
     if (input.kind === "CALL" && !(input.outcome && NOT_A_CONTACT.includes(input.outcome))) {
       // A call is a contact: the fiche leaves "Nouveau" and remembers when. Having spoken to someone is a reply.
       const next = lead.status === "NEW" || lead.status === "CONTACTED" ? (input.outcome === "reached" ? "REPLIED" : lead.status === "NEW" ? "CONTACTED" : null) : null

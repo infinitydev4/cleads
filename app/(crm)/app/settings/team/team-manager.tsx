@@ -24,6 +24,7 @@ interface Member {
   role: CrmRole
   active: boolean
   lastLoginAt: string | null
+  zadarmaExtension: string | null
 }
 interface Invitation {
   id: string
@@ -48,7 +49,7 @@ export function TeamManager({ members, invitations, currentUserId, canManage }: 
   const [inviteOpen, setInviteOpen] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
 
-  async function change(id: string, body: { role?: CrmRole; active?: boolean }, success: string) {
+  async function change(id: string, body: { role?: CrmRole; active?: boolean; zadarmaExtension?: string | null }, success: string) {
     setBusy(id)
     try {
       await call(`/api/team/members/${id}`, { method: "PATCH", body: JSON.stringify(body) })
@@ -124,6 +125,23 @@ export function TeamManager({ members, invitations, currentUserId, canManage }: 
         accessorKey: "active",
         header: "Statut",
         cell: ({ row }) => <Badge variant={row.original.active ? "success" : "outline"}>{row.original.active ? "Actif" : "Désactivé"}</Badge>,
+      },
+      {
+        accessorKey: "zadarmaExtension",
+        header: "Poste Zadarma",
+        cell: ({ row }) => {
+          const m = row.original
+          if (!canManage) return <span className="tabular-nums text-muted-foreground">{m.zadarmaExtension ?? "—"}</span>
+          return (
+            <ExtensionField
+              key={m.zadarmaExtension ?? ""}
+              value={m.zadarmaExtension}
+              label={`Poste Zadarma de ${m.name ?? m.email}`}
+              disabled={busy === m.id}
+              onSave={(next) => change(m.id, { zadarmaExtension: next }, next ? `Poste ${next} attribué` : "Poste retiré")}
+            />
+          )
+        },
       },
       { accessorKey: "lastLoginAt", header: "Dernière connexion", cell: ({ row }) => <span className="text-muted-foreground">{date(row.original.lastLoginAt)}</span> },
       {
@@ -303,5 +321,29 @@ function InviteDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenCha
         )}
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** The member's PBX extension (E32): saved when the field is left or on Entrée, emptied to take it back. */
+function ExtensionField({ value, label, disabled, onSave }: { value: string | null; label: string; disabled: boolean; onSave: (next: string | null) => void }) {
+  const [draft, setDraft] = useState(value ?? "")
+  function save() {
+    const next = draft.trim() || null
+    if (next !== value) onSave(next)
+  }
+  return (
+    <Input
+      value={draft}
+      onChange={(e) => setDraft(e.target.value.replace(/\D/g, "").slice(0, 6))}
+      onBlur={save}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur()
+      }}
+      disabled={disabled}
+      inputMode="numeric"
+      placeholder="—"
+      aria-label={label}
+      className="h-9 w-24 tabular-nums"
+    />
   )
 }

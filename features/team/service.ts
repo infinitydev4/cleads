@@ -24,7 +24,7 @@ const STAFF_ROLES = [...CRM_ROLES, "ADMIN"] as const
 export async function listMembers(workspaceId: string) {
   const users = await prisma.user.findMany({
     where: { workspaceId, role: { in: [...STAFF_ROLES] } },
-    select: { id: true, name: true, email: true, image: true, role: true, active: true, lastLoginAt: true, createdAt: true },
+    select: { id: true, name: true, email: true, image: true, role: true, active: true, lastLoginAt: true, createdAt: true, zadarmaExtension: true },
     orderBy: [{ active: "desc" }, { createdAt: "asc" }],
   })
   return users.map((u) => ({ ...u, role: toCrmRole(u.role)! }))
@@ -73,24 +73,39 @@ export async function revokeInvitation(actor: CurrentUser, id: string, ip?: stri
 }
 
 export async function updateMember(actor: CurrentUser, userId: string, change: MemberChange, ip?: string | null) {
-  const target = await prisma.user.findFirst({ where: { id: userId, workspaceId: actor.workspaceId }, select: { id: true, role: true, active: true, email: true } })
+  const target = await prisma.user.findFirst({ where: { id: userId, workspaceId: actor.workspaceId }, select: { id: true, role: true, active: true, email: true, zadarmaExtension: true } })
   const targetRole = toCrmRole(target?.role)
   if (!target || !targetRole) throw new TeamError("not_found", "Membre introuvable.", 404)
 
-  const activeOwners = await prisma.user.count({ where: { workspaceId: actor.workspaceId, role: { in: ["OWNER", "ADMIN"] }, active: true } })
-  const problem = checkMemberChange({ actorId: actor.id, target: { id: target.id, role: targetRole, active: target.active }, change, activeOwners })
-  if (problem) throw new TeamError("forbidden_change", MEMBER_CHANGE_MESSAGES[problem], 409)
+  if (change.role !== undefined || change.active !== undefined) {
+    const activeOwners = await prisma.user.count({ where: { workspaceId: actor.workspaceId, role: { in: ["OWNER", "ADMIN"] }, active: true } })
+    const problem = checkMemberChange({ actorId: actor.id, target: { id: target.id, role: targetRole, active: target.active }, change, activeOwners })
+    if (problem) throw new TeamError("forbidden_change", MEMBER_CHANGE_MESSAGES[problem], 409)
+  }
+  // E32: one extension per member, so that each call the PBX reports has one author.
+  const extension = change.zadarmaExtension
+  if (extension) {
+    const holder = await prisma.user.findFirst({ where: { workspaceId: actor.workspaceId, zadarmaExtension: extension, NOT: { id: userId } }, select: { name: true, email: true } })
+    if (holder) throw new TeamError("forbidden_change", `Le poste ${extension} est déjà celui de ${holder.name ?? holder.email}.`, 409)
+  }
 
   const updated = await prisma.user.update({
     where: { id: userId },
-    data: { ...(change.role ? { role: change.role } : {}), ...(change.active !== undefined ? { active: change.active } : {}) },
-    select: { id: true, role: true, active: true },
+    data: {
+      ...(change.role ? { role: change.role } : {}),
+      ...(change.active !== undefined ? { active: change.active } : {}),
+      ...(extension !== undefined ? { zadarmaExtension: extension } : {}),
+    },
+    select: { id: true, role: true, active: true, zadarmaExtension: true },
   })
   if (change.role && change.role !== targetRole) {
     await audit({ action: "team.role_changed", actorId: actor.id, workspaceId: actor.workspaceId, entityType: "User", entityId: userId, subject: target.email ?? undefined, metadata: { from: targetRole, to: change.role } })
   }
   if (change.active !== undefined && change.active !== target.active) {
     await audit({ action: change.active ? "team.reactivated" : "team.deactivated", actorId: actor.id, workspaceId: actor.workspaceId, entityType: "User", entityId: userId, subject: target.email ?? undefined, ip })
+  }
+  if (extension !== undefined && extension !== target.zadarmaExtension) {
+    await audit({ action: "team.extension_changed", actorId: actor.id, workspaceId: actor.workspaceId, entityType: "User", entityId: userId, subject: target.email ?? undefined, metadata: { from: target.zadarmaExtension, to: extension } })
   }
   return updated
 }

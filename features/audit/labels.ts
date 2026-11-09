@@ -6,6 +6,7 @@ export const AUDIT_LABELS: Record<string, string> = {
   "team.invite_revoked": "Invitation annulée",
   "team.invite_accepted": "Invitation acceptée",
   "team.role_changed": "Rôle modifié",
+  "team.extension_changed": "Poste téléphonique modifié",
   "team.deactivated": "Accès désactivé",
   "team.reactivated": "Accès réactivé",
   // E29: the CRM's MCP server.

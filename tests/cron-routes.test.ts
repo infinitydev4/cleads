@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import * as mailbox from "@/app/api/cron/mailbox-poll/route"
 import * as sequences from "@/app/api/cron/sequence-run/route"
 import * as reminders from "@/app/api/cron/meeting-reminders/route"
+import * as calls from "@/app/api/cron/calls-sync/route"
 
 const call = (secret: string) => ({ headers: { authorization: `Bearer ${secret}` } })
 const saved = { ...process.env }
@@ -12,6 +13,7 @@ describe.each([
   ["mailbox-poll", mailbox],
   ["sequence-run", sequences],
   ["meeting-reminders", reminders],
+  ["calls-sync", calls],
 ])("/api/cron/%s", (path, route) => {
   const req = (secret = "s3cret") => new Request(`https://cleads.fr/api/cron/${path}`, call(secret))
   afterEach(() => {
