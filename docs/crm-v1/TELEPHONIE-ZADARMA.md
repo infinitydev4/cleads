@@ -59,13 +59,31 @@ Les enregistrements restent chez Zadarma : Cleads ne garde que leur identifiant 
 
 Si les appels sont enregistrés, il faut prévenir l'interlocuteur dès le début de l'appel et lui dire à quoi sert l'enregistrement. Il faut aussi limiter leur durée de conservation, que vous réglez dans Zadarma ; six mois au plus est la recommandation habituelle. Ajoutez cette phrase au script du closer.
 
-## V2 (pas dans ce lot)
+## Lot 2 : appeler depuis Cleads avec son casque
 
-- **Lot 2 :**
-  - bouton « Appeler » qui passe par le standard (rappel Zadarma) ;
-  - lecteur des enregistrements sur la fiche ;
-  - temps de parole par closer dans « Mes closers ».
-- **Plus tard :**
-  - fiche qui s'ouvre toute seule pendant un appel entrant ;
-  - appeler depuis le navigateur (WebRTC) ;
-  - transcription et résumé des appels par IA (payants).
+Le closer appelle directement dans la fiche, sans application à installer : son casque, branché sur l'ordinateur, sert de téléphone.
+
+| Quoi | Où |
+|---|---|
+| Ouvrir la ligne du closer dans le navigateur (clé WebRTC de son poste, valable 72 h, redemandée chaque jour) | `GET /api/telephony/webphone`, `features/telephony/webphone.ts` |
+| Le téléphone : appeler, sonnerie, en ligne, couper le micro, attente, clavier, raccrocher ; appel entrant : décrocher ou refuser | `components/crm/webphone/webphone-provider.tsx`, monté dans la mise en page du CRM : l'appel continue quand on change de page |
+| Les états du téléphone, testés sans navigateur | `features/telephony/webphone-state.ts` |
+| Dans la fiche : bouton « Appeler », carte d'appel, puis résultat, note et relance en un écran | `app/(crm)/app/call-panel.tsx` |
+| Écouter un enregistrement dans l'historique de la fiche | `RecordingPlayer`, qui passe par `/api/calls/:id/recording` |
+| Appels, décrochés, temps de parole par membre, et derniers appels avec leur enregistrement | « Mes closers », `features/telephony/stats.ts` |
+
+- Le téléphone web utilise la bibliothèque WebRTC officielle de Zadarma (`my.zadarma.com/webphoneWebRTCWidget/v9`), sans son interface : Cleads affiche ses propres boutons.
+- Le micro est demandé au premier appel. S'il est refusé, la fiche explique comment l'autoriser et propose d'appeler avec le téléphone de l'ordinateur.
+- Sans poste attribué ou avant la mise en service, rien ne change pour le closer : le bouton « Appeler » ouvre le téléphone de l'ordinateur, avec une phrase qui dit pourquoi.
+- Le résultat choisi après l'appel complète l'activité créée par le standard : un appel reste compté une seule fois.
+
+### Mise en service du lot 2 (propriétaire)
+
+1. Dans Zadarma, Réglages › Intégrations et API › WebRTC widget (ou « Appels depuis le site ») : activer l'intégration et autoriser le domaine `cleads.fr`. Sans cela, Zadarma refuse la clé et la fiche le dit.
+2. Vérifier que chaque closer a son poste dans Réglages › Équipe.
+3. Le closer ouvre « Ma journée », clique sur « Appeler », autorise le micro la première fois : l'appel part de son poste.
+
+## Plus tard
+
+- Fiche qui s'ouvre toute seule pendant un appel entrant (aujourd'hui : une barre « Décrocher / Refuser » en bas de l'écran).
+- Transcription et résumé des appels par IA (payants).

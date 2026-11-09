@@ -8,7 +8,7 @@ import { LeadError } from "./errors"
 import { closeOpenDeals, ensureOpenDeal } from "@/features/pipeline/deals"
 import { canWorkLead, closeOpenTasks, insertTask } from "@/features/activity/core"
 import { NOT_A_CONTACT, type ActivityInput } from "@/features/activity/rules"
-import { pendingPhoneCall } from "@/features/telephony/pending"
+import { pendingPhoneCall, withRecordings } from "@/features/telephony/pending"
 import { canChangeTask } from "@/features/activity/rules"
 import { OPEN_STAGES } from "@/features/pipeline/rules"
 import { mayEmailLead } from "@/features/outreach/rules"
@@ -216,6 +216,11 @@ export function toActivity(a: ActivityRow): LeadDetail["activities"][number] {
     event: typeof d.event === "string" ? d.event : null,
     // E28: what an agent did for the person names the agent; E29: an MCP client names itself.
     via: d.via && typeof d.via === "object" && typeof (d.via as { agentId?: unknown }).agentId === "string" ? viaAgent((d.via as { agentId: string }).agentId, (d.via as { client?: unknown }).client as string | undefined) : null,
+    // E32: a call the PBX reported; whether it was recorded is filled in by withRecordings.
+    call:
+      a.kind === "CALL" && typeof d.phoneCallId === "string"
+        ? { id: d.phoneCallId, direction: d.direction === "INBOUND" ? "INBOUND" : "OUTBOUND", durationSec: typeof d.durationSec === "number" ? d.durationSec : 0, recorded: false }
+        : null,
   }
 }
 
@@ -232,7 +237,7 @@ export async function listTimeline(user: CurrentUser, id: string, opts: { kinds?
     take: take + 1,
     include: { actor: { select: { name: true, email: true } } },
   })
-  return { items: rows.slice(0, take).map(toActivity), hasMore: rows.length > take }
+  return { items: await withRecordings(rows.slice(0, take).map(toActivity)), hasMore: rows.length > take }
 }
 
 export async function getLead(user: CurrentUser, id: string): Promise<LeadDetail> {
@@ -274,7 +279,7 @@ export async function getLead(user: CurrentUser, id: string): Promise<LeadDetail
       id: k.id, name: k.name, jobTitle: k.jobTitle, email: k.email, emailKind: k.emailKind, phone: k.phone, doNotContact: k.doNotContact,
       doNotContactReason: k.doNotContactReason, source: k.source, collectedFrom: k.collectedFrom, collectedAt: iso(k.collectedAt), legalBasis: k.legalBasis,
     },
-    activities: lead.activities.map(toActivity),
+    activities: await withRecordings(lead.activities.map(toActivity)),
     qualification: (lead.qualification as LeadDetail["qualification"]) ?? null,
     deals: lead.deals.map((d) => ({ id: d.id, stage: d.stage, amountCents: d.amountCents, expectedCloseAt: iso(d.expectedCloseAt), lostReason: d.lostReason, ownerId: d.ownerId, ownerName: who(d.owner), canMove: dealMoveScope === "all" || (dealMoveScope === "own" && d.ownerId === user.id) })),
     meetings: lead.meetings.map((m) => ({ id: m.id, startsAt: m.startsAt.toISOString(), endsAt: m.endsAt.toISOString(), status: m.status, type: m.type, hostName: who(m.host) })),

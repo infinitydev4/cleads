@@ -114,7 +114,7 @@ export interface LeadDetail {
     collectedAt: string | null
     legalBasis: string | null
   } | null
-  activities: { id: string; kind: string; body: string | null; actorName: string | null; actorKind: string; occurredAt: string; outcome: string | null; durationMin: number | null; event: string | null; via: string | null }[]
+  activities: { id: string; kind: string; body: string | null; actorName: string | null; actorKind: string; occurredAt: string; outcome: string | null; durationMin: number | null; event: string | null; via: string | null; call: PhoneCallSummary | null }[]
   qualification: {
     need?: string
     budget?: "unknown" | "none" | "yes"
@@ -138,4 +138,13 @@ export interface LeadDetail {
   brief: CallBrief
   /** "focus" for the closer: the call first, the rest folded away; "full" for everyone else. */
   layout: "focus" | "full"
+}
+
+/** E32: the real call behind a CALL activity, as the PBX reported it. */
+export interface PhoneCallSummary {
+  id: string
+  direction: "OUTBOUND" | "INBOUND"
+  durationSec: number
+  /** Whether a recording can be listened to (asked for at /api/calls/:id/recording). */
+  recorded: boolean
 }

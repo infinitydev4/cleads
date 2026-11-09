@@ -14,6 +14,7 @@ import type { DeskStats } from "@/features/leads/desk"
 import { api } from "./leads/api"
 import { SiteIndicator } from "./leads/indicators"
 import { CloserFiche, initialsOf } from "./closer-fiche"
+import { useWebphone } from "@/components/crm/webphone/webphone-provider"
 
 type Segment = "all" | FocusFilter
 
@@ -54,6 +55,9 @@ export function CloserDesk({ firstName, today, initial, counts, stats, currentUs
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState("")
   const [openId, setOpenId] = useState<string | null>(null)
+  // E32 lot 2: with a line in the browser, the row's phone opens the fiche and dials from there.
+  const web = useWebphone()
+  const [autoCallId, setAutoCallId] = useState<string | null>(null)
   const [detail, setDetail] = useState<{ id: string; lead?: LeadDetail; error?: string } | null>(null)
 
   const rows = useMemo(() => {
@@ -181,9 +185,15 @@ export function CloserDesk({ firstName, today, initial, counts, stats, currentUs
                       </button>
                       <span className="flex justify-end">
                         {r.phone ? (
-                          <a href={`tel:${r.phone}`} onClick={() => setOpenId(r.id)} aria-label={`Appeler ${r.name}`} className="grid h-11 w-11 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                            <Phone className="h-[18px] w-[18px]" aria-hidden="true" />
-                          </a>
+                          web?.phase === "ready" ? (
+                            <button onClick={() => { setAutoCallId(r.id); setOpenId(r.id) }} aria-label={`Appeler ${r.name}`} className="grid h-11 w-11 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                              <Phone className="h-[18px] w-[18px]" aria-hidden="true" />
+                            </button>
+                          ) : (
+                            <a href={`tel:${r.phone}`} onClick={() => setOpenId(r.id)} aria-label={`Appeler ${r.name}`} className="grid h-11 w-11 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                              <Phone className="h-[18px] w-[18px]" aria-hidden="true" />
+                            </a>
+                          )
                         ) : null}
                       </span>
                     </li>
@@ -201,7 +211,7 @@ export function CloserDesk({ firstName, today, initial, counts, stats, currentUs
           <SheetDescription className="sr-only">La fiche du prospect, tournée vers l’appel.</SheetDescription>
           {current?.error && <p role="alert" className="m-6 rounded-lg bg-destructive-subtle p-3 text-sm font-medium text-destructive-text">{current.error}</p>}
           {openId && !current && <div className="flex flex-1 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-label="Chargement de la fiche" /></div>}
-          {current?.lead && <CloserFiche key={current.lead.id} lead={current.lead} currentUserId={currentUserId} onChange={changed} onClose={() => setOpenId(null)} />}
+          {current?.lead && <CloserFiche key={current.lead.id} lead={current.lead} currentUserId={currentUserId} autoCall={autoCallId === current.lead.id} onChange={changed} onClose={() => { setOpenId(null); setAutoCallId(null) }} />}
         </SheetContent>
       </Sheet>
     </div>

@@ -3,6 +3,7 @@ import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { AppShell } from "@/components/crm/shell/app-shell"
 import { getCurrentUser } from "@/lib/auth/guard"
+import { WebphoneProvider } from "@/components/crm/webphone/webphone-provider"
 
 export const metadata: Metadata = {
   title: { default: "CRM", template: "%s · Cleads CRM" },
@@ -21,5 +22,11 @@ export default async function CrmLayout({ children }: { children: React.ReactNod
     }
     redirect("/auth/login")
   }
-  return <AppShell user={user} embedded={embedded}>{children}</AppShell>
+  // E32 lot 2: whoever calls gets the phone in the browser, kept alive across pages; not a viewer, not a 3D window.
+  if (embedded || user.role === "VIEWER") return <AppShell user={user} embedded={embedded}>{children}</AppShell>
+  return (
+    <WebphoneProvider>
+      <AppShell user={user} embedded={embedded}>{children}</AppShell>
+    </WebphoneProvider>
+  )
 }
