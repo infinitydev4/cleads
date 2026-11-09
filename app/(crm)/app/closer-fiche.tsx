@@ -3,7 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
-import { CalendarDays, ChevronDown, ClipboardCheck, ExternalLink, Mail, Phone, Sparkles, X } from "lucide-react"
+import { CalendarDays, ChevronDown, ClipboardCheck, ExternalLink, Mail, Sparkles, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { formatDate, formatDateTime } from "@/lib/crm/format"
 import { formatPhone } from "@/lib/crm/normalize"
@@ -14,6 +14,8 @@ import { QUALIFICATION_LABELS } from "@/features/pipeline/rules"
 import type { LeadDetail } from "@/features/leads/types"
 import { templateScript } from "@/features/leads/template-script"
 import { api } from "./leads/api"
+import { CallPanel, RecordingPlayer } from "./call-panel"
+import { spoken } from "@/features/telephony/webphone-state"
 import { EmailDialog } from "./leads/email-dialog"
 import { MeetingDialog } from "./leads/meeting-dialog"
 import { PRIORITY_LABELS, PriorityBadge, SiteIndicator } from "./leads/indicators"
@@ -30,14 +32,13 @@ export const initialsOf = (name: string) =>
  * call first. Why now, the script, qualifying while on the phone, who to ask for, the company, the history; the
  * result of a call in one click at the bottom.
  */
-export function CloserFiche({ lead, currentUserId, onChange, onClose }: { lead: LeadDetail; currentUserId: string; onChange: (lead: LeadDetail) => void; onClose: () => void }) {
+export function CloserFiche({ lead, currentUserId, autoCall, onChange, onClose }: { lead: LeadDetail; currentUserId: string; autoCall?: boolean; onChange: (lead: LeadDetail) => void; onClose: () => void }) {
   const c = lead.company
   const k = lead.contact
   const name = c?.name ?? k?.name ?? "Sans nom"
   const phone = k?.phone ?? c?.phone ?? null
   const { brief } = lead
   const pitch = brief.pitch
-  const [inCall, setInCall] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [planning, setPlanning] = useState(false)
   const [emailing, setEmailing] = useState(false)
@@ -47,19 +48,6 @@ export function CloserFiche({ lead, currentUserId, onChange, onClose }: { lead: 
 
   async function reload() {
     onChange(await api<LeadDetail>(`/api/leads/${lead.id}`))
-  }
-
-  async function logCall(outcome: CallOutcome) {
-    setBusy(outcome)
-    try {
-      onChange(await api<LeadDetail>(`/api/leads/${lead.id}/activities`, { method: "POST", body: JSON.stringify({ kind: "CALL", outcome }) }))
-      setInCall(false)
-      toast.success(`Appel noté : ${CALL_OUTCOMES[outcome].toLowerCase()}.`)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Échec")
-    } finally {
-      setBusy(null)
-    }
   }
 
   async function qualify(decision: "save" | "qualify") {
@@ -118,11 +106,7 @@ export function CloserFiche({ lead, currentUserId, onChange, onClose }: { lead: 
           </div>
           <button onClick={onClose} aria-label="Fermer la fiche" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><X className="h-5 w-5" aria-hidden="true" /></button>
         </div>
-        {phone && canWork && (
-          <a href={`tel:${phone}`} onClick={() => setInCall(true)} className="flex min-h-[52px] w-full items-center whitespace-nowrap justify-center gap-2.5 rounded-2xl bg-primary px-5 text-base font-extrabold text-primary-foreground shadow-sm transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <Phone className="h-5 w-5" aria-hidden="true" /> Appeler {formatPhone(phone)}
-          </a>
-        )}
+        {phone && canWork && <CallPanel lead={lead} name={name} phone={phone} contactName={k?.name ?? null} autoCall={autoCall} onSaved={onChange} />}
         <div className="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-2.5">
           {lead.can.write && lead.status !== "QUALIFIED" && (
             <Button className="min-h-12 rounded-2xl bg-sidebar px-4 text-sidebar-foreground hover:bg-sidebar/90" onClick={() => document.getElementById(`qualification-${lead.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
@@ -263,11 +247,12 @@ export function CloserFiche({ lead, currentUserId, onChange, onClose }: { lead: 
                   <span aria-hidden="true" className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-muted-foreground/50" />
                   <div className="min-w-0">
                     <p>
-                      <span className="font-semibold">{KIND_LABELS[a.kind] ?? a.kind}</span>
+                      <span className="font-semibold">{a.call ? `${a.call.direction === "INBOUND" ? "Appel entrant" : "Appel sortant"}${a.call.durationSec ? ` · ${spoken(a.call.durationSec)}` : ""}` : (KIND_LABELS[a.kind] ?? a.kind)}</span>
                       {a.outcome && a.outcome in CALL_OUTCOMES ? ` · ${CALL_OUTCOMES[a.outcome as CallOutcome]}` : ""}
                       {a.body ? <span className="text-muted-foreground"> · {a.body.length > 120 ? `${a.body.slice(0, 120)}…` : a.body}</span> : null}
                     </p>
                     <p className="text-xs text-muted-foreground">{formatDateTime(a.occurredAt)}{a.actorName ? ` · ${a.actorName}` : ""}</p>
+                    {a.call?.recorded && <div className="mt-2"><RecordingPlayer callId={a.call.id} durationSec={a.call.durationSec} label={`Écouter l’appel du ${formatDateTime(a.occurredAt)}`} /></div>}
                   </div>
                 </li>
               ))}
@@ -276,18 +261,6 @@ export function CloserFiche({ lead, currentUserId, onChange, onClose }: { lead: 
           <Link href={`/app/leads/${lead.id}`} className="inline-flex items-center gap-1 text-sm font-semibold text-info underline-offset-4 hover:underline">Fiche complète : tâches, registre, audit <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" /></Link>
         </section>
       </div>
-
-      {inCall && (
-        <footer className="space-y-2.5 border-t bg-card px-6 py-4 sm:px-7">
-          <p className="text-sm font-bold">Comment s’est passé l’appel ?</p>
-          <div className="flex flex-wrap gap-2">
-            {(Object.entries(CALL_OUTCOMES) as [CallOutcome, string][]).map(([value, label]) => (
-              <Button key={value} variant="outline" size="sm" className="rounded-full" loading={busy === value} disabled={!!busy} onClick={() => logCall(value)}>{label}</Button>
-            ))}
-            <Button variant="ghost" size="sm" onClick={() => setInCall(false)}>Plus tard</Button>
-          </div>
-        </footer>
-      )}
 
       {planning && <MeetingDialog open={planning} onOpenChange={setPlanning} leadId={lead.id} leadName={name} currentUserId={currentUserId} canOverride={lead.can.meetAnywhere} onDone={reload} />}
       {emailing && <EmailDialog open={emailing} onOpenChange={setEmailing} leadId={lead.id} leadName={name} onDone={reload} />}

@@ -1,4 +1,6 @@
 import type { Prisma } from "@prisma/client"
+import { prisma } from "@/lib/prisma"
+import type { PhoneCallSummary } from "@/features/leads/types"
 
 type Tx = Prisma.TransactionClient
 
@@ -26,4 +28,12 @@ export async function pendingPhoneCall(tx: Tx, actorId: string, leadId: string, 
     take: 5,
   })
   return recent.find((a) => (a.data as Partial<PhoneCallData> | null)?.pending === true) ?? null
+}
+
+/** Marks the calls of a timeline that have a recording to listen to (lot 2), in one query. */
+export async function withRecordings<T extends { call: PhoneCallSummary | null }>(items: T[]): Promise<T[]> {
+  const ids = items.flatMap((a) => (a.call ? [a.call.id] : []))
+  if (ids.length === 0) return items
+  const recorded = new Set((await prisma.phoneCall.findMany({ where: { id: { in: ids }, recordingId: { not: null } }, select: { id: true } })).map((c) => c.id))
+  return items.map((a) => (a.call && recorded.has(a.call.id) ? { ...a, call: { ...a.call, recorded: true } } : a))
 }
