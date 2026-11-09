@@ -73,6 +73,11 @@ const matrix = {
   "hq:view": { OWNER: "all", MANAGER: "all" },
   // Administration
   "team:read": { OWNER: "all", MANAGER: "all" },
+  /**
+   * Prepare a batch of prospects and send it to a closer, follow and take back the closers' fiches (9 November 2026):
+   * the managers dispatch, the closers call.
+   */
+  "team:dispatch": { OWNER: "all", MANAGER: "all" },
   "team:manage": { OWNER: "all" },
   "audit:read": { OWNER: "all", MANAGER: "all" },
   "admin:tools": { OWNER: "all" },

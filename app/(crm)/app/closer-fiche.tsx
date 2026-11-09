@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils"
 import { CALL_OUTCOMES, type CallOutcome } from "@/features/activity/rules"
 import { QUALIFICATION_LABELS } from "@/features/pipeline/rules"
 import type { LeadDetail } from "@/features/leads/types"
+import { templateScript } from "@/features/leads/template-script"
 import { api } from "./leads/api"
 import { EmailDialog } from "./leads/email-dialog"
 import { MeetingDialog } from "./leads/meeting-dialog"
@@ -88,15 +89,17 @@ export function CloserFiche({ lead, currentUserId, onChange, onClose }: { lead: 
     }
   }
 
-  const steps = pitch?.script
-    ? [
-        { id: "hook", label: "Constat", body: pitch.script.hook.text },
-        ...(pitch.script.questions.length ? [{ id: "discovery", label: "Découverte", body: pitch.script.questions.map((q) => `• ${q}`).join("\n") }] : []),
-        { id: "offer", label: "Proposition", body: pitch.script.proposal },
-        ...(pitch.objections.length ? [{ id: "objections", label: "Objections probables", body: pitch.objections.map((o) => `« ${o.objection} »\n→ ${o.answer}`).join("\n\n") }] : []),
-        { id: "close", label: "Closing", body: pitch.script.close },
-      ].filter((s) => s.body)
-    : []
+  // The AI script when there is one; else the free template, filled with the fiche's real facts.
+  const fallback = templateScript(lead, brief.site)
+  const script = pitch?.script ?? fallback.script
+  const objections = pitch?.script && pitch.objections.length ? pitch.objections : fallback.objections
+  const steps = [
+    { id: "hook", label: "Constat", body: script.hook.text },
+    ...(script.questions.length ? [{ id: "discovery", label: "Découverte", body: script.questions.map((q) => `• ${q}`).join("\n") }] : []),
+    { id: "offer", label: "Proposition", body: script.proposal },
+    ...(objections.length ? [{ id: "objections", label: "Objections probables", body: objections.map((o) => `« ${o.objection} »\n→ ${o.answer}`).join("\n\n") }] : []),
+    { id: "close", label: "Closing", body: script.close },
+  ].filter((s) => s.body)
   const answered = (["need", "budget", "authority", "timing"] as const).filter((key) => answers[key] && answers[key] !== "unknown").length
   const qualified = lead.status === "QUALIFIED"
 
@@ -157,33 +160,29 @@ export function CloserFiche({ lead, currentUserId, onChange, onClose }: { lead: 
         </section>
 
         <section aria-label="Script d’appel" className="space-y-3 rounded-2xl bg-sidebar p-5 text-sidebar-foreground">
-          <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.07em] text-primary"><Sparkles className="h-3.5 w-3.5" aria-hidden="true" /> Ton script d’appel{pitch ? ` · ${formatDate(pitch.createdAt)}` : ""}</p>
-          {pitch?.script ? (
-            <>
-              <p className="text-base font-semibold leading-relaxed text-white">« {pitch.script.opening} »</p>
-              <div>
-                {steps.map((s) => (
-                  <div key={s.id} className="border-t border-white/10">
-                    <button onClick={() => setOpen({ ...open, [s.id]: !open[s.id] })} aria-expanded={!!open[s.id]} className="flex min-h-12 w-full items-center justify-between text-left text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
-                      {s.label}
-                      <ChevronDown className={cn("h-4 w-4 transition-transform", open[s.id] && "rotate-180")} aria-hidden="true" />
-                    </button>
-                    {open[s.id] && <p className="whitespace-pre-line pb-3 text-sm leading-relaxed text-sidebar-foreground/90">{s.body}</p>}
-                  </div>
-                ))}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.07em] text-primary"><Sparkles className="h-3.5 w-3.5" aria-hidden="true" /> Ton script d’appel{pitch?.script ? ` · IA, ${formatDate(pitch.createdAt)}` : " · modèle gratuit"}</p>
+            {!pitch?.script && (brief.audited ? lead.can.offers : lead.can.audit) && (
+              <Button size="sm" variant="outline" onClick={prepare} loading={busy === "prepare"} className="h-8 rounded-lg border-white/20 bg-transparent text-xs text-white hover:bg-white/10 hover:text-white">
+                {brief.audited ? "Script personnalisé par l’IA" : "Audit IA du site"}
+              </Button>
+            )}
+          </div>
+          <p className="text-base font-semibold leading-relaxed text-white">« {script.opening} »</p>
+          <div>
+            {steps.map((s) => (
+              <div key={s.id} className="border-t border-white/10">
+                <button onClick={() => setOpen({ ...open, [s.id]: !open[s.id] })} aria-expanded={!!open[s.id]} className="flex min-h-12 w-full items-center justify-between text-left text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+                  {s.label}
+                  <ChevronDown className={cn("h-4 w-4 transition-transform", open[s.id] && "rotate-180")} aria-hidden="true" />
+                </button>
+                {open[s.id] && <p className="whitespace-pre-line pb-3 text-sm leading-relaxed text-sidebar-foreground/90">{s.body}</p>}
               </div>
-              {pitch.offers.length > 0 && (
-                <div className="flex flex-wrap gap-2 border-t border-white/10 pt-3">
-                  {pitch.offers.map((o) => <span key={o.name} className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white">{o.name} · {o.price}</span>)}
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="flex flex-wrap items-center gap-3">
-              <p className="min-w-0 flex-1 text-sm text-sidebar-foreground/90">{brief.audited ? "L’audit est prêt : le script et les offres à proposer s’en déduisent." : "Pas encore d’audit du site : il donne le constat qui ouvre l’appel, puis le script."}</p>
-              {(brief.audited ? lead.can.offers : lead.can.audit) && (
-                <Button size="sm" onClick={prepare} loading={busy === "prepare"}><Sparkles className="h-4 w-4" aria-hidden="true" /> {brief.audited ? "Préparer le script" : "Préparer l’appel"}</Button>
-              )}
+            ))}
+          </div>
+          {pitch && pitch.offers.length > 0 && (
+            <div className="flex flex-wrap gap-2 border-t border-white/10 pt-3">
+              {pitch.offers.map((o) => <span key={o.name} className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white">{o.name} · {o.price}</span>)}
             </div>
           )}
         </section>

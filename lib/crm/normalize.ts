@@ -14,7 +14,7 @@ const FREE_EMAIL_DOMAINS = new Set([
 ])
 
 /** Hosts that are not the business's own site (social pages, directories, free site builders). */
-const AGGREGATOR_DOMAINS = [
+export const AGGREGATOR_DOMAINS = [
   "facebook.com", "fb.com", "instagram.com", "linkedin.com", "twitter.com", "x.com", "youtube.com", "tiktok.com",
   "pagesjaunes.fr", "google.com", "g.page", "goo.gl", "maps.app.goo.gl", "tripadvisor.fr", "tripadvisor.com", "yelp.com",
   "business.site", "wixsite.com", "wix.com", "weebly.com", "jimdofree.com", "sites.google.com", "linktr.ee", "doctolib.fr",
