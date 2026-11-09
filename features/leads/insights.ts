@@ -2,6 +2,7 @@ import type { LeadStatus, Prisma, SignalKind } from "@prisma/client"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { dayBounds } from "@/lib/crm/day"
+import { AGGREGATOR_DOMAINS, domainFromUrl } from "@/lib/crm/normalize"
 import { formatOfferPrice } from "@/features/offers/labels"
 import { domainOf, latestFor } from "@/features/prospect-audit/latest"
 import { objectionSchema, scriptSchema } from "@/features/offer-pitch/schemas"
@@ -28,7 +29,9 @@ export const CALL_SIGNALS = ["CREATED", "TAKEOVER", "NEW_LEADER", "MOVED", "NEW_
 const BLOCKED: LeadStatus[] = ["DISQUALIFIED", "DO_NOT_CONTACT"]
 
 export function siteState(website: string | null | undefined, auditScore: number | null | undefined): SiteState {
-  if (!website) return "none"
+  if (!website?.trim()) return "none"
+  // A Facebook, Instagram or directory page is not the business's own site (lib/crm/normalize.ts, AGGREGATOR_DOMAINS).
+  if (!domainFromUrl(website)) return "social"
   if (auditScore == null) return "unknown"
   return auditScore < WEAK_SITE_BELOW ? "weak" : "ok"
 }
@@ -43,6 +46,9 @@ export function priorityOf(l: { status: LeadStatus; score: number; hasPhone: boo
   return l.score < COLD_SCORE ? 3 : 2
 }
 
+/** No website, an empty one, or only a social or directory page: the query twin of siteState's "none" and "social". */
+const noRealSite: Prisma.CompanyWhereInput[] = [{ website: null }, { website: "" }, ...AGGREGATOR_DOMAINS.map((d) => ({ website: { contains: d, mode: "insensitive" as const } }))]
+
 const since = (now: Date) => new Date(now.getTime() - SIGNAL_DAYS * 86_400_000)
 
 /** The segments of the call file, as a query: the same rules as priorityOf and siteState. */
@@ -52,7 +58,7 @@ export function focusWhere(focus: FocusFilter, now = new Date()): Prisma.LeadWhe
     case "callback":
       return due
     case "nosite":
-      return { OR: [{ companyId: null }, { company: { is: { website: null } } }] }
+      return { OR: [{ companyId: null }, { company: { is: { OR: noRealSite } } }] }
     case "fresh":
       return { status: "NEW", lastContactedAt: null }
     case "hot":

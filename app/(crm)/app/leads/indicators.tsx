@@ -7,6 +7,7 @@ import type { Priority, SiteState } from "@/features/leads/types"
  */
 export const SITE_LABELS: Record<SiteState, { label: string; hint: string }> = {
   none: { label: "Aucun site", hint: "Ni site ni page de réservation : un site vitrine se vend tout seul." },
+  social: { label: "Réseaux seulement", hint: "Une page Facebook, Instagram ou d’annuaire, pas de vrai site : le site vitrine reste à vendre." },
   weak: { label: "À améliorer", hint: "L’audit IA lui trouve beaucoup à gagner : lenteur, mobile, conversion." },
   ok: { label: "Correct", hint: "Le site tient la route : vendre la visibilité (SEO, publicités, IA)." },
   unknown: { label: "Non vérifié", hint: "Pas encore d’audit : lance-le depuis la fiche." },
@@ -27,12 +28,12 @@ export function SiteIndicator({ state, score, className }: { state: SiteState; s
         className={cn(
           "h-2.5 w-2.5 shrink-0",
           state === "none" && "rounded-full bg-destructive ring-[3px] ring-destructive-subtle",
-          state === "weak" && "rounded-[2px] bg-warning ring-[3px] ring-warning-subtle",
+          (state === "weak" || state === "social") && "rounded-[2px] bg-warning ring-[3px] ring-warning-subtle",
           state === "ok" && "rounded-full bg-success ring-[3px] ring-success-subtle",
           state === "unknown" && "rounded-full border-2 border-muted-foreground/60"
         )}
       />
-      <span className={cn(state === "none" && "text-destructive-text", state === "weak" && "text-warning", state === "ok" && "text-success", state === "unknown" && "text-muted-foreground")}>{meta.label}</span>
+      <span className={cn(state === "none" && "text-destructive-text", (state === "weak" || state === "social") && "text-warning", state === "ok" && "text-success", state === "unknown" && "text-muted-foreground")}>{meta.label}</span>
     </span>
   )
 }

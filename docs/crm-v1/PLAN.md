@@ -197,6 +197,7 @@ Entonnoir par semaine : prospects importés → contactés → réponses → qua
 | Qualifier un prospect *(closer : ses fiches, depuis le 9 novembre 2026)* | ✓ | ✓ | pool + siens | siens | — |
 | Réserver / attribuer un rendez-vous | ✓ | ✓ | ✓ | siens | — |
 | Voir les rapports | ✓ | ✓ | siens | siens | ✓ |
+| Préparer un lot, l'envoyer à un closer, lui reprendre des fiches *(9 novembre 2026)* | ✓ | ✓ | — | — | — |
 | Inviter / désactiver un membre | ✓ | — | — | — | — |
 | Exporter les données, supprimer définitivement | ✓ | export seul | — | — | — |
 | Lire le journal d'audit | ✓ | ✓ | — | — | — |

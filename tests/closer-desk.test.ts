@@ -7,6 +7,10 @@ describe("the site sign", () => {
     expect(siteState(null, null)).toBe("none")
     expect(siteState("", 90)).toBe("none")
     expect(siteState("https://a.example", null)).toBe("unknown")
+    // A social or directory page is not a site, audited or not.
+    expect(siteState("https://www.facebook.com/plomberie.martin", null)).toBe("social")
+    expect(siteState("instagram.com/abc_elec", 90)).toBe("social")
+    expect(siteState("https://www.pagesjaunes.fr/pros/123", null)).toBe("social")
     expect(siteState("https://a.example", WEAK_SITE_BELOW - 1)).toBe("weak")
     expect(siteState("https://a.example", WEAK_SITE_BELOW)).toBe("ok")
   })

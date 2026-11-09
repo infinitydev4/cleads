@@ -24,8 +24,11 @@ export interface LeadRow {
   createdAt: string
 }
 
-/** The closer's desk (9 November 2026, features/leads/insights.ts): no site, a site to improve, a correct one, not audited. */
-export type SiteState = "none" | "weak" | "ok" | "unknown"
+/**
+ * The closer's desk (9 November 2026, features/leads/insights.ts): no site, only a social or directory page (Facebook,
+ * Instagram, Pages Jaunes… is not a site), a site to improve, a correct one, a real site not audited yet.
+ */
+export type SiteState = "none" | "social" | "weak" | "ok" | "unknown"
 /** 1: call first, 2: a good fiche with nothing urgent, 3: wait. */
 export type Priority = 1 | 2 | 3
 

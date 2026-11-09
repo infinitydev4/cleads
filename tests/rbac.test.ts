@@ -32,6 +32,7 @@ const expected: Record<string, Record<CrmRole, string>> = {
   "offer:manage": { OWNER: "all", MANAGER: "all", SDR: "-", CLOSER: "-", VIEWER: "-" },
   "hq:view": { OWNER: "all", MANAGER: "all", SDR: "-", CLOSER: "-", VIEWER: "-" },
   "studio:generate": { OWNER: "all", MANAGER: "all", SDR: "pool", CLOSER: "-", VIEWER: "-" },
+  "team:dispatch": { OWNER: "all", MANAGER: "all", SDR: "-", CLOSER: "-", VIEWER: "-" },
   "ai:console": { OWNER: "all", MANAGER: "all", SDR: "all", CLOSER: "-", VIEWER: "-" },
 }
 
