@@ -81,6 +81,11 @@ model User {
   mcpTokens              McpToken[]
   mcpOAuthCodes          McpOAuthCode[]
   campaignWatches        CampaignWatch[]         @relation("CampaignWatchOwner")
+  /// E32: the member's extension on the Zadarma PBX ("100"); the calls it reports are filed under the member.
+  zadarmaExtension       String?
+  phoneCalls             PhoneCall[]
+
+  @@unique([workspaceId, zadarmaExtension])
 }
 
 /// LEGACY (blog, AI keys, NextAuth adapter): unused, dropped by prisma/pending/drop-legacy-blog.sql once a dump is taken.
@@ -627,6 +632,7 @@ model Workspace {
   signalSweep            SignalSweep?
   contactCandidates      ContactCandidate[]
   leadBriefs             LeadBrief[]
+  phoneCalls             PhoneCall[]
 }
 
 enum LeadSource {
@@ -889,6 +895,7 @@ model Lead {
   generatedSites      GeneratedSite[]
   relevances          LeadRelevance[]
   briefs              LeadBrief[]
+  phoneCalls          PhoneCall[]
 
   @@unique([workspaceId, companyId])
   @@index([workspaceId, status])
@@ -953,6 +960,45 @@ model Activity {
   @@index([leadId, occurredAt])
   @@index([dealId, occurredAt])
   @@index([workspaceId, occurredAt])
+}
+
+enum CallDirection {
+  OUTBOUND
+  INBOUND
+}
+
+/// E32: a real call reported by the telephony provider (Zadarma), one row per provider call: the webhook and the nightly
+/// sync both write it, so replaying either is harmless. The fiche's timeline shows it through a CALL activity whose
+/// data.phoneCallId points here; a call to a number that matches no fiche is kept without one.
+model PhoneCall {
+  id          String        @id @default(cuid())
+  workspaceId String
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  provider    String        @default("zadarma")
+  /// pbx_call_id: stable across transfers and voice menus.
+  externalId  String
+  direction   CallDirection
+  /// The member whose extension placed or answered it; null for a missed incoming call.
+  userId      String?
+  user        User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  leadId      String?
+  lead        Lead?         @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  extension   String?
+  /// The other party, canonical (+33…) when it could be read.
+  number      String
+  startedAt   DateTime
+  durationSec Int           @default(0)
+  /// Provider's word: answered, busy, cancel, no answer, failed…
+  disposition String
+  /// call_id of the recording (Zadarma), asked for a short-lived link when someone listens; null when not recorded.
+  recordingId String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@unique([provider, externalId])
+  @@index([workspaceId, startedAt])
+  @@index([userId, startedAt])
+  @@index([leadId, startedAt])
 }
 
 model Task {

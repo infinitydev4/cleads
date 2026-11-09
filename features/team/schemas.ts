@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { CRM_ROLES } from "@/lib/crm/roles"
+import { EXTENSION_RE } from "@/features/telephony/rules"
 
 const role = z.enum(CRM_ROLES)
 
@@ -9,8 +10,18 @@ export const inviteSchema = z.object({
 })
 
 export const memberChangeSchema = z
-  .object({ role: role.optional(), active: z.boolean().optional() })
-  .refine((v) => v.role !== undefined || v.active !== undefined, { message: "Aucun changement demandé" })
+  .object({
+    role: role.optional(),
+    active: z.boolean().optional(),
+    /** E32: the member's extension on the Zadarma PBX; null takes it back. */
+    zadarmaExtension: z
+      .string()
+      .trim()
+      .regex(EXTENSION_RE, "Un poste Zadarma s’écrit en chiffres, comme 100")
+      .nullable()
+      .optional(),
+  })
+  .refine((v) => v.role !== undefined || v.active !== undefined || v.zadarmaExtension !== undefined, { message: "Aucun changement demandé" })
 
 export const acceptSchema = z.object({
   token: z.string().min(20).max(200),
