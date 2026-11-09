@@ -6,7 +6,7 @@ import { getCurrentUser } from "@/lib/auth/guard"
 import { can } from "@/lib/rbac"
 import { getToday } from "@/features/activity/today"
 import { deskStats } from "@/features/leads/desk"
-import { focusCounts, listAssignees, listLeads } from "@/features/leads/service"
+import { focusCounts, listLeads } from "@/features/leads/service"
 import { parseLeadFilters } from "@/features/leads/schemas"
 import { TodayQueue } from "./today-queue"
 import { CloserDesk } from "./closer-desk"
@@ -26,8 +26,8 @@ export default async function TodayPage() {
   const date = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Paris" }).format(new Date())
   // The closer's day is his call file (9 November 2026): the cockpit instead of the task queue.
   if (user?.role === "CLOSER") {
-    const [list, counts, stats, assignees] = await Promise.all([listLeads(user, parseLeadFilters({ pageSize: "100" })), focusCounts(user), deskStats(user), listAssignees(user)])
-    return <CloserDesk firstName={user.name?.split(" ")[0] ?? null} initial={list} counts={counts} stats={stats} assignees={assignees.map((a) => ({ ...a }))} currentUserId={user.id} />
+    const [list, counts, stats] = await Promise.all([listLeads(user, parseLeadFilters({ pageSize: "100" })), focusCounts(user), deskStats(user)])
+    return <CloserDesk firstName={user.name?.split(" ")[0] ?? null} today={date} initial={list} counts={counts} stats={stats} currentUserId={user.id} />
   }
   // Layout guarantees a member; a missing user would already have been redirected.
   const today = user ? await getToday(user) : null
