@@ -65,13 +65,14 @@ Le closer appelle directement dans la fiche, sans application à installer : son
 
 | Quoi | Où |
 |---|---|
-| Ouvrir la ligne du closer dans le navigateur (clé WebRTC de son poste complet `479288-100`, valable 72 h, redemandée chaque jour ou dès que Zadarma la refuse) | `GET /api/telephony/webphone`, `features/telephony/webphone.ts` |
+| Ouvrir la ligne du closer dans le navigateur (clé WebRTC de son poste complet `123456-100`, valable 72 h, redemandée chaque jour ou dès que Zadarma la refuse) | `GET /api/telephony/webphone`, `features/telephony/webphone.ts` |
 | Le téléphone : appeler, sonnerie, en ligne, couper le micro, attente, clavier, raccrocher ; appel entrant : décrocher ou refuser | `components/crm/webphone/webphone-provider.tsx`, monté dans la mise en page du CRM : l'appel continue quand on change de page |
 | Les états du téléphone, testés sans navigateur | `features/telephony/webphone-state.ts` |
 | Dans la fiche : bouton « Appeler », carte d'appel, puis résultat, note et relance en un écran | `app/(crm)/app/call-panel.tsx` |
 | Écouter un enregistrement dans l'historique de la fiche | `RecordingPlayer`, qui passe par `/api/calls/:id/recording` |
 | Appels, décrochés, temps de parole par membre, et derniers appels avec leur enregistrement | « Mes closers », `features/telephony/stats.ts` |
 
+- Le téléphone web compose toujours le numéro avec son « + » (`+33612345678`) : le standard est réglé « sans indicatif pays » (Mon PBX › Appels sortants › Préfixes et codes) et ajouterait sinon 33 devant un numéro écrit « 33… ». Avec le « + », Zadarma ignore ces préfixes.
 - Le téléphone web utilise la bibliothèque WebRTC officielle de Zadarma (`my.zadarma.com/webphoneWebRTCWidget/v9`), sans son interface : Cleads affiche ses propres boutons.
 - Le micro est demandé au premier appel. S'il est refusé, la fiche explique comment l'autoriser et propose d'appeler avec le téléphone de l'ordinateur.
 - Sans poste attribué ou avant la mise en service, rien ne change pour le closer : le bouton « Appeler » ouvre le téléphone de l'ordinateur, avec une phrase qui dit pourquoi.
