@@ -104,6 +104,7 @@ export function CloserFiche({ lead, currentUserId, autoCall, onChange, onClose }
               <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-bold text-secondary-foreground">{leadStatus[lead.status].label}</span>
             </div>
           </div>
+          <Link href={`/app/leads/${lead.id}`} aria-label="Ouvrir en pleine page : modifier, tâches, registre" title="Ouvrir en pleine page" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><ExternalLink className="h-[18px] w-[18px]" aria-hidden="true" /></Link>
           <button onClick={onClose} aria-label="Fermer la fiche" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><X className="h-5 w-5" aria-hidden="true" /></button>
         </div>
         {phone && canWork && <CallPanel lead={lead} name={name} phone={phone} contactName={k?.name ?? null} autoCall={autoCall} onSaved={onChange} />}
