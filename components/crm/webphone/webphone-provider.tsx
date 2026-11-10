@@ -10,7 +10,8 @@ const LOADER = "https://my.zadarma.com/webphoneWebRTCWidget/v9/js/loader-phone-l
 interface ZadarmaApi {
   init(options: Record<string, unknown>): string
   reg(sip: string): void
-  call(number: string): void
+  /** false when the line was closed, a string when the library is in error, nothing once the call is on its way. */
+  call(number: string): unknown
   cancel(): void
   answer(): void
   micSwitch(state: "on" | "off"): void
@@ -67,6 +68,10 @@ function loadLibrary(): Promise<void> {
   })
 }
 
+/** How long Zadarma has to take a call before the closer is told it did not leave. */
+const PLACE_TIMEOUT_MS = 15_000
+const NOT_PLACED = "L’appel n’est pas parti : Zadarma ne répond pas. Vérifie ta connexion, puis réessaie."
+
 /** Asks for the microphone before dialling, so that a refusal is explained instead of a silent call. */
 async function microphone(): Promise<{ ok: true; label: string | null } | { ok: false }> {
   if (!navigator.mediaDevices?.getUserMedia) return { ok: false }
@@ -113,7 +118,12 @@ export function WebphoneProvider({ children }: { children: React.ReactNode }) {
         key: session.key,
         sip: session.sip,
         language: "fr",
-        getStatusMessage: (message: string, params?: { caller?: string; callername?: string }) => send({ type: "status", message, params, at: Date.now() }),
+        getStatusMessage: (message: string, params?: { caller?: string; callername?: string }) => {
+          // Kept in the console: what the library said is the first thing to read when a closer reports a call problem.
+          // eslint-disable-next-line no-console
+          console.info("[Cleads téléphone]", message, params ?? "")
+          send({ type: "status", message, params, at: Date.now() })
+        },
         getSipsCallback: () => {},
         callbackGetPrice: () => {},
         callbackEndCall: () => send({ type: "end", at: Date.now() }),
@@ -139,11 +149,29 @@ export function WebphoneProvider({ children }: { children: React.ReactNode }) {
       }
       send({ type: "device", label: mic.label })
       send({ type: "dial", target })
-      api.call(dialString(target.number))
+      const number = dialString(target.number)
+      // eslint-disable-next-line no-console
+      console.info("[Cleads téléphone] appel", number)
+      const result = api.call(number)
+      if (result === false || typeof result === "string") {
+        send({ type: "failed", message: NOT_PLACED })
+        return false
+      }
       return true
     },
     [state.phase]
   )
+
+  // A call Zadarma never takes would otherwise say « Connexion… » forever.
+  const waiting = state.phase === "ringing" && !state.placed
+  useEffect(() => {
+    if (!waiting) return
+    const timer = setTimeout(() => {
+      apiRef.current?.cancel()
+      send({ type: "failed", message: NOT_PLACED })
+    }, PLACE_TIMEOUT_MS)
+    return () => clearTimeout(timer)
+  }, [waiting])
 
   const value = useMemo<Webphone>(
     () => ({
@@ -188,7 +216,7 @@ function FloatingCall({ phone }: { phone: Webphone }) {
       <span aria-hidden="true" className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground"><Phone className="h-4 w-4" /></span>
       <span className="min-w-0 flex-1" aria-live="polite">
         <span className="block truncate text-sm font-bold text-white">{phone.call?.name}</span>
-        <span className="block text-xs text-sidebar-foreground/75">{incoming ? "Appel entrant" : phone.phase === "ringing" ? "Ça sonne…" : <span className="tabular-nums">En ligne · {clock(elapsed)}</span>}</span>
+        <span className="block text-xs text-sidebar-foreground/75">{incoming ? "Appel entrant" : phone.phase === "ringing" ? (phone.placed ? "Ça sonne…" : "Connexion…") : <span className="tabular-nums">En ligne · {clock(elapsed)}</span>}</span>
       </span>
       {incoming && (
         <button onClick={phone.answer} className="min-h-11 rounded-xl bg-primary px-4 text-sm font-extrabold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">Décrocher</button>

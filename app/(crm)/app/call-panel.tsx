@@ -76,6 +76,7 @@ export function CallPanel({ lead, name, phone, contactName, autoCall, onSaved }:
   if (line) {
     return (
       <div className="space-y-2.5">
+        {web.failure?.leadId === lead.id && <p role="alert" className="rounded-xl border border-warning/30 bg-warning-subtle px-3 py-2.5 text-sm font-semibold text-warning">{web.failure.message}</p>}
         <button
           onClick={() => web.dial(target)}
           disabled={!!busyElsewhere}
@@ -124,7 +125,7 @@ function LiveCall() {
         <span aria-hidden="true" className={cn("grid h-[52px] w-[52px] shrink-0 place-items-center rounded-full font-extrabold", ringing ? "animate-pulse bg-primary text-primary-foreground" : "bg-white/10 text-primary")}>{initials(web.call?.name ?? "?")}</span>
         <span className="min-w-0 flex-1" aria-live="polite">
           <span className="block truncate text-[17px] font-bold text-white">{web.call?.name}</span>
-          <span className="block text-sm text-sidebar-foreground/80">{ringing ? `Ça sonne… ${formatPhone(web.call?.number)}` : <>En ligne · <span role="timer" className="font-bold tabular-nums text-white">{clock(elapsed)}</span></>}</span>
+          <span className="block text-sm text-sidebar-foreground/80">{ringing ? `${web.placed ? "Ça sonne…" : "Connexion…"} ${formatPhone(web.call?.number)}` : <>En ligne · <span role="timer" className="font-bold tabular-nums text-white">{clock(elapsed)}</span></>}</span>
         </span>
         {ringing && <Button onClick={web.hangup} className="min-h-[52px] rounded-full bg-destructive px-6 font-extrabold text-white hover:bg-destructive/90">Raccrocher</Button>}
       </div>

@@ -53,6 +53,24 @@ describe("the phone in the browser", () => {
     expect(run([{ type: "mute", on: true }, { type: "end", at: 1_000 }], live)).toMatchObject({ muted: false, held: false })
   })
 
+  it("rings only once Zadarma has taken the call, and says so when it never does", () => {
+    const connecting = run([{ type: "dial", target }], ready)
+    expect(connecting).toMatchObject({ phase: "ringing", placed: false })
+    expect(run([status("outgoing", 500)], connecting).placed).toBe(true)
+    const failed = run([{ type: "failed", message: "L’appel n’est pas parti" }], connecting)
+    expect(failed).toMatchObject({ phase: "ready", call: null, ended: null, failure: { leadId: "lead_1", message: "L’appel n’est pas parti" } })
+    // A call Zadarma took ends as an unanswered call, never as a failure.
+    expect(run([status("outgoing", 500), { type: "failed", message: "x" }], connecting).phase).toBe("ringing")
+    expect(run([{ type: "dial", target }], failed).failure).toBeNull()
+  })
+
+  it("dials the number Zadarma expects, whatever the fiche holds", () => {
+    expect(dialString("+33240367761")).toBe("33240367761")
+    expect(dialString("06 12 34 56 78")).toBe("33612345678")
+    expect(dialString("0033 6 00 00 00 01")).toBe("33600000001")
+    expect(dialString("+213 555 12 34 56")).toBe("213555123456")
+  })
+
   it("says why there is no line", () => {
     expect(run([{ type: "unavailable", message: "Aucun poste" }], ready)).toMatchObject({ phase: "off", unavailable: "Aucun poste" })
     expect(run([status("BROWSER_NOT_SUPPORTED", 0)], ready).unavailable).toMatch(/Chrome, Edge ou Firefox/)
