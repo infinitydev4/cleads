@@ -221,6 +221,8 @@ export function toActivity(a: ActivityRow): LeadDetail["activities"][number] {
       a.kind === "CALL" && typeof d.phoneCallId === "string"
         ? { id: d.phoneCallId, direction: d.direction === "INBOUND" ? "INBOUND" : "OUTBOUND", durationSec: typeof d.durationSec === "number" ? d.durationSec : 0, recorded: false }
         : null,
+    // E33: a call of the AI caller, opened on its page.
+    aiCall: a.kind === "CALL" && typeof d.aiCallId === "string" ? { id: d.aiCallId, outcome: typeof d.aiOutcome === "string" ? d.aiOutcome : null, durationSec: typeof d.durationSec === "number" ? d.durationSec : 0 } : null,
   }
 }
 
@@ -297,6 +299,7 @@ export async function getLead(user: CurrentUser, id: string): Promise<LeadDetail
       audit: !!c && can(user.role, "ai:use") && canAccessRecord(user, "lead:write", lead.ownerId),
       offers: !!c && can(user.role, "ai:use"),
       studio: !!c && can(user.role, "studio:generate"),
+      aiCalls: can(user.role, "aicall:manage"),
     },
     aiReason: can(user.role, "ai:read") ? await leadAiReason(user.workspaceId, { id: lead.id, company: c && { domain: c.domain, website: c.website } }) : null,
     pitch: c && can(user.role, "ai:use") ? await latestPitchSummary(user.workspaceId, lead.id) : null,

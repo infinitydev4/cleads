@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Building2, CalendarDays, ChevronDown, ClipboardCheck, Globe, Mail, MapPin, Pencil, Phone, PhoneCall, ShieldAlert, Trash2, UserRound, X } from "lucide-react"
@@ -27,6 +28,7 @@ import { ScoreMeter } from "./score-meter"
 import { CallDialog } from "./call-dialog"
 import { MeetingDialog } from "./meeting-dialog"
 import { EMAIL_EVENT_HEADS } from "@/features/outreach/labels"
+import { OUTCOME_LABELS } from "@/features/ai-caller/rules"
 import { EmailDialog } from "./email-dialog"
 import { SequenceCard } from "./sequence-card"
 import { TasksCard } from "./tasks-card"
@@ -371,6 +373,10 @@ const FILTERS = [
 type Entry = LeadDetail["activities"][number]
 
 function entryText(a: Entry) {
+  if (a.kind === "CALL" && a.aiCall) {
+    const head = ["Appel de l’agent IA", a.aiCall.outcome && (OUTCOME_LABELS as Record<string, string>)[a.aiCall.outcome], a.aiCall.durationSec ? `${Math.floor(a.aiCall.durationSec / 60)} min ${String(a.aiCall.durationSec % 60).padStart(2, "0")}` : null].filter(Boolean).join(" · ")
+    return { head, body: a.body }
+  }
   if (a.kind === "CALL") {
     const head = ["Appel", a.outcome && (CALL_OUTCOMES as Record<string, string>)[a.outcome], a.durationMin != null ? `${a.durationMin} min` : null].filter(Boolean).join(" · ")
     return { head, body: a.body }
@@ -469,7 +475,8 @@ function Timeline({ lead, onChange }: { lead: LeadDetail; onChange: (lead: LeadD
               <div className="min-w-0 flex-1">
                 {head && <p className="font-medium">{head}</p>}
                 {text && <p className="whitespace-pre-wrap break-words">{text}</p>}
-                <p className="text-xs text-muted-foreground">{a.actorName ?? (a.actorKind === "SYSTEM" ? "Système" : "—")}{a.via ? `, ${a.via}` : ""} · {ago(a.occurredAt)}</p>
+                {a.aiCall && lead.can.aiCalls && <Link href={`/app/ai-caller?appel=${a.aiCall.id}`} className="text-xs font-bold text-info hover:underline">Écouter et lire l’appel</Link>}
+                <p className="text-xs text-muted-foreground">{a.actorName ?? (a.actorKind === "AGENT" && a.aiCall ? "Agent d’appel IA" : a.actorKind === "SYSTEM" ? "Système" : "—")}{a.via ? `, ${a.via}` : ""} · {ago(a.occurredAt)}</p>
               </div>
             </li>
           )

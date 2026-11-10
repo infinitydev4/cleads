@@ -36,7 +36,9 @@ export async function recordCall(workspaceId: string, call: ReportedCall): Promi
       const row = await tx.phoneCall.create({
         data: { workspaceId, externalId: call.externalId, direction: call.direction, userId: user?.id ?? null, leadId: lead?.id ?? null, extension: call.extension, number, startedAt: call.startedAt, recordingId: call.recordingId, ...facts },
       })
-      if (lead && reachedTheLine(call.disposition)) await fileOnLead(tx, workspaceId, lead, user?.id ?? null, row.id, call)
+      // E33: the AI caller's own extension is filed by its post-call webhook, with the transcript: not twice.
+      const aiCaller = !!call.extension && call.extension === process.env.ZADARMA_AI_EXTENSION
+      if (lead && !aiCaller && reachedTheLine(call.disposition)) await fileOnLead(tx, workspaceId, lead, user?.id ?? null, row.id, call)
       return { id: row.id, created: true, leadId: lead?.id ?? null }
     })
   } catch (error) {

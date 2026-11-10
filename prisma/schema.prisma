@@ -84,6 +84,7 @@ model User {
   /// E32: the member's extension on the Zadarma PBX ("100"); the calls it reports are filed under the member.
   zadarmaExtension       String?
   phoneCalls             PhoneCall[]
+  aiCallWaves            AiCallWave[]            @relation("AiWaveCreator")
 
   @@unique([workspaceId, zadarmaExtension])
 }
@@ -575,12 +576,12 @@ model AuditLog {
 // ============================================================================================
 
 model Workspace {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
   /// Calls a closer aims at in a day (the ring of « Ma journée »), set by owners and managers in « Mes closers ».
-  dailyCallGoal Int  @default(40)
-  createdAt DateTime @default(now())
+  dailyCallGoal Int      @default(40)
+  createdAt     DateTime @default(now())
 
   users                  User[]
   invitations            Invitation[]
@@ -635,6 +636,9 @@ model Workspace {
   contactCandidates      ContactCandidate[]
   leadBriefs             LeadBrief[]
   phoneCalls             PhoneCall[]
+  aiCallSetting          AiCallSetting?
+  aiCallWaves            AiCallWave[]
+  aiCalls                AiCall[]
 }
 
 enum LeadSource {
@@ -898,6 +902,7 @@ model Lead {
   relevances          LeadRelevance[]
   briefs              LeadBrief[]
   phoneCalls          PhoneCall[]
+  aiCalls             AiCall[]
 
   @@unique([workspaceId, companyId])
   @@index([workspaceId, status])
@@ -2995,4 +3000,114 @@ model LeadBrief {
 
   @@index([leadId, createdAt])
   @@index([meetingId])
+}
+
+// ── E33: the AI calling agent ──────────────────────────────────────────────────────────────────────────────────────
+
+enum AiWaveStatus {
+  RUNNING
+  PAUSED
+  DONE
+  CANCELED
+}
+
+enum AiCallStatus {
+  /// Waiting for the calling hours, the budget and a free line.
+  QUEUED
+  /// Handed to ElevenLabs; the post-call webhook closes it.
+  DIALING
+  DONE
+  FAILED
+  CANCELED
+}
+
+enum AiCallOutcome {
+  MEETING
+  CALLBACK
+  NOT_INTERESTED
+  VOICEMAIL
+  NO_ANSWER
+  DO_NOT_CALL
+  FAILED
+}
+
+/// E33: how the workspace's AI caller works. The ElevenLabs key and webhook secret stay in the environment.
+model AiCallSetting {
+  workspaceId     String    @id
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  /// Off: queued calls wait. The owner's switch, and the pause button.
+  paused          Boolean   @default(false)
+  /// The ElevenLabs agent Cleads created (tools, data collection, overrides allowed) and the number it calls from.
+  agentId         String?
+  phoneNumberId   String?
+  voiceId         String?
+  /// The project lead who receives the meetings, and how ("meet" or "phone").
+  hostId          String?
+  meetingFormat   String    @default("meet")
+  /// The four hooks' texts, by key; a missing key keeps the default (features/ai-caller/rules.ts).
+  hooks           Json?
+  monthlyCapCents Int       @default(6000)
+  updatedAt       DateTime  @updatedAt
+}
+
+/// E33: a batch of fiches handed to the AI caller at once.
+model AiCallWave {
+  id            String       @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name          String
+  /// The member who launched it: the meetings are booked in their name.
+  createdById   String
+  createdBy     User         @relation("AiWaveCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  hostId        String
+  meetingFormat String       @default("meet")
+  /// "auto" (the audit picks) or one hook key for every fiche.
+  hookMode      String       @default("auto")
+  status        AiWaveStatus @default(RUNNING)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  calls         AiCall[]
+
+  @@index([workspaceId, createdAt])
+}
+
+/// E33: one call of the agent to one fiche. A second attempt is a new row.
+model AiCall {
+  id             String         @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  waveId         String
+  wave           AiCallWave     @relation(fields: [waveId], references: [id], onDelete: Cascade)
+  leadId         String
+  lead           Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  /// Canonical (+33…).
+  number         String
+  hook           String
+  attempt        Int            @default(1)
+  status         AiCallStatus   @default(QUEUED)
+  outcome        AiCallOutcome?
+  /// Not dialled before (a second attempt waits a day).
+  notBefore      DateTime       @default(now())
+  /// Secret the agent's tools send back: it names this call and nothing else.
+  token          String         @unique
+  conversationId String?        @unique
+  dispatchedAt   DateTime?
+  startedAt      DateTime?
+  durationSec    Int            @default(0)
+  /// Estimated euros, in micros (rules.ts, EUR_PER_MINUTE).
+  costMicros     Int            @default(0)
+  summary        String?
+  /// [{ role: "agent" | "user", text, at }]
+  transcript     Json?
+  /// What the agent learnt: decision maker, priority, objection, preference.
+  facts          Json?
+  meetingId      String?
+  error          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([workspaceId, status, notBefore])
+  @@index([waveId, status])
+  @@index([leadId, createdAt])
+  @@index([workspaceId, createdAt])
 }
