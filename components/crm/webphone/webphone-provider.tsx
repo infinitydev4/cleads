@@ -72,6 +72,55 @@ function loadLibrary(): Promise<void> {
 const PLACE_TIMEOUT_MS = 15_000
 const NOT_PLACED = "L’appel n’est pas parti : Zadarma ne répond pas. Vérifie ta connexion, puis réessaie."
 
+const KEY_REFUSED = "Zadarma refuse la clé du téléphone web : vérifie que cleads.fr est autorisé dans l’intégration WebRTC de Zadarma."
+
+type Session = { ready: boolean; key?: string; sip?: string; message?: string }
+type Line = { key: string; sip: string }
+
+async function fetchSession(fresh: boolean): Promise<Session | null> {
+  const res = await fetch(`/api/telephony/webphone${fresh ? "?fresh=1" : ""}`, { cache: "no-store" }).catch(() => null)
+  return res ? ((await res.json().catch(() => null)) as Session | null) : null
+}
+
+/**
+ * Whether Zadarma still knows the key for this extension: the question its library asks before every call, then fails in
+ * silence when the answer is no. Zadarma's refusal in its own words, or null (also when it cannot be asked: the call
+ * then goes ahead as before).
+ */
+function keyRefusal({ key, sip }: Line): Promise<string | null> {
+  return new Promise((resolve) => {
+    const callback = `__cleadsZadarma${Math.random().toString(36).slice(2)}`
+    const script = document.createElement("script")
+    const done = (refusal: string | null) => {
+      clearTimeout(timer)
+      delete (window as unknown as Record<string, unknown>)[callback]
+      script.remove()
+      resolve(refusal)
+    }
+    const timer = setTimeout(() => done(null), 8_000)
+    ;(window as unknown as Record<string, unknown>)[callback] = (data: { domain?: string; error?: { content?: string } } | null) =>
+      done(data?.domain ? null : data?.error?.content || "Le widget avec la clé et le numéro SIP n’est pas trouvé.")
+    script.onerror = () => done(null)
+    script.src = `https://api.zadarma.com/sys/webrtc/get_webphone_data.php?integrationType=site&key=${encodeURIComponent(key)}&sipId=${encodeURIComponent(sip)}&language=fr&jsonpCallback=${callback}`
+    document.body.appendChild(script)
+  })
+}
+
+/**
+ * A key Zadarma accepts for the member's extension: the one the page has, or a fresh one from the server when Zadarma
+ * dropped it (a newer key, a change to the WebRTC integration). The reason for the closer when there is none.
+ */
+async function workingLine(line: Line | null): Promise<{ line: Line; renewed: boolean } | { message: string }> {
+  if (line && !(await keyRefusal(line))) return { line, renewed: false }
+  const session = await fetchSession(!!line)
+  if (!session?.ready || !session.key || !session.sip) return { message: session?.message ?? "Le téléphone web ne répond pas : l’appel passe par ton téléphone." }
+  const fresh = { key: session.key, sip: session.sip }
+  const refusal = await keyRefusal(fresh)
+  if (!refusal) return { line: fresh, renewed: true }
+  console.warn("[Cleads téléphone] clé refusée par Zadarma :", refusal)
+  return { message: KEY_REFUSED }
+}
+
 /** Asks for the microphone before dialling, so that a refusal is explained instead of a silent call. */
 async function microphone(): Promise<{ ok: true; label: string | null } | { ok: false }> {
   if (!navigator.mediaDevices?.getUserMedia) return { ok: false }
@@ -93,6 +142,7 @@ async function microphone(): Promise<{ ok: true; label: string | null } | { ok: 
 export function WebphoneProvider({ children }: { children: React.ReactNode }) {
   const [state, send] = useReducer(webphoneReducer, initialWebphone)
   const apiRef = useRef<ZadarmaApi | null>(null)
+  const lineRef = useRef<Line | null>(null)
   const [docked, setDocked] = useState(0)
   const [attempt, setAttempt] = useState(0)
 
@@ -100,8 +150,7 @@ export function WebphoneProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false
     async function start() {
       send({ type: "loading" })
-      const res = await fetch("/api/telephony/webphone", { cache: "no-store" }).catch(() => null)
-      const session = res ? ((await res.json().catch(() => null)) as { ready: boolean; key?: string; sip?: string; message?: string } | null) : null
+      const session = await fetchSession(false)
       if (cancelled) return
       if (!session?.ready || !session.key || !session.sip) return send({ type: "unavailable", message: session?.message ?? "Le téléphone web ne répond pas : l’appel passe par ton téléphone." })
       try {
@@ -111,25 +160,12 @@ export function WebphoneProvider({ children }: { children: React.ReactNode }) {
         return
       }
       if (cancelled || !window.ZadarmaWebphoneAPI) return
+      const checked = await workingLine({ key: session.key, sip: session.sip })
+      if (cancelled) return
+      if (!("line" in checked)) return send({ type: "unavailable", message: checked.message })
       const api = apiRef.current ?? new window.ZadarmaWebphoneAPI()
       apiRef.current = api
-      const result = api.init({
-        type: "site",
-        key: session.key,
-        sip: session.sip,
-        language: "fr",
-        getStatusMessage: (message: string, params?: { caller?: string; callername?: string }) => {
-          // Kept in the console: what the library said is the first thing to read when a closer reports a call problem.
-          // eslint-disable-next-line no-console
-          console.info("[Cleads téléphone]", message, params ?? "")
-          send({ type: "status", message, params, at: Date.now() })
-        },
-        getSipsCallback: () => {},
-        callbackGetPrice: () => {},
-        callbackEndCall: () => send({ type: "end", at: Date.now() }),
-      })
-      if (result === "BROWSER_NOT_SUPPORTED") return
-      api.reg(session.sip)
+      if (open(api, checked.line) === "BROWSER_NOT_SUPPORTED") return
       send({ type: "registered" })
     }
     start()
@@ -137,6 +173,28 @@ export function WebphoneProvider({ children }: { children: React.ReactNode }) {
       cancelled = true
     }
   }, [attempt])
+
+  /** Opens the line with this key; again with a fresh key when Zadarma dropped the old one. */
+  function open(api: ZadarmaApi, line: Line) {
+    lineRef.current = line
+    const result = api.init({
+      type: "site",
+      key: line.key,
+      sip: line.sip,
+      language: "fr",
+      getStatusMessage: (message: string, params?: { caller?: string; callername?: string }) => {
+        // Kept in the console: what the library said is the first thing to read when a closer reports a call problem.
+        // eslint-disable-next-line no-console
+        console.info("[Cleads téléphone]", message, params ?? "")
+        send({ type: "status", message, params, at: Date.now() })
+      },
+      getSipsCallback: () => {},
+      callbackGetPrice: () => {},
+      callbackEndCall: () => send({ type: "end", at: Date.now() }),
+    })
+    if (result !== "BROWSER_NOT_SUPPORTED") api.reg(line.sip)
+    return result
+  }
 
   const dial = useCallback(
     async (target: CallTarget) => {
@@ -149,6 +207,13 @@ export function WebphoneProvider({ children }: { children: React.ReactNode }) {
       }
       send({ type: "device", label: mic.label })
       send({ type: "dial", target })
+      // Zadarma can drop the page's key at any time; its library would then never place the call, and say nothing.
+      const checked = await workingLine(lineRef.current)
+      if (!("line" in checked)) {
+        send({ type: "failed", message: checked.message })
+        return false
+      }
+      if (checked.renewed) open(api, checked.line)
       const number = dialString(target.number)
       // eslint-disable-next-line no-console
       console.info("[Cleads téléphone] appel", number)
