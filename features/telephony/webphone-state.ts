@@ -3,6 +3,8 @@
  * (getStatusMessage) and what the closer does move it from one phase to the next. The provider
  * (components/crm/webphone) only runs it, so the rules are tested without a browser.
  */
+import { normalizePhone } from "@/lib/crm/normalize"
+
 export type WebphonePhase = "off" | "loading" | "ready" | "ringing" | "live" | "incoming"
 
 export interface CallTarget {
@@ -28,12 +30,16 @@ export interface WebphoneState {
   muted: boolean
   held: boolean
   call: CallTarget | null
+  /** Zadarma took the call (its "outgoing" message): until then the line is still connecting, nothing rings. */
+  placed: boolean
+  /** Why the last call never left, in words for the closer, on the fiche it was made from. */
+  failure: { leadId: string | null; message: string } | null
   /** When the other side picked up (ms). */
   since: number | null
   ended: EndedCall | null
 }
 
-export const initialWebphone: WebphoneState = { phase: "off", unavailable: null, micBlocked: false, device: null, muted: false, held: false, call: null, since: null, ended: null }
+export const initialWebphone: WebphoneState = { phase: "off", unavailable: null, micBlocked: false, device: null, muted: false, held: false, call: null, placed: false, failure: null, since: null, ended: null }
 
 export type WebphoneEvent =
   | { type: "loading" }
@@ -46,6 +52,8 @@ export type WebphoneEvent =
   | { type: "status"; message: string; params?: { caller?: string; callername?: string }; at: number }
   /** The library's end-of-call callback, or the closer hanging up. */
   | { type: "end"; at: number }
+  /** The call never reached Zadarma (no answer from the library, a refused number). */
+  | { type: "failed"; message: string }
   | { type: "mute"; on: boolean }
   | { type: "hold"; on: boolean }
   | { type: "dismiss" }
@@ -57,7 +65,7 @@ function finish(s: WebphoneState, at: number): WebphoneState {
   if (s.phase === "incoming" && !s.since) return { ...s, phase: "ready", call: null }
   if (!s.call || (s.phase !== "ringing" && s.phase !== "live")) return s
   const answered = s.phase === "live" && s.since != null
-  return { ...s, phase: "ready", muted: false, held: false, since: null, call: null, ended: { ...s.call, answered, durationSec: answered ? Math.max(0, Math.round((at - (s.since ?? at)) / 1000)) : 0, endedAt: at } }
+  return { ...s, phase: "ready", muted: false, held: false, placed: false, since: null, call: null, ended: { ...s.call, answered, durationSec: answered ? Math.max(0, Math.round((at - (s.since ?? at)) / 1000)) : 0, endedAt: at } }
 }
 
 export function webphoneReducer(s: WebphoneState, e: WebphoneEvent): WebphoneState {
@@ -74,13 +82,15 @@ export function webphoneReducer(s: WebphoneState, e: WebphoneEvent): WebphoneSta
       return { ...s, micBlocked: true, phase: s.phase === "ringing" ? "ready" : s.phase, call: s.phase === "ringing" ? null : s.call }
     case "dial":
       if (s.phase !== "ready") return s
-      return { ...s, phase: "ringing", micBlocked: false, call: e.target, since: null, ended: null, muted: false, held: false }
+      return { ...s, phase: "ringing", micBlocked: false, call: e.target, placed: false, failure: null, since: null, ended: null, muted: false, held: false }
+    case "failed":
+      return s.phase === "ringing" && !s.placed ? { ...s, phase: "ready", call: null, failure: { leadId: s.call?.leadId ?? null, message: e.message } } : s
     case "mute":
       return s.phase === "live" ? { ...s, muted: e.on } : s
     case "hold":
       return s.phase === "live" ? { ...s, held: e.on } : s
     case "dismiss":
-      return { ...s, ended: null }
+      return { ...s, ended: null, failure: null }
     case "end":
       return finish(s, e.at)
     case "status": {
@@ -88,6 +98,7 @@ export function webphoneReducer(s: WebphoneState, e: WebphoneEvent): WebphoneSta
       if (m === "BROWSER_NOT_SUPPORTED") return { ...initialWebphone, unavailable: "Ce navigateur ne permet pas d’appeler : utilise Chrome, Edge ou Firefox à jour." }
       if (m === "noMicrophone") return webphoneReducer(s, { type: "mic_blocked" })
       if (m === "registered") return webphoneReducer(s, { type: "registered" })
+      if (m === "outgoing") return s.phase === "ringing" ? { ...s, placed: true } : s
       if (m === "confirmed" || m === "accepted") return s.phase === "ringing" || s.phase === "incoming" ? { ...s, phase: "live", since: s.since ?? e.at } : s
       if (m === "hold" || m === "unhold") return webphoneReducer(s, { type: "hold", on: m === "hold" })
       if (m === "incoming") {
@@ -101,8 +112,11 @@ export function webphoneReducer(s: WebphoneState, e: WebphoneEvent): WebphoneSta
   }
 }
 
-/** Zadarma dials international numbers without the plus: "+33240…" becomes "33240…". */
-export const dialString = (number: string) => number.replace(/[^\d+*#]/g, "").replace(/^\+/, "")
+/**
+ * Zadarma dials international numbers without the plus: "+33240…" becomes "33240…". Fiches keep the number as it was
+ * typed or imported, so a French "06 12 34 56 78" is put in that form first; Zadarma does not place a "0612…" call.
+ */
+export const dialString = (number: string) => (normalizePhone(number) ?? number).replace(/[^\d+*#]/g, "").replace(/^\+/, "")
 
 /** "02:41", or "1:02:41" past an hour. */
 export function clock(totalSec: number): string {
