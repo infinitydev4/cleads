@@ -18,7 +18,7 @@ export default async function PipelinePage(props: { searchParams: Promise<Record
     <>
       <PageHeader
         title="Pipeline"
-        description="Les opportunités, de la qualification à la signature. Glissez une carte d’une colonne à l’autre, ou utilisez son menu « Déplacer vers » au clavier ou sur mobile. Les gagnées et perdues des 30 derniers jours restent visibles."
+        description="De la qualification à la signature. Glisse une carte d’une colonne à l’autre, ou utilise « Déplacer » au clavier ou sur mobile. Les gagnées et perdues des 30 derniers jours restent visibles."
         breadcrumbs={[{ label: "CRM", href: "/app" }, { label: "Pipeline" }]}
       />
       <PipelineBoard deals={deals} filters={filters} assignees={assignees.map((a) => ({ ...a }))} currentUserId={user.id} canSeeOthers={scopeOf(user.role, "deal:read") === "all"} />

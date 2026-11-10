@@ -13,6 +13,9 @@ import { reportOf } from "@/features/metrics/report"
 import { PeriodNav } from "./period-nav"
 import { PeopleTable } from "./people-table"
 import { WonTable } from "./won-table"
+import { CallsChart } from "./calls-chart"
+import { callsByDay } from "@/features/telephony/stats"
+import { cn } from "@/lib/utils"
 
 export const metadata = { title: "Rapports" }
 export const dynamic = "force-dynamic"
@@ -35,6 +38,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const { user } = await requirePagePermission("report:read")
   const period = parseReportPeriod(await searchParams)
   const report = await reportOf(user, period)
+  const days = await callsByDay(user, period.from, period.to, report.scope)
   const { current, previous } = report.funnel
   const own = report.scope === "own"
   const replyRate = [rate(current.replied, current.contacted), rate(previous.replied, previous.contacted)] as const
@@ -45,21 +49,35 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   return (
     <>
       <PageHeader
-        title="Rapports"
-        description={own ? "Vos chiffres de la période : ce que vous avez contacté, qualifié et signé." : "Ce que l’équipe a contacté, qualifié et signé pendant la période. Chaque chiffre a sa définition au survol ou au clavier."}
+        title={own ? "Mes résultats" : "Rapports"}
+        description={own ? "Ce que tu as appelé, qualifié et signé, comparé à la période précédente." : "Ce que l’équipe a contacté, qualifié et signé pendant la période. Chaque chiffre a sa définition au survol ou au clavier."}
         breadcrumbs={[{ label: "CRM", href: "/app" }, { label: "Rapports" }]}
         actions={<PeriodNav period={period} />}
       />
 
       <div className="space-y-8">
-        <section aria-labelledby="report-funnel" className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
+        <dl aria-label="L’essentiel" className="grid grid-cols-2 gap-3 rounded-3xl bg-sidebar p-5 text-sidebar-foreground shadow-card lg:grid-cols-4">
+          <BandStat label="Fiches contactées" value={formatCount(current.contacted)} delta={formatDeltaPct(deltaPct(current.contacted, previous.contacted))} up={current.contacted >= previous.contacted} />
+          <BandStat label="Taux de réponse" value={formatRate(replyRate[0])} delta={formatDeltaPts(deltaPts(...replyRate))} up={(replyRate[0] ?? 0) >= (replyRate[1] ?? 0)} />
+          <BandStat label="Rendez-vous pris" value={formatCount(current.meetings)} delta={formatDeltaPct(deltaPct(current.meetings, previous.meetings))} up={current.meetings >= previous.meetings} />
+          <BandStat label="Signé" value={report.won.totals.length ? report.won.totals.map((t) => money(t.cents, t.currency)).join(" + ") : "—"} delta={`${formatCount(report.won.rows.length)} vente${report.won.rows.length > 1 ? "s" : ""}`} accent />
+        </dl>
+
+        <section aria-labelledby="report-funnel" className="grid gap-4 lg:grid-cols-2">
           {/* min-w-0: a grid item may otherwise grow to its widest content and push the page sideways on a phone. */}
-          <Card className="min-w-0 space-y-4 p-5">
-            <h2 id="report-funnel" className="font-bold">Entonnoir{own ? " de vos fiches" : ""}</h2>
+          <Card className="min-w-0 space-y-4 rounded-3xl p-6 shadow-card">
+            <h2 id="report-funnel" className="text-base font-extrabold">De la fiche à la signature</h2>
             <FunnelBars steps={STEPS.map((k) => ({ key: k, label: INDICATORS[k].label, count: current[k], definition: INDICATORS[k].definition }))} />
           </Card>
-          <Card className="min-w-0 p-5">
-            <h2 className="font-bold">Par rapport à la période précédente</h2>
+          <Card className="min-w-0 space-y-4 rounded-3xl p-6 shadow-card">
+            <h2 className="text-base font-extrabold">{own ? "Mes appels, jour par jour" : "Les appels de l’équipe, jour par jour"}</h2>
+            <CallsChart days={days} />
+          </Card>
+        </section>
+
+        <section aria-label="Comparaison" className="grid gap-4">
+          <Card className="min-w-0 rounded-3xl p-6 shadow-card">
+            <h2 className="text-base font-extrabold">Par rapport à la période précédente</h2>
             <div className="overflow-x-auto">
               <table className="mt-2 w-full min-w-[22rem] text-sm">
                 <caption className="sr-only">Chaque indicateur sur {period.label} et sur {report.previous.label}</caption>
@@ -87,7 +105,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           <h2 id="report-people" className="text-lg font-bold">{own ? "Vos résultats" : "Par personne"}</h2>
           {(!own || prospectingRows.length > 0) && <PeopleTable kind="prospecting" rows={prospectingRows} />}
           {(!own || conversionRows.length > 0) && <PeopleTable kind="conversion" rows={conversionRows} />}
-          <details className="rounded-xl border bg-card p-4 text-sm">
+          <details className="rounded-3xl border bg-card p-5 text-sm shadow-card">
             <summary className="cursor-pointer font-semibold">Comment ces chiffres sont calculés</summary>
             <dl className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-[12rem_1fr]">
               {[...PROSPECTING_COLUMNS, ...CONVERSION_COLUMNS].map((k) => (
@@ -122,5 +140,15 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         </section>
       </div>
     </>
+  )
+}
+
+function BandStat({ label, value, delta, up = true, accent = false }: { label: string; value: string; delta: string | null; up?: boolean; accent?: boolean }) {
+  return (
+    <div className="min-w-0 rounded-2xl bg-white/5 px-4 py-3.5">
+      <dt className="text-xs font-semibold text-sidebar-foreground/70">{label}</dt>
+      <dd className={cn("mt-1 truncate text-[26px] font-extrabold tabular-nums tracking-[-0.02em]", accent ? "text-primary" : "text-white")}>{value}</dd>
+      {delta && <dd className={cn("text-xs font-bold", accent ? "text-sidebar-foreground/75" : up ? "text-green-300" : "text-red-300")}>{delta}{accent ? "" : " vs précédente"}</dd>}
+    </div>
   )
 }

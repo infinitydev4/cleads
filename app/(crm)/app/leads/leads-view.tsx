@@ -12,6 +12,9 @@ import { FilterBar, type Assignee } from "./filter-bar"
 import { LeadPanel } from "./lead-panel"
 import { LeadsTable } from "./leads-table"
 import { ViewsMenu, type SavedViewDto } from "./views-menu"
+import type { LeadDetail } from "@/features/leads/types"
+import { api } from "./api"
+import { CallFileList, CloserSheet } from "../call-file"
 
 interface Props {
   list: LeadList
@@ -47,6 +50,16 @@ export function LeadsView({ list, filters, assignees, campaigns, views, currentU
   const selected = selection.key === listKey ? selection.ids : EMPTY
   const setSelected = (ids: Set<string>) => setSelection({ key: listKey, ids })
   const [openId, setOpenId] = useState<string | null>(null)
+  // The closer's list (maquette « Mes prospects v2 »): the rows and the fiche of « Ma journée ».
+  const [autoCallId, setAutoCallId] = useState<string | null>(null)
+  const [detail, setDetail] = useState<{ id: string; lead?: LeadDetail; error?: string } | null>(null)
+  useEffect(() => {
+    if (!ownOnly || !openId) return
+    let cancelled = false
+    api<LeadDetail>(`/api/leads/${openId}`).then((lead) => !cancelled && setDetail({ id: openId, lead })).catch((e) => !cancelled && setDetail({ id: openId, error: e.message }))
+    return () => { cancelled = true }
+  }, [ownOnly, openId])
+  const current = detail?.id === openId ? detail : null
   const searchRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -76,6 +89,16 @@ export function LeadsView({ list, filters, assignees, campaigns, views, currentU
 
   return (
     <div className="space-y-4">
+      {ownOnly && focusCounts && (
+        <dl aria-label="Ma base" className="grid grid-cols-2 gap-3 rounded-3xl bg-sidebar p-5 text-sidebar-foreground shadow-card lg:grid-cols-4">
+          {([["À appeler en premier", focusCounts.hot], ["À rappeler", focusCounts.callback], ["Sans site", focusCounts.nosite], ["Jamais contactées", focusCounts.fresh]] as const).map(([label, value]) => (
+            <div key={label} className="rounded-2xl bg-white/5 px-4 py-3.5">
+              <dt className="text-xs font-semibold text-sidebar-foreground/70">{label}</dt>
+              <dd className="mt-1 text-[26px] font-extrabold tabular-nums text-white">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
       <FilterBar filters={filters} assignees={assignees} campaigns={campaigns} canSeeOthers={canAssignOthers} ownOnly={ownOnly} focusCounts={focusCounts} countries={countries} onChange={update} searchRef={searchRef} extra={<ViewsMenu views={views} current={filters} canShare={canShareViews} />} />
 
       <div className="flex items-center justify-between text-sm text-muted-foreground" aria-live="polite">
@@ -91,7 +114,13 @@ export function LeadsView({ list, filters, assignees, campaigns, views, currentU
         />
       ) : (
         <div className={pending ? "opacity-70 transition-opacity" : "transition-opacity"}>
-          <LeadsTable rows={list.rows} selected={selected} onSelect={setSelected} onOpen={setOpenId} activeId={openId} sort={filters.sort} dir={filters.dir} onSort={onSort} showOwner={!ownOnly} />
+          {ownOnly ? (
+            <section aria-label="Mes fiches" className="overflow-hidden rounded-3xl border bg-card shadow-card">
+              <CallFileList rows={list.rows} activeId={openId} onOpen={setOpenId} onCall={(id) => { setAutoCallId(id); setOpenId(id) }} selected={canWrite ? selected : undefined} onSelect={canWrite ? setSelected : undefined} />
+            </section>
+          ) : (
+            <LeadsTable rows={list.rows} selected={selected} onSelect={setSelected} onOpen={setOpenId} activeId={openId} sort={filters.sort} dir={filters.dir} onSort={onSort} showOwner={!ownOnly} />
+          )}
         </div>
       )}
 
@@ -106,7 +135,11 @@ export function LeadsView({ list, filters, assignees, campaigns, views, currentU
       {canWrite && selected.size > 0 && (
         <BulkBar ids={[...selected]} assignees={assignees} campaigns={campaigns} currentUserId={currentUserId} canAssignOthers={canAssignOthers} canSequence={canSequence} canCampaign={canCampaign} onDone={() => setSelected(new Set())} />
       )}
-      <LeadPanel id={openId} assignees={assignees} currentUserId={currentUserId} onClose={() => setOpenId(null)} />
+      {ownOnly ? (
+        <CloserSheet openId={openId} lead={current?.lead ?? null} error={current?.error ?? null} currentUserId={currentUserId} autoCall={!!autoCallId && autoCallId === openId} onChange={(lead) => { setDetail({ id: lead.id, lead }); router.refresh() }} onClose={() => { setOpenId(null); setAutoCallId(null) }} />
+      ) : (
+        <LeadPanel id={openId} assignees={assignees} currentUserId={currentUserId} onClose={() => setOpenId(null)} />
+      )}
     </div>
   )
 }

@@ -21,7 +21,7 @@ export default async function MailboxPage() {
     <>
       <PageHeader
         title="Emails"
-        description={`${team ? "Les emails de prospection de l’équipe" : "Vos emails de prospection"}, et les modèles pour les écrire. On écrit à un prospect depuis sa fiche.`}
+        description={`${team ? "Les emails de prospection de l’équipe" : "Tes échanges avec les prospects"}. Les réponses d’abord : ce sont des rendez-vous à prendre. On écrit à un prospect depuis sa fiche.`}
         breadcrumbs={[{ label: "CRM", href: "/app" }, { label: "Emails" }]}
         actions={can(user.role, "mailbox:manage") && <Button asChild variant="outline"><Link href="/app/settings/mailboxes">Boîtes d’envoi</Link></Button>}
       />

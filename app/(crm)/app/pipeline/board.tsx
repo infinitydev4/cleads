@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { StatusBadge } from "@/components/crm/status-badge"
 import { dealStage } from "@/lib/crm/status"
 import { ago, euros, formatDate, formatDateTime } from "@/lib/crm/format"
 import { cn } from "@/lib/utils"
@@ -18,7 +17,9 @@ import type { BoardDeal } from "@/features/pipeline/service"
 import type { DealStage } from "@prisma/client"
 import { api } from "../leads/api"
 import { personName, type Assignee } from "../leads/filter-bar"
-import { LeadPanel } from "../leads/lead-panel"
+import type { LeadDetail } from "@/features/leads/types"
+import { CloserSheet } from "../call-file"
+import { initialsOf } from "../closer-fiche"
 import { LostDialog } from "../leads/lost-dialog"
 import { WonDialog } from "../leads/won-dialog"
 
@@ -43,6 +44,14 @@ export function PipelineBoard({ deals: initial, filters, assignees, currentUserI
   const [losing, setLosing] = useState<BoardDeal | null>(null)
   const [winning, setWinning] = useState<BoardDeal | null>(null)
   const [q, setQ] = useState(filters.q ?? "")
+  const [detail, setDetail] = useState<{ id: string; lead?: LeadDetail; error?: string } | null>(null)
+  useEffect(() => {
+    if (!openLead) return
+    let cancelled = false
+    api<LeadDetail>(`/api/leads/${openLead}`).then((lead) => !cancelled && setDetail({ id: openLead, lead })).catch((e) => !cancelled && setDetail({ id: openLead, error: e.message }))
+    return () => { cancelled = true }
+  }, [openLead])
+  const current = detail?.id === openLead ? detail : null
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor))
 
   // The server is the source of truth: take its list again after any refresh.
@@ -97,11 +106,12 @@ export function PipelineBoard({ deals: initial, filters, assignees, currentUserI
   const onDragStart = (event: DragStartEvent) => setDragging(deals.find((d) => d.id === event.active.id) ?? null)
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher une entreprise…" aria-label="Rechercher une opportunité" className="max-w-xs" />
+    <div className="space-y-5">
+      <Summary deals={deals} />
+      <div className="flex flex-wrap items-center gap-2.5">
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher une entreprise…" aria-label="Rechercher une opportunité" className="h-12 max-w-sm rounded-2xl bg-card" />
         <Select value={filters.owner ?? ANY} onValueChange={(v) => setFilter({ owner: v === ANY ? undefined : v })}>
-          <SelectTrigger className="w-52" aria-label="Responsable"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="h-12 w-56 rounded-2xl bg-card font-semibold" aria-label="Responsable"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value={ANY}>Toutes les opportunités</SelectItem>
             <SelectItem value="me">Mes opportunités</SelectItem>
@@ -113,7 +123,7 @@ export function PipelineBoard({ deals: initial, filters, assignees, currentUserI
 
       <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragging(null)}>
         <div className="-mx-4 overflow-x-auto px-4 pb-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-          <div className="grid min-w-[1180px] grid-cols-6 gap-3">
+          <div className="grid min-w-[1320px] grid-cols-6 gap-3.5">
             {STAGES.map((stage) => (
               <Column key={stage} stage={stage} deals={byStage[stage]} onOpen={setOpenLead} onMove={move} activeStage={dragging?.stage} />
             ))}
@@ -144,8 +154,36 @@ export function PipelineBoard({ deals: initial, filters, assignees, currentUserI
           void move(deal, "WON", { amountCents })
         }}
       />
-      <LeadPanel id={openLead} assignees={assignees} currentUserId={currentUserId} onClose={() => { setOpenLead(null); router.refresh() }} />
+      <CloserSheet openId={openLead} lead={current?.lead ?? null} error={current?.error ?? null} currentUserId={currentUserId} onChange={(lead) => setDetail({ id: lead.id, lead })} onClose={() => { setOpenLead(null); router.refresh() }} />
     </div>
+  )
+}
+
+const STAGE_DOT: Record<DealStage, string> = { QUALIFIED: "bg-info", MEETING_SET: "bg-warning", PROPOSAL: "bg-violet-600", NEGOTIATION: "bg-cyan-700", WON: "bg-success", LOST: "bg-destructive" }
+
+/** The team's pipeline at a glance, from the cards shown (maquette « Pipeline v2 »). */
+function Summary({ deals }: { deals: BoardDeal[] }) {
+  const open = deals.filter((d) => d.stage !== "WON" && d.stage !== "LOST")
+  const won = deals.filter((d) => d.stage === "WON")
+  const sum = (list: BoardDeal[]) => list.reduce((t, d) => t + (d.amountCents ?? 0), 0)
+  const late = open.filter((d) => d.expectedCloseAt && new Date(d.expectedCloseAt) < new Date()).length
+  const decided = won.length + deals.filter((d) => d.stage === "LOST").length
+  const items: [string, string, string, boolean][] = [
+    ["En cours", euros(sum(open)), `${open.length} opportunité${open.length > 1 ? "s" : ""}`, false],
+    ["Gagné · 30 jours", euros(sum(won)), `${won.length} signature${won.length > 1 ? "s" : ""}`, true],
+    ["Taux de signature", decided ? `${Math.round((won.length / decided) * 100)} %` : "—", "gagnées sur décidées, 30 j", false],
+    ["Signatures en retard", String(late), late ? "date de signature passée" : "rien en retard", false],
+  ]
+  return (
+    <dl aria-label="Mon pipeline" className="grid grid-cols-2 gap-3 rounded-3xl bg-sidebar p-5 text-sidebar-foreground shadow-card lg:grid-cols-4">
+      {items.map(([label, value, hint, accent]) => (
+        <div key={label} className="rounded-2xl bg-white/5 px-4 py-3.5">
+          <dt className="text-xs font-semibold text-sidebar-foreground/70">{label}</dt>
+          <dd className={cn("mt-1 text-[24px] font-extrabold tabular-nums tracking-[-0.02em]", accent ? "text-primary" : "text-white")}>{value}</dd>
+          <dd className="text-xs text-sidebar-foreground/70">{hint}</dd>
+        </div>
+      ))}
+    </dl>
   )
 }
 
@@ -155,20 +193,18 @@ function Column({ stage, deals, onOpen, onMove, activeStage }: { stage: DealStag
   const total = withAmount.reduce((s, d) => s + (d.amountCents ?? 0), 0)
   const closed = stage === "WON" || stage === "LOST"
   return (
-    <section ref={setNodeRef} aria-label={`Colonne ${dealStage[stage].label}`} className={cn("flex min-h-[420px] flex-col rounded-2xl border bg-muted/40 p-2 transition-colors", isOver && activeStage !== stage && "border-foreground bg-accent/60")}>
-      <header className="space-y-0.5 px-2 pb-2 pt-1">
-        <div className="flex items-center justify-between">
-          <StatusBadge map={dealStage} value={stage} />
-          <span className="text-sm font-semibold tabular-nums" aria-label={`${deals.length} opportunité${deals.length > 1 ? "s" : ""}`}>{deals.length}</span>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          {deals.length === 0 ? "—" : withAmount.length === 0 ? "Aucun montant" : `${euros(total)}${withAmount.length < deals.length ? ` · ${withAmount.length}/${deals.length} montants` : ""}`}
-          {closed && " · 30 j"}
-        </p>
+    <section ref={setNodeRef} aria-label={`Colonne ${dealStage[stage].label}`} className={cn("flex min-h-[440px] flex-col rounded-3xl border border-transparent bg-secondary/70 p-3 transition-colors", isOver && activeStage !== stage && "border-sidebar bg-accent")}>
+      <header className="space-y-1 px-1.5 pb-3 pt-1">
+        <span className="flex min-w-0 items-center gap-2">
+          <span aria-hidden="true" className={cn("h-2.5 w-2.5 shrink-0 rounded-full", STAGE_DOT[stage])} />
+          <span className="truncate text-sm font-extrabold">{dealStage[stage].label}</span>
+          <span className="ml-auto rounded-full bg-card px-2 text-xs font-bold tabular-nums text-foreground/80" aria-label={`${deals.length} opportunité${deals.length > 1 ? "s" : ""}`}>{deals.length}</span>
+        </span>
+        <span className="block pl-[18px] text-xs font-bold tabular-nums text-muted-foreground">{withAmount.length ? euros(total) : "—"}{closed && " · 30 jours"}</span>
       </header>
-      <ul className="flex flex-1 flex-col gap-2">
+      <ul className="flex flex-1 flex-col gap-2.5">
         {deals.map((d) => <DraggableCard key={d.id} deal={d} onOpen={onOpen} onMove={onMove} />)}
-        {deals.length === 0 && <li className="rounded-xl border border-dashed p-4 text-center text-xs text-muted-foreground">Déposez une carte ici</li>}
+        {deals.length === 0 && <li className="rounded-2xl border-2 border-dashed border-border p-5 text-center text-xs font-semibold text-muted-foreground">Dépose une carte ici</li>}
       </ul>
     </section>
   )
@@ -203,21 +239,31 @@ function DraggableCard({ deal, onOpen, onMove }: { deal: BoardDeal; onOpen: (lea
 }
 
 function CardBody({ deal, onOpen, overlay }: { deal: BoardDeal; onOpen?: () => void; overlay?: boolean }) {
-  const late = deal.expectedCloseAt && new Date(deal.expectedCloseAt) < new Date() && deal.stage !== "WON" && deal.stage !== "LOST"
+  const closed = deal.stage === "WON" || deal.stage === "LOST"
+  const late = !!deal.expectedCloseAt && new Date(deal.expectedCloseAt) < new Date() && !closed
+  const next = deal.stage === "LOST"
+    ? { text: deal.lostReason ?? "Perdue", tone: "bg-destructive-subtle text-destructive-text" }
+    : deal.stage === "WON"
+      ? { text: "Signée", tone: "bg-success-subtle text-success" }
+      : deal.nextMeetingAt
+        ? { text: `RDV ${formatDateTime(deal.nextMeetingAt)}`, tone: "bg-info-subtle text-info" }
+        : late
+          ? { text: `Signature prévue le ${formatDate(deal.expectedCloseAt!)}`, tone: "bg-destructive-subtle text-destructive-text" }
+          : deal.expectedCloseAt
+            ? { text: `Signature ${formatDate(deal.expectedCloseAt)}`, tone: "bg-secondary text-secondary-foreground" }
+            : { text: "Planifier la suite", tone: "bg-warning-subtle text-warning" }
   return (
-    <div className={cn("space-y-1.5 rounded-xl border bg-card p-3 pb-9 text-sm shadow-card", overlay && "rotate-2 shadow-pop")}>
-      <button onClick={onOpen} className="block w-full pr-6 text-left font-semibold leading-snug hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        {deal.name}
+    <div className={cn("space-y-3 rounded-2xl border bg-card p-3.5 pb-10 text-sm shadow-card", overlay && "rotate-2 shadow-pop")}>
+      <button onClick={onOpen} className="flex w-full items-center gap-2.5 pr-6 text-left focus-visible:rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <span aria-hidden="true" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-secondary text-xs font-extrabold text-secondary-foreground">{initialsOf(deal.name)}</span>
+        <span className="min-w-0">
+          <span className="block truncate font-bold leading-snug hover:underline">{deal.name}</span>
+          <span className="block truncate text-xs text-muted-foreground">{[deal.city, deal.contactName].filter(Boolean).join(" · ") || "—"}</span>
+        </span>
       </button>
-      <p className="text-xs text-muted-foreground">{[deal.city, deal.contactName].filter(Boolean).join(" · ") || "—"}</p>
-      <p className="font-semibold tabular-nums">{deal.amountCents != null ? euros(deal.amountCents) : <span className="font-normal text-muted-foreground">Montant non renseigné</span>}</p>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-        <span>{deal.ownerName ?? <span className="italic">À attribuer</span>}</span>
-        {deal.nextMeetingAt && <span className="inline-flex items-center gap-1"><CalendarClock className="h-3 w-3" aria-hidden="true" /><span className="capitalize">{formatDateTime(deal.nextMeetingAt)}</span></span>}
-        {deal.expectedCloseAt && <span className={cn(late && "font-semibold text-destructive-text")}>Signature {formatDate(deal.expectedCloseAt)}</span>}
-      </div>
-      {deal.stage === "LOST" && deal.lostReason && <p className="text-xs text-destructive-text">{deal.lostReason}</p>}
-      <p className="text-[11px] text-muted-foreground">Mis à jour {ago(deal.updatedAt)}</p>
+      <p className="text-lg font-extrabold tabular-nums tracking-[-0.02em]">{deal.amountCents != null ? euros(deal.amountCents) : <span className="text-sm font-semibold text-muted-foreground">Montant à préciser</span>}</p>
+      <p className={cn("inline-flex max-w-full items-center gap-1 truncate rounded-full px-2.5 py-1 text-xs font-bold", next.tone)}>{deal.nextMeetingAt && !closed && <CalendarClock className="h-3 w-3 shrink-0" aria-hidden="true" />}<span className="truncate first-letter:uppercase">{next.text}</span></p>
+      <p className="flex justify-between gap-2 text-[11px] text-muted-foreground"><span>{deal.ownerName ?? <span className="italic">À attribuer</span>}</span><span>{ago(deal.updatedAt)}</span></p>
     </div>
   )
 }
