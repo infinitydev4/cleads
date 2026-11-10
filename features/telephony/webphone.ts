@@ -18,6 +18,20 @@ export type WebphoneSession = { ready: true; key: string; sip: string } | { read
  */
 const KEY_TTL_MS = 24 * 3600_000
 const keys = new Map<string, { key: string; until: number }>()
+let pbx: string | null = null
+
+/**
+ * The extension as Zadarma's WebRTC widget knows it: "479288-100", the PBX number then the extension. Équipe stores
+ * "100", as the PBX statistics and webhooks spell it; a key asked for "100" alone is never recognised by the widget.
+ */
+async function fullExtension(extension: string): Promise<string> {
+  if (!pbx) {
+    const body = JSON.parse(await zadarmaGet("/v1/pbx/internal/")) as { pbx_id?: unknown }
+    if (body.pbx_id == null || !/^\d+$/.test(String(body.pbx_id))) throw new ZadarmaError("refused", "Zadarma n’a pas donné le numéro du standard.")
+    pbx = String(body.pbx_id)
+  }
+  return `${pbx}-${extension}`
+}
 
 /**
  * What the browser needs to register the member's extension (E32 lot 2): a WebRTC key valid for that extension only.
@@ -27,12 +41,12 @@ export async function webphoneSession(user: CurrentUser, now = Date.now(), { fre
   const unavailable = (reason: WebphoneUnavailable): WebphoneSession => ({ ready: false, reason, message: WEBPHONE_UNAVAILABLE[reason] })
   if (!zadarmaConfigured()) return unavailable("not_configured")
   const me = await prisma.user.findFirst({ where: { id: user.id, workspaceId: user.workspaceId }, select: { zadarmaExtension: true } })
-  const sip = me?.zadarmaExtension
-  if (!sip) return unavailable("no_extension")
+  if (!me?.zadarmaExtension) return unavailable("no_extension")
 
-  const cached = fresh ? null : keys.get(sip)
-  if (cached && cached.until > now) return { ready: true, key: cached.key, sip }
   try {
+    const sip = await fullExtension(me.zadarmaExtension)
+    const cached = fresh ? null : keys.get(sip)
+    if (cached && cached.until > now) return { ready: true, key: cached.key, sip }
     const body = JSON.parse(await zadarmaGet("/v1/webrtc/get_key/", { sip })) as { key?: unknown }
     if (typeof body.key !== "string" || !body.key) return unavailable("refused")
     keys.set(sip, { key: body.key, until: now + KEY_TTL_MS })
@@ -43,4 +57,7 @@ export async function webphoneSession(user: CurrentUser, now = Date.now(), { fre
   }
 }
 
-export const forgetWebphoneKeys = () => keys.clear()
+export const forgetWebphoneKeys = () => {
+  keys.clear()
+  pbx = null
+}

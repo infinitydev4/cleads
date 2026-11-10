@@ -65,7 +65,7 @@ Le closer appelle directement dans la fiche, sans application à installer : son
 
 | Quoi | Où |
 |---|---|
-| Ouvrir la ligne du closer dans le navigateur (clé WebRTC de son poste, valable 72 h, redemandée chaque jour) | `GET /api/telephony/webphone`, `features/telephony/webphone.ts` |
+| Ouvrir la ligne du closer dans le navigateur (clé WebRTC de son poste complet `479288-100`, valable 72 h, redemandée chaque jour ou dès que Zadarma la refuse) | `GET /api/telephony/webphone`, `features/telephony/webphone.ts` |
 | Le téléphone : appeler, sonnerie, en ligne, couper le micro, attente, clavier, raccrocher ; appel entrant : décrocher ou refuser | `components/crm/webphone/webphone-provider.tsx`, monté dans la mise en page du CRM : l'appel continue quand on change de page |
 | Les états du téléphone, testés sans navigateur | `features/telephony/webphone-state.ts` |
 | Dans la fiche : bouton « Appeler », carte d'appel, puis résultat, note et relance en un écran | `app/(crm)/app/call-panel.tsx` |
