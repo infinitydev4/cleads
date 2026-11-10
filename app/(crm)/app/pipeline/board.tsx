@@ -194,13 +194,13 @@ function Column({ stage, deals, onOpen, onMove, activeStage }: { stage: DealStag
   const closed = stage === "WON" || stage === "LOST"
   return (
     <section ref={setNodeRef} aria-label={`Colonne ${dealStage[stage].label}`} className={cn("flex min-h-[440px] flex-col rounded-3xl border border-transparent bg-secondary/70 p-3 transition-colors", isOver && activeStage !== stage && "border-sidebar bg-accent")}>
-      <header className="flex items-center justify-between gap-2 px-1.5 pb-3 pt-1">
+      <header className="space-y-1 px-1.5 pb-3 pt-1">
         <span className="flex min-w-0 items-center gap-2">
           <span aria-hidden="true" className={cn("h-2.5 w-2.5 shrink-0 rounded-full", STAGE_DOT[stage])} />
           <span className="truncate text-sm font-extrabold">{dealStage[stage].label}</span>
-          <span className="rounded-full bg-card px-2 text-xs font-bold tabular-nums text-foreground/80" aria-label={`${deals.length} opportunité${deals.length > 1 ? "s" : ""}`}>{deals.length}</span>
+          <span className="ml-auto rounded-full bg-card px-2 text-xs font-bold tabular-nums text-foreground/80" aria-label={`${deals.length} opportunité${deals.length > 1 ? "s" : ""}`}>{deals.length}</span>
         </span>
-        <span className="shrink-0 text-xs font-bold tabular-nums text-muted-foreground">{withAmount.length ? euros(total) : "—"}{closed && " · 30 j"}</span>
+        <span className="block pl-[18px] text-xs font-bold tabular-nums text-muted-foreground">{withAmount.length ? euros(total) : "—"}{closed && " · 30 jours"}</span>
       </header>
       <ul className="flex flex-1 flex-col gap-2.5">
         {deals.map((d) => <DraggableCard key={d.id} deal={d} onOpen={onOpen} onMove={onMove} />)}

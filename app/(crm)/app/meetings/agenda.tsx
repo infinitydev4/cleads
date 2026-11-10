@@ -144,7 +144,7 @@ export function Agenda({ hosts, initialToClose, currentUserId, canFilterHosts, c
       )}
 
       <div className="flex flex-wrap items-start gap-5">
-        <section aria-label="Semaine" className="min-w-0 flex-[999_1_640px] space-y-4 rounded-3xl border bg-card p-5 shadow-card">
+        <section aria-label="Semaine" className="min-w-0 flex-[999_1_1000px] space-y-4 rounded-3xl border bg-card p-5 shadow-card">
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1.5" role="group" aria-label="Semaine">
               <Button variant="outline" size="icon" className="h-11 w-11 rounded-xl" onClick={() => setMonday(addDays(monday, -7))} aria-label="Semaine précédente"><ChevronLeft className="h-4 w-4" /></Button>
@@ -208,7 +208,7 @@ export function Agenda({ hosts, initialToClose, currentUserId, canFilterHosts, c
         </section>
 
         {canManageAvailability && (
-          <aside aria-label="Mes disponibilités" className="flex-[1_1_280px] space-y-3 rounded-3xl border bg-card p-5 shadow-card">
+          <aside aria-label="Mes disponibilités" className="flex-[1_1_280px] space-y-3 2xl:max-w-sm rounded-3xl border bg-card p-5 shadow-card">
             <h2 className="text-base font-extrabold">Mes disponibilités</h2>
             <p className="text-sm text-muted-foreground">{availability?.enabled ? "Ce que les prospects peuvent réserver depuis ton lien." : "Ta page de réservation n’est pas encore ouverte."}</p>
             <dl className="divide-y text-sm">

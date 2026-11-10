@@ -27,7 +27,7 @@ export function CallsChart({ days }: { days: CallDay[] }) {
         ))}
       </div>
       <div className="flex gap-1.5" aria-hidden="true">
-        {days.map((d) => <span key={d.day} className="min-w-0 flex-1 truncate text-center text-[11px] text-muted-foreground">{label(d.day)}</span>)}
+        {days.map((d, i) => <span key={d.day} className="min-w-0 flex-1 text-center text-[11px] text-muted-foreground">{days.length <= 14 || i % 5 === 0 ? label(d.day) : ""}</span>)}
       </div>
       <p className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
         <span><span aria-hidden="true" className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-sidebar" />{total} appels</span>
