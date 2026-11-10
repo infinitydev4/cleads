@@ -100,3 +100,35 @@ export async function callBoard(user: CurrentUser, now = new Date()): Promise<Ca
   }))
   return { periods, recent }
 }
+
+export interface CallDay {
+  day: string
+  calls: number
+  answered: number
+  talkSec: number
+}
+
+/**
+ * Calls day by day over a report's period (maquette « Mes résultats »): the CALL activities, the member's own or the
+ * team's. Picked up means the closer said « Joint » or the PBX said answered; talk time comes from the PBX.
+ */
+export async function callsByDay(user: CurrentUser, from: Date, to: Date, scope: "own" | "all"): Promise<CallDay[]> {
+  const rows = await prisma.activity.findMany({
+    where: { workspaceId: user.workspaceId, kind: "CALL", occurredAt: { gte: from, lt: to }, ...(scope === "own" ? { actorId: user.id } : {}) },
+    select: { occurredAt: true, data: true },
+  })
+  const days = new Map<string, CallDay>()
+  for (let key = dayKey(from); startOfDay(key) < to; key = addDays(key, 1)) days.set(key, { day: key, calls: 0, answered: 0, talkSec: 0 })
+  for (const r of rows) {
+    const d = (r.data ?? {}) as { outcome?: unknown; disposition?: unknown; durationSec?: unknown }
+    const slot = days.get(dayKey(r.occurredAt))
+    if (!slot) continue
+    slot.calls += 1
+    const picked = d.outcome === "reached" || (typeof d.disposition === "string" && answered(d.disposition))
+    if (picked) {
+      slot.answered += 1
+      slot.talkSec += typeof d.durationSec === "number" ? d.durationSec : 0
+    }
+  }
+  return [...days.values()]
+}
