@@ -12,7 +12,10 @@ export type WebphoneUnavailable = keyof typeof WEBPHONE_UNAVAILABLE
 
 export type WebphoneSession = { ready: true; key: string; sip: string } | { ready: false; reason: WebphoneUnavailable; message: string }
 
-/** Zadarma's WebRTC keys last 72 hours: one is reused for a day, per extension and per server instance. */
+/**
+ * Zadarma's WebRTC keys last 72 hours: one is reused for a day, per extension and per server instance. Zadarma can drop a
+ * key sooner (a newer key, a change to the WebRTC integration): the browser then asks for a fresh one.
+ */
 const KEY_TTL_MS = 24 * 3600_000
 const keys = new Map<string, { key: string; until: number }>()
 
@@ -20,14 +23,14 @@ const keys = new Map<string, { key: string; until: number }>()
  * What the browser needs to register the member's extension (E32 lot 2): a WebRTC key valid for that extension only.
  * The key lets its holder call from the extension, so it is handed to the member who has it and to no one else.
  */
-export async function webphoneSession(user: CurrentUser, now = Date.now()): Promise<WebphoneSession> {
+export async function webphoneSession(user: CurrentUser, now = Date.now(), { fresh = false } = {}): Promise<WebphoneSession> {
   const unavailable = (reason: WebphoneUnavailable): WebphoneSession => ({ ready: false, reason, message: WEBPHONE_UNAVAILABLE[reason] })
   if (!zadarmaConfigured()) return unavailable("not_configured")
   const me = await prisma.user.findFirst({ where: { id: user.id, workspaceId: user.workspaceId }, select: { zadarmaExtension: true } })
   const sip = me?.zadarmaExtension
   if (!sip) return unavailable("no_extension")
 
-  const cached = keys.get(sip)
+  const cached = fresh ? null : keys.get(sip)
   if (cached && cached.until > now) return { ready: true, key: cached.key, sip }
   try {
     const body = JSON.parse(await zadarmaGet("/v1/webrtc/get_key/", { sip })) as { key?: unknown }
