@@ -66,21 +66,27 @@ suite("phone in the browser and calls board (database)", () => {
       expect(await webphone.webphoneSession(u.sdr)).toMatchObject({ ready: false, reason: "no_extension", message: expect.stringContaining("Réglages › Équipe") })
     })
 
-    it("asks Zadarma for the key of the member's own extension, once a day", async () => {
+    it("asks Zadarma for the key of the member's full extension, once a day", async () => {
       keys()
-      const fetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ status: "success", key: "webrtc-key-1" })))
+      let n = 0
+      const fetch = vi.fn(async (url: string, _init?: RequestInit) =>
+        new Response(JSON.stringify(String(url).includes("/v1/pbx/internal/") ? { status: "success", pbx_id: 479288, numbers: [100] } : { status: "success", key: `webrtc-key-${++n}` }))
+      )
+      const keyCalls = () => fetch.mock.calls.filter(([url]) => String(url).includes("get_key")).length
       vi.stubGlobal("fetch", fetch)
-      expect(await webphone.webphoneSession(u.closer, NOW.getTime())).toEqual({ ready: true, key: "webrtc-key-1", sip: "100" })
-      expect(String(fetch.mock.calls[0][0])).toBe("https://api.zadarma.com/v1/webrtc/get_key/?sip=100")
+      // Équipe says "100"; the widget only knows the extension with its PBX number.
+      expect(await webphone.webphoneSession(u.closer, NOW.getTime())).toEqual({ ready: true, key: "webrtc-key-1", sip: "479288-100" })
+      expect(fetch.mock.calls.map(([url]) => String(url))).toEqual(["https://api.zadarma.com/v1/pbx/internal/", "https://api.zadarma.com/v1/webrtc/get_key/?sip=479288-100"])
       await webphone.webphoneSession(u.closer, NOW.getTime() + 3_600_000)
-      expect(fetch).toHaveBeenCalledTimes(1)
-      await webphone.webphoneSession(u.closer, NOW.getTime() + 25 * 3_600_000)
       expect(fetch).toHaveBeenCalledTimes(2)
+      await webphone.webphoneSession(u.closer, NOW.getTime() + 25 * 3_600_000)
+      expect(keyCalls()).toBe(2)
       // The browser found the key refused: a fresh one, kept for the next pages.
-      fetch.mockImplementationOnce(async () => new Response(JSON.stringify({ status: "success", key: "webrtc-key-2" })))
-      expect(await webphone.webphoneSession(u.closer, NOW.getTime() + 26 * 3_600_000, { fresh: true })).toMatchObject({ key: "webrtc-key-2" })
-      expect(await webphone.webphoneSession(u.closer, NOW.getTime() + 27 * 3_600_000)).toMatchObject({ key: "webrtc-key-2" })
-      expect(fetch).toHaveBeenCalledTimes(3)
+      expect(await webphone.webphoneSession(u.closer, NOW.getTime() + 26 * 3_600_000, { fresh: true })).toMatchObject({ key: "webrtc-key-3" })
+      expect(await webphone.webphoneSession(u.closer, NOW.getTime() + 27 * 3_600_000)).toMatchObject({ key: "webrtc-key-3" })
+      expect(keyCalls()).toBe(3)
+      // The PBX number is asked once per server instance.
+      expect(fetch.mock.calls.filter(([url]) => String(url).includes("/v1/pbx/internal/")).length).toBe(1)
     })
 
     it("explains a refusal from Zadarma", async () => {
