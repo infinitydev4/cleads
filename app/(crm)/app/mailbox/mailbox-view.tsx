@@ -49,31 +49,41 @@ interface Props {
   canUseAi: boolean
 }
 
+const TAB = "min-h-10 rounded-full px-4 text-sm font-bold data-[state=active]:bg-sidebar data-[state=active]:text-sidebar-foreground data-[state=active]:shadow-none"
+
+function BandStat({ label, value, hint, accent = false }: { label: string; value: string; hint?: string; accent?: boolean }) {
+  return (
+    <div className="min-w-0 rounded-2xl bg-white/5 px-4 py-3.5">
+      <dt className="text-xs font-semibold text-sidebar-foreground/70">{label}</dt>
+      <dd className={cn("mt-1 text-[24px] font-extrabold tabular-nums", accent ? "text-primary" : "text-white")}>{value}</dd>
+      {hint && <dd className="truncate text-xs text-sidebar-foreground/70" title={hint}>{hint}</dd>}
+    </div>
+  )
+}
+
+function Initials({ name, strong = false }: { name: string; strong?: boolean }) {
+  const text = name.replace(/@.*/, "").replace(/\(.*?\)/g, "").split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?"
+  return <span aria-hidden="true" className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl text-[13px] font-extrabold", strong ? "bg-sidebar text-primary" : "bg-secondary text-secondary-foreground")}>{text}</span>
+}
+
 export function MailboxView({ initialEmails, initialReplies, health, mailboxes, initialTemplates, canManageTemplates, showSender, canUseAi }: Props) {
   const [templates, setTemplates] = useState(initialTemplates)
   const [unread, setUnread] = useState(initialReplies.unread)
   return (
     <div className="space-y-6">
-      {mailboxes.length > 0 && (
-        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-label="Boîtes d’envoi">
-          {mailboxes.map((m) => (
-            <li key={m.id}>
-              <Card className="space-y-1 p-4">
-                <p className="truncate font-semibold" title={m.address}>{m.address}</p>
-                <p className="text-sm"><span className="text-2xl font-extrabold tracking-tight">{m.sentToday}</span> / {m.allowanceToday} aujourd’hui</p>
-                <p className="text-xs text-muted-foreground">{m.status === "ACTIVE" ? (m.ownerName ? `Boîte de ${m.ownerName}` : "Partagée") : m.status === "PAUSED" ? "En pause" : "En erreur : envoi impossible"}</p>
-              </Card>
-            </li>
-          ))}
-        </ul>
-      )}
+      <dl aria-label="Ma boîte" className="grid grid-cols-2 gap-3 rounded-3xl bg-sidebar p-5 text-sidebar-foreground shadow-card lg:grid-cols-4">
+        <BandStat label="Réponses non lues" value={String(unread)} accent={unread > 0} />
+        <BandStat label="Envoyés aujourd’hui" value={mailboxes.length ? `${mailboxes.reduce((t, m) => t + m.sentToday, 0)} / ${mailboxes.reduce((t, m) => t + m.allowanceToday, 0)}` : "—"} />
+        <BandStat label="Boîtes d’envoi" value={String(mailboxes.filter((m) => m.status === "ACTIVE").length)} hint={mailboxes.length ? mailboxes.map((m) => m.address).join(" · ") : "Aucune boîte : demande au propriétaire"} />
+        <BandStat label="Modèles" value={String(templates.length)} />
+      </dl>
 
-      <Tabs defaultValue={initialReplies.unread > 0 ? "replies" : "sent"}>
-        <TabsList>
-          <TabsTrigger value="sent">Envoyés</TabsTrigger>
-          <TabsTrigger value="replies">Réponses{unread > 0 ? ` (${unread})` : ""}</TabsTrigger>
-          <TabsTrigger value="health">Délivrabilité</TabsTrigger>
-          <TabsTrigger value="templates">Modèles ({templates.length})</TabsTrigger>
+      <Tabs defaultValue={initialReplies.items.length > 0 || initialEmails.items.length === 0 ? "replies" : "sent"}>
+        <TabsList className="h-auto gap-1 rounded-full border bg-card p-1">
+          <TabsTrigger value="replies" className={TAB}>Réponses{unread > 0 ? <span className="ml-1.5 rounded-full bg-primary px-1.5 text-[11px] font-extrabold text-primary-foreground">{unread}</span> : null}</TabsTrigger>
+          <TabsTrigger value="sent" className={TAB}>Envoyés</TabsTrigger>
+          <TabsTrigger value="templates" className={TAB}>Modèles ({templates.length})</TabsTrigger>
+          {showSender && <TabsTrigger value="health" className={TAB}>Délivrabilité</TabsTrigger>}
         </TabsList>
         <TabsContent value="sent" className="mt-4">
           <SentList initial={initialEmails} showSender={showSender} hasMailbox={mailboxes.length > 0} />
@@ -81,9 +91,11 @@ export function MailboxView({ initialEmails, initialReplies, health, mailboxes, 
         <TabsContent value="replies" className="mt-4">
           <Replies initial={initialReplies} onUnread={(d) => setUnread((n) => Math.max(0, n + d))} showSender={showSender} canUseAi={canUseAi} />
         </TabsContent>
-        <TabsContent value="health" className="mt-4">
-          <Deliverability rows={health} />
-        </TabsContent>
+        {showSender && (
+          <TabsContent value="health" className="mt-4">
+            <Deliverability rows={health} />
+          </TabsContent>
+        )}
         <TabsContent value="templates" className="mt-4">
           <Templates templates={templates} onChange={setTemplates} canManage={canManageTemplates} />
         </TabsContent>
@@ -114,13 +126,14 @@ function SentList({ initial, showSender, hasMailbox }: { initial: { items: Email
   }
   return (
     <div className="space-y-3">
-      <ul className="divide-y rounded-xl border bg-card">
+      <ul className="divide-y overflow-hidden rounded-3xl border bg-card shadow-card">
         {page.items.map((m) => {
           const s = EMAIL_STATUS[m.status]
           const expanded = open === m.id
           return (
-            <li key={m.id} className="p-3 sm:p-4">
-              <button type="button" className="flex w-full min-w-0 items-start gap-3 text-left" aria-expanded={expanded} onClick={() => setOpen(expanded ? null : m.id)}>
+            <li key={m.id} className="px-4 py-3.5 sm:px-5">
+              <button type="button" className="flex w-full min-w-0 items-center gap-3 text-left" aria-expanded={expanded} onClick={() => setOpen(expanded ? null : m.id)}>
+                <Initials name={m.leadName ?? m.toEmail} />
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-2 text-sm">
                     <span className="truncate font-semibold">{m.subject}</span>
@@ -137,7 +150,7 @@ function SentList({ initial, showSender, hasMailbox }: { initial: { items: Email
               {expanded && (
                 <div className="mt-3 space-y-2">
                   {m.error && <p role="status" className="text-sm text-destructive-text">Raison : {m.error}</p>}
-                  <pre className="whitespace-pre-wrap break-words rounded-lg bg-muted p-3 font-sans text-sm">{m.bodyText}</pre>
+                  <pre className="whitespace-pre-wrap break-words rounded-2xl border bg-muted/40 p-4 font-sans text-sm leading-relaxed sm:mr-12">{m.bodyText}</pre>
                   {m.leadId && <Link className="text-sm font-medium underline underline-offset-4" href={`/app/leads/${m.leadId}`}>Ouvrir la fiche</Link>}
                 </div>
               )}
@@ -201,12 +214,13 @@ function Replies({ initial, onUnread, showSender, canUseAi }: { initial: { items
   }
   return (
     <div className="space-y-3">
-      <ul className="divide-y rounded-xl border bg-card">
+      <ul className="divide-y overflow-hidden rounded-3xl border bg-card shadow-card">
         {items.map((r) => {
           const expanded = open === r.id
           return (
-            <li key={r.id} className="p-3 sm:p-4">
-              <button type="button" className="flex w-full min-w-0 items-start gap-3 text-left" aria-expanded={expanded} onClick={() => toggle(r)}>
+            <li key={r.id} className={cn("px-4 py-3.5 sm:px-5", !r.read && "bg-info-subtle/30")}>
+              <button type="button" className="flex w-full min-w-0 items-center gap-3 text-left" aria-expanded={expanded} onClick={() => toggle(r)}>
+                <Initials name={r.leadName ?? r.fromEmail} strong={!r.read} />
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-2 text-sm">
                     {!r.read && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" role="img" aria-label="Non lu" />}
@@ -230,7 +244,7 @@ function Replies({ initial, onUnread, showSender, canUseAi }: { initial: { items
               {expanded && (
                 <div className="mt-3 space-y-3">
                   <p className="text-xs text-muted-foreground">De {r.fromEmail}{r.sentSubject ? ` · en réponse à « ${r.sentSubject} »` : ""}</p>
-                  <pre className="whitespace-pre-wrap break-words rounded-lg bg-muted p-3 font-sans text-sm">{r.bodyText || "(message vide)"}</pre>
+                  <pre className="whitespace-pre-wrap break-words rounded-2xl bg-sidebar p-4 font-sans text-sm leading-relaxed text-white sm:ml-12">{r.bodyText || "(message vide)"}</pre>
                   {!r.replyClass && isOffered(r.triage) && (
                     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-info/30 bg-info-subtle/40 p-2.5 text-sm">
                       <Sparkles className="h-4 w-4 text-info" aria-hidden="true" />
@@ -247,17 +261,17 @@ function Replies({ initial, onUnread, showSender, canUseAi }: { initial: { items
                   <div className="flex flex-wrap items-center gap-3">
                     <label className="flex items-center gap-2 text-sm">
                       <span className="text-muted-foreground">Classer :</span>
-                      <select className="h-9 rounded-md border bg-background px-2 text-sm" value={r.replyClass ?? ""} onChange={(e) => update(r, { replyClass: (e.target.value || null) as ReplyClass | null })}>
+                      <select className="h-11 rounded-xl border bg-background px-3 text-sm font-semibold" value={r.replyClass ?? ""} onChange={(e) => update(r, { replyClass: (e.target.value || null) as ReplyClass | null })}>
                         <option value="">Non classée</option>
                         {(Object.keys(REPLY_LABELS) as ReplyClass[]).map((c) => <option key={c} value={c}>{REPLY_LABELS[c]}</option>)}
                       </select>
                     </label>
                     {r.leadId && r.replyClass !== "STOP" && (
-                      <Button size="sm" variant="outline" onClick={() => setAnswering(r)}>
-                        <Reply className="h-3.5 w-3.5" aria-hidden="true" /> Répondre
+                      <Button onClick={() => setAnswering(r)} className="min-h-11 rounded-xl bg-sidebar px-4 font-bold text-sidebar-foreground hover:bg-sidebar/90">
+                        <Reply className="h-4 w-4" aria-hidden="true" /> Répondre
                       </Button>
                     )}
-                    {r.leadId && <Link className="text-sm font-medium underline underline-offset-4" href={`/app/leads/${r.leadId}`}>Ouvrir la fiche</Link>}
+                    {r.leadId && <Button asChild variant="outline" className="min-h-11 rounded-xl px-4 font-bold"><Link href={`/app/leads/${r.leadId}`}>Ouvrir la fiche</Link></Button>}
                   </div>
                   {r.replyClass === "STOP" && <p className="text-xs text-muted-foreground">Cette adresse est exclue : plus aucun email de prospection ne lui sera envoyé.</p>}
                 </div>
