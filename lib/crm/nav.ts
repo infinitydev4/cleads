@@ -14,6 +14,7 @@ import {
   PackagePlus,
   Palette,
   PanelsTopLeft,
+  PhoneCall,
   Plug,
   Plus,
   Search,
@@ -61,6 +62,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { id: "lots", label: "Préparer un lot", href: "/app/lots", icon: PackagePlus, permission: "team:dispatch", keywords: ["lot", "closer", "envoyer", "sans site", "préparer", "attribuer"] },
       { id: "closers", label: "Mes closers", href: "/app/closers", icon: Headset, permission: "team:dispatch", keywords: ["closers", "retirer", "file", "portefeuille", "équipe"] },
+      { id: "ai-caller", label: "Agent d’appel IA", href: "/app/ai-caller", icon: PhoneCall, permission: "aicall:manage", keywords: ["ia", "appel", "agent", "vocal", "robot", "vague", "elevenlabs", "rendez-vous"] },
       { id: "leads", label: "Prospects", href: "/app/leads", icon: Users, permission: "lead:read", keywords: ["contacts", "entreprises", "fiches"] },
       { id: "campaigns", label: "Campagnes", href: "/app/campaigns", icon: Megaphone, permission: "campaign:read", keywords: ["cible", "secteur", "zone", "résultats", "performances"] },
       { id: "search", label: "Recherche", href: "/app/search", icon: Search, permission: "search:run", keywords: ["extractor", "google maps", "trouver", "entreprises"] },

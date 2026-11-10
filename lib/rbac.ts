@@ -71,6 +71,10 @@ const matrix = {
   "ai:console": { OWNER: "all", MANAGER: "all", SDR: "all" },
   /** E16: the 3D view of the CRM (/app/3d), a team overview; the other roles work in the 2D pages. */
   "hq:view": { OWNER: "all", MANAGER: "all" },
+  /** E33: launch, pause and follow the AI caller's waves, and listen to its calls. */
+  "aicall:manage": { OWNER: "all", MANAGER: "all" },
+  /** E33: the AI caller's connection, hooks, voice and monthly cap. */
+  "aicall:configure": { OWNER: "all" },
   // Administration
   "team:read": { OWNER: "all", MANAGER: "all" },
   /**

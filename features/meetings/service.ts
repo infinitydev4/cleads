@@ -256,7 +256,8 @@ const mayOverrideHours = (user: CurrentUser, hostId: string) => user.role === "O
 
 // ── Internal booking, by a person ───────────────────────────────────────────────────────────────────────────────
 
-export async function bookMeeting(user: CurrentUser, input: BookMeetingInput, ip?: string | null): Promise<MeetingView> {
+/** `opts.source` names a booking made on someone's behalf by a tool (the AI caller books as the wave's author). */
+export async function bookMeeting(user: CurrentUser, input: BookMeetingInput, ip?: string | null, opts: { source?: string } = {}): Promise<MeetingView> {
   if (!canAccessRecord(user, "meeting:book", input.hostId)) throw new LeadError("forbidden", "Vous ne planifiez que vos propres rendez-vous.", 403)
   const lead = await prisma.lead.findFirst({ where: { id: input.leadId, workspaceId: user.workspaceId, ...scopeWhere(user, "lead:read") }, select: { id: true, status: true, contactId: true } })
   if (!lead) throw new LeadError("not_found", "Fiche introuvable.", 404)
@@ -278,7 +279,7 @@ export async function bookMeeting(user: CurrentUser, input: BookMeetingInput, ip
     await assertNoDuplicate(tx, lead.contactId, input.type)
 
     const created = await tx.meeting.create({
-      data: { workspaceId: user.workspaceId, hostId: host.id, leadId: lead.id, contactId: lead.contactId, startsAt: start, endsAt: end, timezone: cfg.req.timezone, type: input.type, videoUrl: input.videoUrl || cfg.profile?.videoUrl || null, notes: input.notes || null, source: user.role === "SDR" ? "sdr" : "manual", createdById: user.id },
+      data: { workspaceId: user.workspaceId, hostId: host.id, leadId: lead.id, contactId: lead.contactId, startsAt: start, endsAt: end, timezone: cfg.req.timezone, type: input.type, videoUrl: input.videoUrl || cfg.profile?.videoUrl || null, notes: input.notes || null, source: opts.source ?? (user.role === "SDR" ? "sdr" : "manual"), createdById: user.id },
       include: meetingInclude,
     })
     const dealId = await syncDealOnBooked(tx, ctx, lead, host.id)
