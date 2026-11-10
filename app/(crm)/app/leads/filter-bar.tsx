@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Check, ChevronDown, Flame, Globe, PhoneCall, Search, Sparkles, type LucideIcon } from "lucide-react"
+import { Check, ChevronDown, Flame, Globe, PhoneCall, Search, SlidersHorizontal, Sparkles, type LucideIcon } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { leadStatus } from "@/lib/crm/status"
 import { COUNTRY_CODES, countryName, foldText } from "@/lib/crm/countries"
@@ -42,18 +42,20 @@ const SEGMENTS: { id: FocusFilter; label: string; hint: string; icon: LucideIcon
   { id: "fresh", label: "Jamais contactés", hint: "Nouvelles fiches, aucun contact encore.", icon: Sparkles },
 ]
 
-const SITE_OPTIONS = [["nosite", "Sans vrai site"], ["social", "Réseaux seulement"], ["real", "Avec un site"]] as const
+export const SITE_OPTIONS = [["nosite", "Sans vrai site"], ["social", "Réseaux seulement"], ["real", "Avec un site"]] as const
 const SCORE_OPTIONS = [["40", "Score ≥ 40"], ["70", "Score ≥ 70"]] as const
 const REGISTRY_OPTIONS = [["new", "Créées depuis moins de 6 mois"], ["signal", "Signal récent (30 jours)"], ["takeover", "Reprise ou nouveau dirigeant"], ["blocked", "Procédure ou radiée"]] as const
 const RELEVANCE_OPTIONS = [["relevant", "Pertinentes"], ["maybe", "Possibles"], ["not", "Non pertinentes"], ["pending", "À trancher"], ["unsorted", "Pas encore triées"]] as const
 
 /**
  * The list's filters (9 November 2026, maquette « 8 · filtres et pays »): one card; the search, the call-file segments,
- * then one pill per filter that shows its value and opens a small panel. Everything lives in the URL.
+ * then one pill per filter that shows its value and opens a small panel. Everything lives in the URL. The pills stay
+ * folded behind a « Filtres » button (10 November 2026), which counts those in use.
  */
 export function FilterBar({ filters, assignees, campaigns, canSeeOthers, ownOnly = false, focusCounts, countries = [], onChange, searchRef, extra }: Props) {
   const [q, setQ] = useState(filters.q ?? "")
   const [open, setOpen] = useState<string | null>(null)
+  const [unfolded, setUnfolded] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   // The URL is the source of truth: follow it when a saved view or the back button changes it.
@@ -79,6 +81,7 @@ export function FilterBar({ filters, assignees, campaigns, canSeeOthers, ownOnly
     setQ("")
     set({ q: undefined, status: undefined, owner: undefined, minScore: undefined, hasEmail: undefined, hasPhone: undefined, city: undefined, sector: undefined, tag: undefined, source: undefined, campaign: undefined, relevance: undefined, registry: undefined, focus: undefined, country: undefined, site: undefined })
   }
+  const inUse = [filters.country, filters.city, filters.sector, filters.site, filters.status.length, filters.minScore, filters.registry, filters.hasEmail || filters.hasPhone, filters.tag, !ownOnly && filters.owner, filters.campaign, filters.relevance].filter(Boolean).length
   const pill = (id: string) => ({ open: open === id, onToggle: () => setOpen(open === id ? null : id), onClose: () => setOpen(null) })
   const statusLabel = filters.status.length === 0 ? "Tous" : filters.status.length === 1 ? leadStatus[filters.status[0]].label : `${filters.status.length} statuts`
   const ownerLabel = !filters.owner ? "Tous" : filters.owner === "me" ? "Mes fiches" : filters.owner === "none" ? "Pool" : personName(assignees.find((a) => a.id === filters.owner) ?? { name: "Un membre", email: null })
@@ -92,7 +95,11 @@ export function FilterBar({ filters, assignees, campaigns, canSeeOthers, ownOnly
           <input ref={searchRef} type="search" value={q} onChange={(e) => search(e.target.value)} placeholder="Entreprise, ville, téléphone, email…" aria-label="Rechercher" className="min-w-0 flex-1 bg-transparent text-[15px] text-foreground outline-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-0" />
           <kbd className="hidden rounded-md border bg-card px-1.5 py-0.5 text-[11px] sm:inline">/</kbd>
         </label>
+        <FiltersButton count={inUse} open={unfolded} onToggle={() => setUnfolded(!unfolded)} />
         {extra}
+        {active && !unfolded && (
+          <button onClick={clearAll} className="min-h-10 rounded-lg px-3 text-sm font-bold text-info hover:bg-info-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Tout effacer</button>
+        )}
       </div>
 
       <div role="group" aria-label="File d’appels" className="flex flex-wrap gap-2">
@@ -109,7 +116,7 @@ export function FilterBar({ filters, assignees, campaigns, canSeeOthers, ownOnly
         })}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 border-t pt-3.5">
+      {unfolded && <div id="lead-filters" className="flex flex-wrap items-center gap-2 border-t pt-3.5">
         <FilterPill label="Pays" value={filters.country ? countryName(filters.country) : "Tous"} active={!!filters.country} {...pill("country")}>
           <CountryPicker value={filters.country} counts={countries} onPick={(country) => set({ country })} />
         </FilterPill>
@@ -165,13 +172,24 @@ export function FilterBar({ filters, assignees, campaigns, canSeeOthers, ownOnly
         {active && (
           <button onClick={clearAll} className="ml-auto min-h-10 rounded-lg px-3 text-sm font-bold text-info hover:bg-info-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Tout effacer</button>
         )}
-      </div>
+      </div>}
     </section>
   )
 }
 
+/** Unfolds the filter pills; says how many are in use while they are folded. */
+export function FiltersButton({ count, open, onToggle, controls = "lead-filters", className }: { count: number; open: boolean; onToggle: () => void; controls?: string; className?: string }) {
+  return (
+    <button onClick={onToggle} aria-expanded={open} aria-controls={controls} className={cn("inline-flex min-h-12 items-center gap-2 rounded-2xl border px-4 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", open ? "border-sidebar bg-sidebar text-sidebar-foreground" : count ? "border-info/40 bg-info-subtle text-info" : "bg-card hover:bg-accent", className)}>
+      <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+      Filtres
+      {count > 0 && <span className={cn("rounded-full px-2 text-xs tabular-nums", open ? "bg-primary text-primary-foreground" : "bg-info text-white")}>{count}</span>}
+    </button>
+  )
+}
+
 /** A filter as a pill that shows its value; its panel opens below, closes on Escape or a click elsewhere. */
-function FilterPill({ label, value, active, open, onToggle, onClose, children }: { label: string; value: string; active: boolean; open: boolean; onToggle: () => void; onClose: () => void; children: React.ReactNode }) {
+export function FilterPill({ label, value, active, open, onToggle, onClose, children }: { label: string; value: string; active: boolean; open: boolean; onToggle: () => void; onClose: () => void; children: React.ReactNode }) {
   const box = useRef<HTMLDivElement>(null)
   const button = useRef<HTMLButtonElement>(null)
   const close = useRef(onClose)
@@ -214,7 +232,7 @@ function FilterPill({ label, value, active, open, onToggle, onClose, children }:
   )
 }
 
-function Options({ value, all, options, onPick }: { value: string | undefined; all: string; options: readonly (readonly [string, string])[]; onPick: (v: string | undefined) => void }) {
+export function Options({ value, all, options, onPick }: { value: string | undefined; all: string; options: readonly (readonly [string, string])[]; onPick: (v: string | undefined) => void }) {
   return (
     <div className="max-h-80 space-y-0.5 overflow-y-auto">
       {[[undefined, all] as const, ...options].map(([v, label]) => {
@@ -230,7 +248,7 @@ function Options({ value, all, options, onPick }: { value: string | undefined; a
   )
 }
 
-function TextFilter({ label, value, placeholder, onApply }: { label: string; value: string | undefined; placeholder: string; onApply: (v: string | undefined) => void }) {
+export function TextFilter({ label, value, placeholder, onApply }: { label: string; value: string | undefined; placeholder: string; onApply: (v: string | undefined) => void }) {
   const [text, setText] = useState(value ?? "")
   return (
     <form className="space-y-2.5 p-1" onSubmit={(e) => { e.preventDefault(); onApply(text.trim() || undefined) }}>
@@ -246,7 +264,7 @@ function TextFilter({ label, value, placeholder, onApply }: { label: string; val
 }
 
 /** Every country of the world, those of the person's fiches first with their count; searchable, accents aside. */
-function CountryPicker({ value, counts, onPick }: { value: string | undefined; counts: { code: string; count: number }[]; onPick: (code: string | undefined) => void }) {
+export function CountryPicker({ value, counts, onPick }: { value: string | undefined; counts: { code: string; count: number }[]; onPick: (code: string | undefined) => void }) {
   const [query, setQuery] = useState("")
   const list = useMemo(() => {
     const known = new Map(counts.map((c) => [c.code, c.count]))
