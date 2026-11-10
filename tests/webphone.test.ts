@@ -64,11 +64,14 @@ describe("the phone in the browser", () => {
     expect(run([{ type: "dial", target }], failed).failure).toBeNull()
   })
 
-  it("dials the number Zadarma expects, whatever the fiche holds", () => {
-    expect(dialString("+33240367761")).toBe("33240367761")
-    expect(dialString("06 12 34 56 78")).toBe("33612345678")
-    expect(dialString("0033 6 00 00 00 01")).toBe("33600000001")
-    expect(dialString("+213 555 12 34 56")).toBe("213555123456")
+  it("dials the number Zadarma expects, whatever the fiche holds, always with its plus", () => {
+    expect(dialString("+33240367761")).toBe("+33240367761")
+    expect(dialString("06 12 34 56 78")).toBe("+33612345678")
+    expect(dialString("0033 6 00 00 00 01")).toBe("+33600000001")
+    expect(dialString("+213 555 12 34 56")).toBe("+213555123456")
+    // Without the plus, the PBX (dialling without country code) would call "3333612345678".
+    expect(dialString("33 6 12 34 56 78")).toBe("+33612345678")
+    expect(dialString("101")).toBe("101")
   })
 
   it("says why there is no line", () => {
@@ -76,8 +79,8 @@ describe("the phone in the browser", () => {
     expect(run([status("BROWSER_NOT_SUPPORTED", 0)], ready).unavailable).toMatch(/Chrome, Edge ou Firefox/)
   })
 
-  it("dials without the plus, and tells times the way the closer reads them", () => {
-    expect(dialString("+33 2 40 36 77 61")).toBe("33240367761")
+  it("dials with the plus, and tells times the way the closer reads them", () => {
+    expect(dialString("+33 2 40 36 77 61")).toBe("+33240367761")
     expect(clock(161)).toBe("02:41")
     expect(clock(3_725)).toBe("1:02:05")
     expect(spoken(48)).toBe("48 s")

@@ -21,7 +21,7 @@ const keys = new Map<string, { key: string; until: number }>()
 let pbx: string | null = null
 
 /**
- * The extension as Zadarma's WebRTC widget knows it: "479288-100", the PBX number then the extension. Équipe stores
+ * The extension as Zadarma's WebRTC widget knows it: "123456-100", the PBX number then the extension. Équipe stores
  * "100", as the PBX statistics and webhooks spell it; a key asked for "100" alone is never recognised by the widget.
  */
 async function fullExtension(extension: string): Promise<string> {

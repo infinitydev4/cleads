@@ -70,13 +70,13 @@ suite("phone in the browser and calls board (database)", () => {
       keys()
       let n = 0
       const fetch = vi.fn(async (url: string, _init?: RequestInit) =>
-        new Response(JSON.stringify(String(url).includes("/v1/pbx/internal/") ? { status: "success", pbx_id: 479288, numbers: [100] } : { status: "success", key: `webrtc-key-${++n}` }))
+        new Response(JSON.stringify(String(url).includes("/v1/pbx/internal/") ? { status: "success", pbx_id: 123456, numbers: [100] } : { status: "success", key: `webrtc-key-${++n}` }))
       )
       const keyCalls = () => fetch.mock.calls.filter(([url]) => String(url).includes("get_key")).length
       vi.stubGlobal("fetch", fetch)
       // Équipe says "100"; the widget only knows the extension with its PBX number.
-      expect(await webphone.webphoneSession(u.closer, NOW.getTime())).toEqual({ ready: true, key: "webrtc-key-1", sip: "479288-100" })
-      expect(fetch.mock.calls.map(([url]) => String(url))).toEqual(["https://api.zadarma.com/v1/pbx/internal/", "https://api.zadarma.com/v1/webrtc/get_key/?sip=479288-100"])
+      expect(await webphone.webphoneSession(u.closer, NOW.getTime())).toEqual({ ready: true, key: "webrtc-key-1", sip: "123456-100" })
+      expect(fetch.mock.calls.map(([url]) => String(url))).toEqual(["https://api.zadarma.com/v1/pbx/internal/", "https://api.zadarma.com/v1/webrtc/get_key/?sip=123456-100"])
       await webphone.webphoneSession(u.closer, NOW.getTime() + 3_600_000)
       expect(fetch).toHaveBeenCalledTimes(2)
       await webphone.webphoneSession(u.closer, NOW.getTime() + 25 * 3_600_000)

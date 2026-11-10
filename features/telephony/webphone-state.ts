@@ -113,10 +113,19 @@ export function webphoneReducer(s: WebphoneState, e: WebphoneEvent): WebphoneSta
 }
 
 /**
- * Zadarma dials international numbers without the plus: "+33240…" becomes "33240…". Fiches keep the number as it was
- * typed or imported, so a French "06 12 34 56 78" is put in that form first; Zadarma does not place a "0612…" call.
+ * The number as the extension dials it, always with its plus: "+33240…". The PBX dials « sans indicatif pays », so
+ * without the plus it reads "33240…" as a local number and puts 33 in front ("3333240…", failed); with the plus its
+ * prefixes are skipped. Fiches keep the number as it was typed or imported, so a French "06 12 34 56 78" is put in
+ * international form first, and so is a long number written without its plus. Anything shorter (an extension, a code) is
+ * dialled as typed.
  */
-export const dialString = (number: string) => (normalizePhone(number) ?? number).replace(/[^\d+*#]/g, "").replace(/^\+/, "")
+export function dialString(number: string): string {
+  const known = normalizePhone(number)
+  if (known) return known
+  const digits = number.replace(/[^\d*#]/g, "")
+  // "33 6 12 34 56 78": an international number written without its plus.
+  return /^[1-9]\d{7,14}$/.test(digits) ? `+${digits}` : digits
+}
 
 /** "02:41", or "1:02:41" past an hour. */
 export function clock(totalSec: number): string {
