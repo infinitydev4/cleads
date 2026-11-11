@@ -8,9 +8,10 @@ classé dans la fiche : résultat, résumé, transcription, coût. Maquettes : a
 
 - **Voix et conversation** : ElevenLabs Agents. L'agent est créé par Cleads dans le compte ElevenLabs du propriétaire
   (Réglages › Connexion) ; les consignes, le premier message et la voix sont envoyés à chaque appel.
-- **Ligne** : le numéro Zadarma importé dans ElevenLabs comme « SIP trunk » (guide Zadarma « Integration with
-  ElevenLabs »). L'Arcep impose un numéro réservé aux appels automatisés (01 62, 01 63, 02 70, 02 71, 03 77, 03 78,
-  04 24, 04 25, 05 68, 05 69, 09 48, 09 49).
+- **Ligne** : un des numéros Zadarma du compte, importé dans ElevenLabs comme « SIP trunk » par un poste de la
+  centrale (Réglages › Connexion, « Importer dans ElevenLabs »). L'Arcep réserve les préfixes 01 62, 01 63, 02 70,
+  02 71, 03 77, 03 78, 04 24, 04 25, 05 68, 05 69, 09 48 et 09 49 aux appels automatisés ; le propriétaire a choisi le
+  11 novembre 2026 d'appeler depuis ses numéros Zadarma actuels, sous sa responsabilité.
 - **Vague** : un lot de fiches (non attribuées, ou d'une campagne). Une fiche est appelée si elle a un numéro français et
   une accroche vraie : un problème trouvé par l'audit, pas de site, ou une maquette prête. Pas d'appel si la fiche est en
   « ne pas contacter », déjà en rendez-vous, ou appelée par l'agent dans les 30 derniers jours.
@@ -32,8 +33,9 @@ classé dans la fiche : résultat, résumé, transcription, coût. Maquettes : a
 
 1. ElevenLabs › Developers › API keys : une clé avec les droits ElevenAgents et Voices, ajoutée dans Vercel sous
    `ELEVENLABS_API_KEY` (Production), puis redéployer.
-2. Zadarma : un numéro 09 48 / 09 49 (ou autre préfixe NPV) rattaché à la centrale, importé dans ElevenLabs › Phone
-   numbers comme SIP trunk (adresse `pbx.zadarma.com`, TCP, utilisateur = poste de la centrale).
+2. Réglages › Connexion › « Importer dans ElevenLabs » : choisir un numéro Zadarma, un poste réservé à l'agent et taper
+   son mot de passe SIP (transmis à ElevenLabs, jamais gardé par Cleads). Dans Zadarma, ce poste doit afficher ce
+   numéro pour ses appels sortants.
 3. Cleads › Agent d'appel IA › Réglages › Connexion : choisir ce numéro, cliquer « Créer l'agent chez ElevenLabs »,
    choisir le chef de projet (avec son lien Google Meet dans ses Disponibilités).
 4. ElevenLabs › Agents › Settings › Webhooks : un webhook post-call (transcription et échecs d'appel) vers

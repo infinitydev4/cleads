@@ -44,3 +44,9 @@ export type SettingsInput = z.infer<typeof settingsSchema>
 export const slotsToolSchema = z.object({ call_token: z.string().min(10).max(80) })
 export const bookToolSchema = slotsToolSchema.extend({ starts_at: z.string().min(10).max(40).refine((s) => !Number.isNaN(Date.parse(s)), "starts_at invalide"), email: z.string().max(254).nullish() })
 export const callbackToolSchema = slotsToolSchema.extend({ when: z.string().trim().min(1).max(200), day: z.string().max(10).nullish(), who: z.string().max(80).nullish() })
+
+export const importNumberSchema = z.object({
+  number: z.string().regex(/^\+\d{8,15}$/, "Numéro invalide"),
+  extension: z.string().regex(/^\d{2,6}$/, "Poste invalide"),
+  password: z.string().min(1, "Indique le mot de passe SIP du poste").max(200),
+})

@@ -6,7 +6,8 @@ import type { SiteState } from "@/features/leads/types"
 /**
  * E33, the AI caller: everything that decides without a database. The agent calls professionals only (CNIL: B2B
  * prospecting on legitimate interest, about their trade), says it is an AI in its first sentence (AI Act art. 50), and
- * only quotes what the fiche's audit says. Its number must be an ARCEP « NPV » (09 48…), set up in ElevenLabs.
+ * only quotes what the fiche's audit says. It calls from one of the workspace's Zadarma numbers, imported in ElevenLabs as a
+ * SIP trunk; which number is the owner's choice and responsibility (ARCEP reserves 09 48, 01 62… to automated calls).
  */
 
 export const TZ = "Europe/Paris"

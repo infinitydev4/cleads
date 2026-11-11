@@ -267,7 +267,7 @@ function SetupNotice({ setup, canConfigure }: { setup: AiCallerOverview["setup"]
     !setup.key && "la clé ElevenLabs (ELEVENLABS_API_KEY dans Vercel)",
     !setup.webhookSecret && "le secret du compte rendu d’appel (ELEVENLABS_WEBHOOK_SECRET dans Vercel)",
     !setup.agent && "l’agent, créé en un clic dans Réglages",
-    !setup.number && "le numéro 09 48 qui appelle",
+    !setup.number && "le numéro Zadarma qui appelle",
     !setup.host && "le chef de projet qui reçoit les rendez-vous",
   ].filter(Boolean) as string[]
   return (
@@ -415,7 +415,7 @@ function NewWave({ data, hosts, onLaunched }: { data: AiCallerOverview; hosts: H
       </div>
 
       <ul aria-label="Règles appliquées" className="space-y-2 text-[13px]">
-        {["Numéro 09 48 réservé aux appels automatisés", "L’agent dit qu’il est une IA dès la première phrase", "Professionnels uniquement, liste rouge exclue", "Aucun chiffre hors de l’audit de la fiche"].map((c) => (
+        {["Appels depuis ton numéro Zadarma", "L’agent dit qu’il est une IA dès la première phrase", "Professionnels uniquement, liste rouge exclue", "Aucun chiffre hors de l’audit de la fiche"].map((c) => (
           <li key={c} className="flex items-start gap-2">
             <Check className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden="true" />
             {c}
