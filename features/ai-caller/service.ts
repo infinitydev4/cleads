@@ -15,7 +15,8 @@ import { HOST_ROLES, bookMeeting, listSlots } from "@/features/meetings/service"
 import { ACTIVE_STATUSES } from "@/features/meetings/rules"
 import { dayKeyIn, zonedToUtc } from "@/features/meetings/slots"
 import { appBaseUrl } from "@/features/team/invite-email"
-import { ElevenLabsError, createAgent, createTool, elevenLabsConfigured, listPhoneNumbers, listVoices, placeCall } from "@/lib/telephony/elevenlabs"
+import { ElevenLabsError, createAgent, createTool, elevenLabsConfigured, importSipNumber, listPhoneNumbers, listVoices, placeCall } from "@/lib/telephony/elevenlabs"
+import { zadarmaLines } from "./zadarma-lines"
 import {
   FACT_FIELDS, HOOK_KEYS, MAX_ATTEMPTS, MAX_CONCURRENT, OUTCOME_LABELS, RETRY_AFTER_HOURS, STALE_AFTER_MIN, TZ,
   buildPrompt, callableNumber, costMicrosOf, dynamicVariables, failureOutcome, finalOutcome, firstMessage, hooksOf, inCallingHours,
@@ -102,6 +103,22 @@ export async function accountChoices() {
   } catch (e) {
     return { numbers: [], voices: [], error: e instanceof ElevenLabsError ? e.message : "ElevenLabs ne répond pas." }
   }
+}
+
+/**
+ * Imports one of the workspace's Zadarma numbers into ElevenLabs as the agent's line, through a PBX extension, and
+ * makes it the agent's number. The extension's SIP password goes to ElevenLabs only: never stored, logged or audited.
+ */
+export async function importZadarmaNumber(user: CurrentUser, input: { number: string; extension: string; password: string }) {
+  const lines = await zadarmaLines()
+  if (lines.error) throw new LeadError("unavailable", lines.error, 503)
+  if (!lines.numbers.some((n) => n.number === input.number)) throw new LeadError("invalid", "Ce numéro n’est pas dans ton compte Zadarma.")
+  if (!lines.pbxId || !lines.extensions.includes(input.extension)) throw new LeadError("invalid", "Ce poste n’existe pas sur ta centrale Zadarma.")
+  const phoneNumberId = await importSipNumber({ number: input.number, label: `Cleads · poste ${input.extension}`, username: `${lines.pbxId}-${input.extension}`, password: input.password })
+  await settingOf(user.workspaceId)
+  await prisma.aiCallSetting.update({ where: { workspaceId: user.workspaceId }, data: { phoneNumberId } })
+  await audit({ action: "ai_caller.number_imported", actorId: user.id, workspaceId: user.workspaceId, entityType: "AiCallSetting", entityId: user.workspaceId, metadata: { number: input.number, extension: input.extension } })
+  return settingsView(user)
 }
 
 /**

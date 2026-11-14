@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { AiCallerSettings } from "@/features/ai-caller/service"
 import type { PhoneNumber, Voice } from "@/lib/telephony/elevenlabs"
+import type { ZadarmaLines } from "@/features/ai-caller/zadarma-lines"
 import { CALL_HOURS_LABEL, DEFAULT_HOOKS, EUR_PER_MINUTE, HOOK_KEYS, HOOK_LABELS, HOOK_MAX_LENGTH, HOOK_VARIABLES, HOOK_WHEN, euros, type HookKey } from "@/features/ai-caller/rules"
 import { api } from "../../leads/api"
 
@@ -16,6 +17,8 @@ type Tab = "setup" | "hooks" | "voice" | "rules" | "budget"
 interface Props {
   initial: AiCallerSettings
   account: { numbers: PhoneNumber[]; voices: Voice[]; error: string | null }
+  /** The owner's Zadarma numbers and extensions; null for whoever cannot configure. */
+  zadarma: ZadarmaLines | null
   hosts: { id: string; name: string; hasVideoLink: boolean }[]
   spentMicros: number
   canConfigure: boolean
@@ -37,10 +40,9 @@ const RULES: [string, string][] = [
   ["Aucun chiffre hors de l’audit", "L’agent ne cite que ce que l’audit de la fiche contient, ni prix ni promesse."],
   ["Deux tentatives maximum par fiche", "Sans réponse ou messagerie : un second essai le lendemain, puis la fiche reste à l’équipe."],
   ["Heures d’appel", `${CALL_HOURS_LABEL}, jamais un jour férié.`],
-  ["Numéro dédié aux appels automatisés", "Un numéro en 09 48, 09 49 ou un autre préfixe réservé par l’Arcep."],
 ]
 
-export function AiCallerSettingsView({ initial, account, hosts, spentMicros, canConfigure }: Props) {
+export function AiCallerSettingsView({ initial, account, zadarma, hosts, spentMicros, canConfigure }: Props) {
   const [s, setS] = useState(initial)
   const [tab, setTab] = useState<Tab>(initial.setup.ready ? "hooks" : "setup")
   const [busy, setBusy] = useState<string | null>(null)
@@ -99,7 +101,7 @@ export function AiCallerSettingsView({ initial, account, hosts, spentMicros, can
         ))}
       </div>
 
-      {tab === "setup" && <SetupTab s={s} account={account} hosts={hosts} canConfigure={canConfigure} busy={busy} onSave={save} onCreateAgent={createAgent} />}
+      {tab === "setup" && <SetupTab s={s} account={account} zadarma={zadarma} onImported={setS} hosts={hosts} canConfigure={canConfigure} busy={busy} onSave={save} onCreateAgent={createAgent} />}
       {tab === "hooks" && <HooksTab s={s} canConfigure={canConfigure} busy={busy} onSave={save} />}
       {tab === "voice" && <VoiceTab s={s} voices={account.voices} error={account.error} canConfigure={canConfigure} busy={busy} onSave={save} />}
       {tab === "rules" && (
@@ -137,7 +139,7 @@ function Item({ ok, title, children }: { ok: boolean; title: string; children: R
   )
 }
 
-function SetupTab({ s, account, hosts, canConfigure, busy, onSave, onCreateAgent }: { s: AiCallerSettings; account: Props["account"]; hosts: Props["hosts"]; canConfigure: boolean; busy: string | null; onSave: Save; onCreateAgent: () => void }) {
+function SetupTab({ s, account, zadarma, onImported, hosts, canConfigure, busy, onSave, onCreateAgent }: { s: AiCallerSettings; account: Props["account"]; zadarma: ZadarmaLines | null; onImported: (s: AiCallerSettings) => void; hosts: Props["hosts"]; canConfigure: boolean; busy: string | null; onSave: Save; onCreateAgent: () => void }) {
   const [number, setNumber] = useState(s.phoneNumberId ?? "")
   const [host, setHost] = useState(s.hostId ?? "")
   const select = "block min-h-11 w-full max-w-[460px] rounded-xl border bg-background px-3 text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
@@ -151,13 +153,14 @@ function SetupTab({ s, account, hosts, canConfigure, busy, onSave, onCreateAgent
         <Item ok={s.setup.key} title="1. La clé ElevenLabs">
           <p>Dans ElevenLabs › Developers › API keys, crée une clé avec les droits « ElevenAgents » et « Voices ». Ajoute-la toi-même dans Vercel sous le nom <code className="rounded bg-secondary px-1.5 py-0.5 text-foreground">ELEVENLABS_API_KEY</code>, puis redéploie.</p>
         </Item>
-        <Item ok={s.setup.number} title="2. Le numéro qui appelle (09 48 ou 09 49)">
-          <p>Achète chez Zadarma un numéro réservé aux appels automatisés, puis importe-le dans ElevenLabs › Phone numbers comme « SIP trunk » (guide Zadarma « Integration with ElevenLabs »). Il apparaît ensuite ici.</p>
+        <Item ok={s.setup.number} title="2. Le numéro qui appelle">
+          <p>Un de tes numéros Zadarma, branché sur ElevenLabs par un poste de ta centrale. Le poste doit afficher ce numéro pour ses appels sortants (Zadarma › Mon PBX › Postes). L’Arcep réserve les préfixes 09 48, 09 49, 01 62… aux appels automatisés : le choix du numéro est sous ta responsabilité.</p>
+          {canConfigure && zadarma && <ImportNumber zadarma={zadarma} keyReady={s.setup.key} onImported={onImported} />}
           {account.error && <p className="font-semibold text-destructive-text">{account.error}</p>}
           {s.setup.key && (
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <select aria-label="Numéro de l’agent" value={number} onChange={(e) => setNumber(e.target.value)} disabled={!canConfigure} className={select}>
-                <option value="">{account.numbers.length ? "Choisir le numéro" : "Aucun numéro importé dans ElevenLabs"}</option>
+                <option value="">{account.numbers.length ? "Choisir le numéro importé" : "Aucun numéro importé dans ElevenLabs"}</option>
                 {account.numbers.map((n) => (
                   <option key={n.id} value={n.id}>
                     {n.number}
@@ -318,7 +321,7 @@ function BudgetTab({ s, spentMicros, canConfigure, busy, onSave }: { s: AiCaller
     ["Par appel décroché (1 min 30 en moyenne)", `≈ ${euros(Math.ceil(1.5 * EUR_PER_MINUTE * 1_000_000))}`],
     ["Par minute en ligne (ElevenLabs, modèle et Zadarma)", `≈ ${euros(EUR_PER_MINUTE * 1_000_000)}`],
     ["Sonnerie sans réponse", "0 €"],
-    ["Numéro 09 48 chez Zadarma", "selon Zadarma, par mois"],
+    ["Numéro Zadarma", "selon ton abonnement Zadarma"],
   ]
   return (
     <div className="flex flex-wrap items-stretch gap-5">
@@ -351,5 +354,62 @@ function BudgetTab({ s, spentMicros, canConfigure, busy, onSave }: { s: AiCaller
         <p className="pt-1 text-xs text-sidebar-foreground/70">Estimations, à confirmer sur les factures ElevenLabs et Zadarma.</p>
       </section>
     </div>
+  )
+}
+
+/** Imports one of the Zadarma numbers into ElevenLabs. The SIP password is sent once and never shown again. */
+function ImportNumber({ zadarma, keyReady, onImported }: { zadarma: ZadarmaLines; keyReady: boolean; onImported: (s: AiCallerSettings) => void }) {
+  const [number, setNumber] = useState(zadarma.numbers[0]?.number ?? "")
+  const [extension, setExtension] = useState(zadarma.extensions[0] ?? "")
+  const [password, setPassword] = useState("")
+  const [busy, setBusy] = useState(false)
+  const field = "block min-h-11 rounded-xl border bg-background px-3 text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+  if (zadarma.error) return <p className="font-semibold text-destructive-text">{zadarma.error}</p>
+  if (!zadarma.numbers.length) return <p className="font-semibold text-foreground">Aucun numéro actif dans ton compte Zadarma.</p>
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    try {
+      onImported(await api<AiCallerSettings>("/api/ai-caller/numbers", { method: "POST", body: JSON.stringify({ number, extension, password }) }))
+      setPassword("")
+      toast.success("Numéro importé dans ElevenLabs et choisi pour l’agent.")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Échec")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-wrap items-end gap-2 rounded-2xl bg-secondary/60 p-3">
+      <label className="space-y-1 text-xs font-bold text-foreground">
+        <span>Numéro Zadarma</span>
+        <select value={number} onChange={(e) => setNumber(e.target.value)} className={field}>
+          {zadarma.numbers.map((n) => (
+            <option key={n.number} value={n.number}>
+              {n.number}
+              {n.label ? ` · ${n.label}` : ""}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="space-y-1 text-xs font-bold text-foreground">
+        <span>Poste de la centrale</span>
+        <select value={extension} onChange={(e) => setExtension(e.target.value)} className={field}>
+          {zadarma.extensions.map((x) => (
+            <option key={x} value={x}>
+              {zadarma.pbxId}-{x}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="space-y-1 text-xs font-bold text-foreground">
+        <span>Mot de passe SIP du poste</span>
+        <input type="password" autoComplete="off" value={password} onChange={(e) => setPassword(e.target.value)} className={cn(field, "w-[220px]")} />
+      </label>
+      <Button type="submit" loading={busy} disabled={!keyReady || !number || !extension || !password} className="min-h-11 rounded-xl px-4 font-bold">Importer dans ElevenLabs</Button>
+      <p className="basis-full text-xs text-muted-foreground">{keyReady ? "Le mot de passe est transmis à ElevenLabs uniquement : Cleads ne le garde pas. Prends un poste réservé à l’agent, pas celui d’un closer." : "Ajoute d’abord la clé ElevenLabs (étape 1)."}</p>
+    </form>
   )
 }

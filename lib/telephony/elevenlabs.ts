@@ -101,6 +101,21 @@ export async function listPhoneNumbers(): Promise<PhoneNumber[]> {
   return (Array.isArray(rows) ? rows : []).map((r) => ({ id: r.phone_number_id, number: r.phone_number, label: r.label ?? "", provider: r.provider ?? "" }))
 }
 
+/**
+ * Imports a number as a SIP trunk the agent calls out through: the Zadarma PBX extension registers it at
+ * pbx.zadarma.com over TCP (Zadarma's « Integration with ElevenLabs » guide). The password goes to ElevenLabs only.
+ */
+export async function importSipNumber(n: { number: string; label: string; username: string; password: string }): Promise<string> {
+  const r = await call<{ phone_number_id?: string }>("POST", "/v1/convai/phone-numbers", {
+    provider: "sip_trunk",
+    phone_number: n.number,
+    label: n.label,
+    outbound_trunk_config: { address: "pbx.zadarma.com", transport: "tcp", media_encryption: "disabled", credentials: { username: n.username, password: n.password } },
+  })
+  if (!r.phone_number_id) throw new ElevenLabsError("bad_response", "ElevenLabs n’a pas donné l’identifiant du numéro.")
+  return r.phone_number_id
+}
+
 export interface Voice {
   id: string
   name: string

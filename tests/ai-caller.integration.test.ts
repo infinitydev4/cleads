@@ -245,4 +245,36 @@ suite("AI caller (database)", () => {
     expect(Object.keys(agent.platform_settings.data_collection)).toEqual(["decision_maker", "priority", "objection", "preference", "voicemail"])
     expect(agent.conversation_config.agent.prompt.tool_ids).toHaveLength(4)
   })
+
+  it("imports a Zadarma number into ElevenLabs through a PBX extension, without keeping the SIP password", async () => {
+    process.env.ZADARMA_API_KEY = "key"
+    process.env.ZADARMA_API_SECRET = "test-secret"
+    const sent: { url: string; body: Record<string, unknown> }[] = []
+    vi.stubGlobal("fetch", async (input: string, init?: RequestInit) => {
+      if (input.includes("/v1/direct_numbers/")) return new Response(JSON.stringify({ status: "success", info: [{ number: "33240000099", number_name: "Ligne agent", status: "on" }, { number: "33240000098", status: "off" }] }))
+      if (input.includes("/v1/pbx/internal/")) return new Response(JSON.stringify({ status: "success", pbx_id: 123456, numbers: [100, 101] }))
+      sent.push({ url: input, body: JSON.parse(String(init?.body ?? "{}")) })
+      if (input.endsWith("/v1/convai/phone-numbers")) return Response.json({ phone_number_id: "phnum_zadarma" })
+      return new Response("not found", { status: 404 })
+    })
+    const lines = await (await import("@/features/ai-caller/zadarma-lines")).zadarmaLines()
+    expect(lines).toMatchObject({ numbers: [{ number: "+33240000099", label: "Ligne agent" }], pbxId: "123456", extensions: ["100", "101"], error: null })
+
+    const s = await svc.importZadarmaNumber(u.owner, { number: "+33240000099", extension: "101", password: "sip-pass-test" })
+    expect(s.phoneNumberId).toBe("phnum_zadarma")
+    expect(sent).toHaveLength(1)
+    expect(sent[0].body).toEqual({
+      provider: "sip_trunk",
+      phone_number: "+33240000099",
+      label: "Cleads · poste 101",
+      outbound_trunk_config: { address: "pbx.zadarma.com", transport: "tcp", media_encryption: "disabled", credentials: { username: "123456-101", password: "sip-pass-test" } },
+    })
+    const logged = JSON.stringify(await prisma.auditLog.findMany({ where: { action: "ai_caller.number_imported" } }))
+    expect(logged).toContain("+33240000099")
+    expect(logged).not.toContain("sip-pass-test")
+    expect(JSON.stringify(await prisma.aiCallSetting.findUnique({ where: { workspaceId: ws } }))).not.toContain("sip-pass-test")
+
+    await expect(svc.importZadarmaNumber(u.owner, { number: "+33240000098", extension: "101", password: "x" })).rejects.toThrow("pas dans ton compte Zadarma")
+    await expect(svc.importZadarmaNumber(u.owner, { number: "+33240000099", extension: "555", password: "x" })).rejects.toThrow("Ce poste n’existe pas")
+  })
 })
