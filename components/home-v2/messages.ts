@@ -39,7 +39,7 @@ const fr = {
     discover: "Découvrir l’acquisition B2B",
   },
   trust: {
-    label: "Ils nous font confiance",
+    label: "Nos partenaires",
     count: "entreprises accompagnées",
   },
   machine: {
@@ -415,7 +415,7 @@ const en: HomeCopy = {
     discover: "Discover B2B acquisition",
   },
   trust: {
-    label: "They trust us",
+    label: "Our partners",
     count: "companies supported",
   },
   machine: {

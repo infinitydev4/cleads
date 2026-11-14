@@ -85,11 +85,11 @@ export function HomeHero({
 }
 
 const trustLogos = [
-  { src: "/images/home/logos/vinci.png", alt: "VINCI" },
-  { src: "/images/home/logos/eiffage.png", alt: "EIFFAGE" },
-  { src: "/images/home/logos/spie.png", alt: "SPIE" },
-  { src: "/images/home/logos/btp-services.png", alt: "BTP Services" },
-  { src: "/images/home/logos/kpmg.png", alt: "KPMG" },
+  { src: "/images/home/logos/microsoft.svg", alt: "Microsoft" },
+  { src: "/images/home/logos/claude.svg", alt: "Claude" },
+  { src: "/images/home/logos/openai.svg", alt: "OpenAI" },
+  { src: "/images/home/logos/aws.svg", alt: "Amazon Web Services" },
+  { src: "/images/home/logos/google.svg", alt: "Google" },
 ];
 
 export function TrustBar() {
